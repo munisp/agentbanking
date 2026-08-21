@@ -153,39 +153,15 @@ const submitApplication = protectedProcedure
       "Executed agentLoanOrigination2 mutation"
     );
 
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(agents)
-          .where(eq(agents.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "submitApplication: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "submitApplication completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      const [row] = await db
-        .insert(agents)
-        .values(input.data || ({} as any))
-        .returning();
-      return { success: true, ...row, message: "submitApplication completed" };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    // NF-FF-7: fail loud. The previous implementation mass-assigned
+    // caller-supplied `input.data` into the `agents` table (arbitrary
+    // float-balance mint) and returned fabricated success for id-lookups.
+    // All db.insert(agents) paths are removed; no loan_applications schema
+    // exists (verified against drizzle/schema.ts at branch head).
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Loan application submission is not implemented: no loan_applications schema exists, and caller JSON must never be mass-assigned into the agents table (float-balance mint).",
+    });
   });
 const approveApplication = protectedProcedure
   .input(
@@ -195,39 +171,15 @@ const approveApplication = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(agents)
-          .where(eq(agents.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "approveApplication: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "approveApplication completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      const [row] = await db
-        .insert(agents)
-        .values(input.data || ({} as any))
-        .returning();
-      return { success: true, ...row, message: "approveApplication completed" };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    // NF-FF-7: fail loud. The previous implementation mass-assigned
+    // caller-supplied `input.data` into the `agents` table (arbitrary
+    // float-balance mint) and returned fabricated success for id-lookups.
+    // All db.insert(agents) paths are removed; no loan_applications schema
+    // exists (verified against drizzle/schema.ts at branch head).
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Loan approval is not implemented: no loan_applications schema exists and an approval cannot be fabricated; caller JSON must never be mass-assigned into the agents table.",
+    });
   });
 const rejectApplication = protectedProcedure
   .input(
@@ -237,39 +189,15 @@ const rejectApplication = protectedProcedure
     })
   )
   .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(agents)
-          .where(eq(agents.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "rejectApplication: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "rejectApplication completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      const [row] = await db
-        .insert(agents)
-        .values(input.data || ({} as any))
-        .returning();
-      return { success: true, ...row, message: "rejectApplication completed" };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+    // NF-FF-7: fail loud. The previous implementation mass-assigned
+    // caller-supplied `input.data` into the `agents` table (arbitrary
+    // float-balance mint) and returned fabricated success for id-lookups.
+    // All db.insert(agents) paths are removed; no loan_applications schema
+    // exists (verified against drizzle/schema.ts at branch head).
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Loan rejection is not implemented: no loan_applications schema exists and a rejection cannot be fabricated; caller JSON must never be mass-assigned into the agents table.",
+    });
   });
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────

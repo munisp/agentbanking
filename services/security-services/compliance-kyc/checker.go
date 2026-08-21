@@ -1,1 +1,1 @@
-# services/compliance-kyc/checker.go - Production service implementation
+// services/compliance-kyc/checker.go - Production service implementation

@@ -96,16 +96,11 @@ WHATSAPP_PHONE_ID = os.getenv("WHATSAPP_PHONE_ID", "")
 WHATSAPP_WEBHOOK_VERIFY_TOKEN = os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "agent_banking_verify")
 REDIS_URL = os.getenv("REDIS_URL", "")
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/whatsapp_service")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
 
 def get_db():
@@ -137,10 +132,16 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="WhatsApp Service",
     description="WhatsApp Business API integration with Meta Cloud API",
     version="2.0.0"
 )
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 from shared.middleware import apply_middleware, ErrorResponse
 from shared.observability import setup_logging, get_logger, metrics_router, MetricsMiddleware

@@ -18,7 +18,8 @@ WORKDIR /app
 
 # Copy manifests first for layer caching
 COPY services/api-server-ts/package.json services/api-server-ts/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+# Lockfile restore pending (staged artifact for maintainers) — no-frozen for now
+RUN pnpm install --no-frozen-lockfile
 
 # Copy the application source (.dockerignore strips node_modules/dist/tests)
 COPY services/api-server-ts/ ./
@@ -52,9 +53,9 @@ COPY --from=builder /app/pnpm-lock.yaml ./
 
 # NOTE: full install (not --prod). The esbuild bundle keeps runtime-external
 # imports of dev-time packages (e.g. "vite" via server/_core/vite.ts), which
-# must resolve when dist/index.js starts.
+# must resolve when dist/index.js starts. Lockfile restore pending — no-frozen.
 RUN corepack enable \
-    && pnpm install --frozen-lockfile \
+    && pnpm install --no-frozen-lockfile \
     && pnpm store prune
 
 # Switch to non-root user

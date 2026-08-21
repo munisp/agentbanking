@@ -5,10 +5,8 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-DATABASE_URL = os.getenv(
-    "AGENT_FINANCE_DATABASE_URL",
-    "postgresql://platform:platform@localhost:5432/agent_finance"
-)
+# NF-SEC-6: no hardcoded credential fallback — fail closed when unset.
+DATABASE_URL = os.environ["AGENT_FINANCE_DATABASE_URL"]
 
 engine = create_engine(
     DATABASE_URL,

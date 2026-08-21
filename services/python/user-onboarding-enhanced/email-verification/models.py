@@ -237,7 +237,7 @@ if __name__ == '__main__':
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-        engine = create_engine("postgresql://postgres:postgres@localhost:5432/user_onboarding_enhanced")
+    engine = create_engine("postgresql://postgres:postgres@localhost:5432/user_onboarding_enhanced")
     
     print("Creating tables...")
     create_tables(engine)

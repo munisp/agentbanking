@@ -1,9 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { desc, eq, sql, and, gte, lte, count, notInArray } from "drizzle-orm";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
@@ -22,15 +22,25 @@ import {
   withTransaction,
 } from "../lib/transactionHelper";
 
-const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["active", "completed", "cancelled", "rejected"],
-  active: ["completed", "suspended", "cancelled"],
-  completed: ["archived"],
-  suspended: ["active", "cancelled"],
-  cancelled: [],
-  rejected: [],
-  archived: [],
-};
+// NF-FF-19: reconciliation-scoped transition guard. This router may ONLY move
+// a transaction into one of the reconciliation workflow statuses below. Value
+// statuses (success / failed / reversed / disputed / resolved) are never valid
+// targets — disputes are recorded as status "flagged" + dispute metadata, and
+// resolutions as status "resolved_note" + resolution metadata.
+const RECONCILIATION_TARGET_STATUSES = [
+  "flagged",
+  "under_review",
+  "resolved_note",
+] as const;
+
+function enforceTransition(from: string, to: string) {
+  if (!(RECONCILIATION_TARGET_STATUSES as readonly string[]).includes(to)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Invalid reconciliation transition from ${from} to ${to}: only ${RECONCILIATION_TARGET_STATUSES.join(", ")} are permitted targets`,
+    });
+  }
+}
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 function validateTransactionreconciliationInput(
@@ -362,7 +372,7 @@ export const transactionReconciliationRouter = router({
     }
   }),
 
-  updateStatus: protectedProcedure
+  updateStatus: adminProcedure
     .input(
       z.object({
         id: z.number().min(1),
@@ -384,11 +394,23 @@ export const transactionReconciliationRouter = router({
 
       enforceTransition(record.status ?? "initiated", input.status);
 
+      // NF-FF-19: conditional update — never touch a transaction already in a
+      // final value state (success / reversed). 0 rows => 409 CONFLICT.
       const [updated] = await database
         .update(transactions)
         .set({ status: input.status, updatedAt: new Date() })
-        .where(eq(transactions.id, input.id))
+        .where(
+          and(
+            eq(transactions.id, input.id),
+            notInArray(transactions.status, ["success", "reversed"])
+          )
+        )
         .returning();
+      if (!updated)
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Transaction ${input.id} is in a final value state (success/reversed) and cannot transition`,
+        });
 
       logOperation("STATUS_UPDATED", {
         transactionId: input.id,
@@ -407,7 +429,7 @@ export const transactionReconciliationRouter = router({
       return { success: true, transaction: updated };
     }),
 
-  markDisputed: protectedProcedure
+  markDisputed: adminProcedure
     .input(
       z.object({
         id: z.number().min(1),
@@ -415,7 +437,7 @@ export const transactionReconciliationRouter = router({
         disputeRef: z.string().max(100).optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database)
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -427,13 +449,38 @@ export const transactionReconciliationRouter = router({
         .limit(1);
       if (!record) throw new TRPCError({ code: "NOT_FOUND" });
 
-      enforceTransition(record.status ?? "completed", "disputed");
+      // NF-FF-19: disputes are recorded as status "flagged" + dispute metadata.
+      // The literal status "disputed" is never written to transactions.status.
+      enforceTransition(record.status ?? "completed", "flagged");
 
       const [updated] = await database
         .update(transactions)
-        .set({ status: "disputed", updatedAt: new Date() })
-        .where(eq(transactions.id, input.id))
+        .set({
+          status: "flagged",
+          metadata: {
+            ...((record.metadata as Record<string, unknown> | null) ?? {}),
+            dispute: {
+              reason: input.reason,
+              disputeRef: input.disputeRef ?? null,
+              flaggedBy: ctx.user.id,
+              flaggedAt: new Date().toISOString(),
+              previousStatus: record.status,
+            },
+          },
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(transactions.id, input.id),
+            notInArray(transactions.status, ["success", "reversed"])
+          )
+        )
         .returning();
+      if (!updated)
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Transaction ${input.id} is in a final value state (success/reversed) and cannot be flagged`,
+        });
 
       logOperation("MARKED_DISPUTED", {
         transactionId: input.id,
@@ -450,7 +497,7 @@ export const transactionReconciliationRouter = router({
       return { success: true, transaction: updated };
     }),
 
-  markResolved: protectedProcedure
+  markResolved: adminProcedure
     .input(
       z.object({
         id: z.number().min(1),
@@ -458,7 +505,7 @@ export const transactionReconciliationRouter = router({
         resolvedBy: z.string().max(200).optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database)
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -470,13 +517,38 @@ export const transactionReconciliationRouter = router({
         .limit(1);
       if (!record) throw new TRPCError({ code: "NOT_FOUND" });
 
-      enforceTransition(record.status ?? "disputed", "resolved");
+      // NF-FF-19: resolutions are recorded as status "resolved_note" +
+      // resolution metadata. The literal status "resolved" is never written
+      // to transactions.status.
+      enforceTransition(record.status ?? "flagged", "resolved_note");
 
       const [updated] = await database
         .update(transactions)
-        .set({ status: "resolved", updatedAt: new Date() })
-        .where(eq(transactions.id, input.id))
+        .set({
+          status: "resolved_note",
+          metadata: {
+            ...((record.metadata as Record<string, unknown> | null) ?? {}),
+            resolution: {
+              note: input.resolution,
+              resolvedBy: input.resolvedBy ?? String(ctx.user.id),
+              resolvedAt: new Date().toISOString(),
+              previousStatus: record.status,
+            },
+          },
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(transactions.id, input.id),
+            notInArray(transactions.status, ["success", "reversed"])
+          )
+        )
         .returning();
+      if (!updated)
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Transaction ${input.id} is in a final value state (success/reversed) and cannot be resolved`,
+        });
 
       logOperation("MARKED_RESOLVED", {
         transactionId: input.id,

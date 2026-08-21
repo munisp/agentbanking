@@ -90,19 +90,12 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
-import os
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/agent_commerce_integration")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -122,6 +115,21 @@ def init_db():
     conn.close()
 
 init_db()
+
+
+
+
+
+app = FastAPI(
+    title="Agent Commerce Integration",
+    description="E-commerce integration for agent-assisted purchases, marketplace orders, and product catalog management",
+    version="1.0.0",
+)
+apply_middleware(app, enable_auth=True)
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 @app.get("/api/v1/items")
 async def list_items():
@@ -207,10 +215,6 @@ async def delete_item(item_id: int):
     conn.commit()
     conn.close()
     return {"id": item_id, "status": "deleted"}
-    title="Agent Commerce Integration",
-    description="E-commerce integration for agent-assisted purchases, marketplace orders, and product catalog management",
-    version="1.0.0",
-)
 
 app.add_middleware(
     CORSMiddleware,

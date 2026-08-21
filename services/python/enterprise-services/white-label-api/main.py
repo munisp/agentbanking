@@ -67,10 +67,10 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.PROJECT_VERSION,
     description="A production-ready white-label API for identity verification (KYC/KYB).",
-apply_middleware(app, enable_auth=True)
     docs_url="/docs",
     redoc_url="/redoc"
 )
+apply_middleware(app, enable_auth=True)
 
 # --- Event Handlers ---
 @app.on_event("startup")

@@ -27,7 +27,7 @@ import {
   otaUpdateLog,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
-import { randomBytes } from "crypto";
+import { randomBytes, timingSafeEqual } from "crypto";
 import { getIO } from "../socketSingleton";
 import {
   validateAmount,
@@ -444,6 +444,8 @@ export const mdmRouter = router({
       z.object({
         serialNumber: z.string().min(1),
         agentCode: z.string().min(1),
+        // NF-SEC-2: per-device credential issued by enrollWithToken; required on every heartbeat
+        deviceToken: z.string().min(1),
         model: z.string().optional(),
         osVersion: z.string().optional(),
         appVersion: z.string().optional(),
@@ -468,15 +470,10 @@ export const mdmRouter = router({
     .mutation(async ({ input, ctx }) => {
       try {
         const db = await requireDb();
-        let [device] = await db
+        const [device] = await db
           .select()
           .from(devices)
           .where(eq(devices.serialNumber, input.serialNumber));
-
-        const [agent] = await db
-          .select()
-          .from(agents)
-          .where(eq(agents.agentCode, input.agentCode));
 
         const telemetryFields = {
           batteryLevel: input.batteryLevel ?? null,
@@ -493,42 +490,43 @@ export const mdmRouter = router({
             : {}),
         };
 
+        // NF-SEC-2: unknown serial must never auto-create a device from an
+        // unauthenticated heartbeat; devices are provisioned via enrollWithToken.
         if (!device) {
-          if (!agent)
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: "Agent not found",
-            });
-          [device] = await db
-            .insert(devices)
-            .values({
-              agentId: agent.id,
-              serialNumber: input.serialNumber,
-              model: input.model ?? "Unknown",
-              osVersion: input.osVersion,
-              appVersion: input.appVersion,
-              firmwareVersion: input.firmwareVersion,
-              ipAddress: ctx.req?.ip ?? input.ipAddress,
-              status: "online",
-              lastSeenAt: new Date(),
-              ...telemetryFields,
-            })
-            .returning();
-        } else {
-          await db
-            .update(devices)
-            .set({
-              status: "online",
-              osVersion: input.osVersion ?? device.osVersion,
-              appVersion: input.appVersion ?? device.appVersion,
-              firmwareVersion: input.firmwareVersion ?? device.firmwareVersion,
-              ipAddress: ctx.req?.ip ?? input.ipAddress ?? device.ipAddress,
-              lastSeenAt: new Date(),
-              updatedAt: new Date(),
-              ...telemetryFields,
-            })
-            .where(eq(devices.id, device.id));
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Unknown device serial number",
+          });
         }
+
+        // NF-SEC-2: validate the per-device token issued by enrollWithToken
+        // (constant-time comparison; both operands same length required).
+        const presentedToken = Buffer.from(input.deviceToken);
+        const storedToken = Buffer.from(device.deviceToken ?? "");
+        const tokenValid =
+          storedToken.length > 0 &&
+          presentedToken.length === storedToken.length &&
+          timingSafeEqual(presentedToken, storedToken);
+        if (!tokenValid) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Invalid device token",
+          });
+        }
+
+        await db
+          .update(devices)
+          .set({
+            status: "online",
+            osVersion: input.osVersion ?? device.osVersion,
+            appVersion: input.appVersion ?? device.appVersion,
+            firmwareVersion: input.firmwareVersion ?? device.firmwareVersion,
+            ipAddress: ctx.req?.ip ?? input.ipAddress ?? device.ipAddress,
+            lastSeenAt: new Date(),
+            updatedAt: new Date(),
+            ...telemetryFields,
+          })
+          .where(eq(devices.id, device.id));
 
         // ── Screenshot command acknowledgement ──────────────────────────────────
         if (input.screenshotCommandId && input.screenshotUrl) {

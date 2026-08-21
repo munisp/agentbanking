@@ -1,5 +1,6 @@
 from utils import (
     create_logger,
+    get_config,
     PubsubTopics,
     CurrencyEnum,
     CurrencyLedgerId,
@@ -37,13 +38,25 @@ from schemas import (
 from events import publish_transaction_event
 from datetime import datetime, timezone
 from typing import Any, Optional
+import json
 import uuid
+from fastapi import HTTPException
+from dapr.clients import DaprClient
 from adapters import payment_rails_connector_adapter
 from schemas.payment import ExternalTransferSchema, ExternalDebitSchema
 
 logger = create_logger(__name__)
 
 _tigerbeetle_adapter = TigerBeetleAdapter()
+
+_dapr_client = None
+
+
+def _get_dapr_client() -> DaprClient:
+    global _dapr_client
+    if _dapr_client is None:
+        _dapr_client = DaprClient()
+    return _dapr_client
 
 
 class PaymentService:
@@ -64,11 +77,39 @@ class PaymentService:
 
     @staticmethod
     def _to_minor_units(amount: float) -> int:
-        return int(round(float(amount)))
+        # Contract (NF-FF-35): `amount` is in MAJOR units (e.g. naira) and the
+        # result is in MINOR units (kobo/cents). This MUST be the exact inverse
+        # of _to_major_units: minor = round(major * 100).
+        return int(round(float(amount) * 100))
 
     @staticmethod
     def _to_major_units(minor_units: int) -> float:
         return float(minor_units) / 100.0
+
+    def _save_saga_record(self, key: str, record: dict, best_effort: bool = False) -> None:
+        """Persist a cross-currency saga record (NF-FF-12).
+
+        The initial pending write (before leg 1) is mandatory — without it a
+        crash between the two currency legs would be invisible, so the caller
+        fails closed. Subsequent status updates are best-effort.
+        """
+        try:
+            _get_dapr_client().save_state(
+                get_config().STATE_STORE_NAME, key, json.dumps(record)
+            )
+        except Exception as exc:
+            if best_effort:
+                logger.error(
+                    "cross_currency_saga_update_failed key=%s error=%s", key, str(exc)
+                )
+                return
+            logger.error(
+                "cross_currency_saga_write_failed key=%s error=%s", key, str(exc)
+            )
+            raise Exception(
+                "Cross-currency saga store unavailable; refusing to start "
+                "transfer legs without a recoverable pending record."
+            ) from exc
 
     def _get_account_currency(self, account_id: int, context: Context) -> str:
         account = self.__account_service_adapter.get_account_by_id(
@@ -361,8 +402,10 @@ class PaymentService:
                 ),
             )
 
+            # NF-FF-35: completion events go to the dedicated completed topic —
+            # never re-use the initiation topic for a SUCCESS status.
             publish_transaction_event(
-                PubsubTopics.TRANSACTION_INITIATED,
+                PubsubTopics.TRANSACTION_COMPLETED,
                 TransactionEventSchema(
                     transaction_id=transaction_id,
                     amount=str(amount_minor),
@@ -728,7 +771,10 @@ class PaymentService:
         fraud_currency = str(
             (payer_account_data or {}).get("account_currency") or ""
         ).upper() or self._get_account_currency(int(payer_account_id), context)
-        fraud_reference = f"transfer:{payer_account_id}:{payee_account_id}:{datetime.now(timezone.utc).timestamp()}"
+        # NF-FF-12: the fraud/commission reference is derived from the ledger
+        # transfer id (pre-generated here), never from wall-clock time.
+        transfer_uuid = uuid.uuid4()
+        fraud_reference = f"transfer:{payer_account_id}:{payee_account_id}:{transfer_uuid}"
 
         commission = self.__commission_service_adapter.calculate_commission(
             agent_id=context.keycloak_id,
@@ -830,50 +876,143 @@ class PaymentService:
                         f"required={self._to_major_units(credit_minor_amount)}"
                     )
 
-                debit_reference = self.__tigerbeetle_adapter.transfer(
-                    payer=int(payer_account_id),
-                    payee=int(payer_mint_account_id),
-                    amount=int(debit_minor_amount),
-                    ledger=int(CurrencyLedgerId.from_currency(payer_currency)),
+                # NF-FF-12: the two currency legs must not be unlinked
+                # independent transfers. When the TigerBeetle client supports
+                # linked transfers the legs commit atomically (all-or-nothing).
+                # Otherwise a persistent two-phase saga record is written BEFORE
+                # leg 1 so a crash between legs leaves a recoverable trail, and
+                # the compensation path retries before declaring CRITICAL.
+                payer_ledger = int(CurrencyLedgerId.from_currency(payer_currency))
+                payee_ledger = int(CurrencyLedgerId.from_currency(payee_currency))
+                debit_leg_id = TigerBeetleAdapter.derive_transfer_id(
+                    str(transfer_uuid), "cross_currency_debit"
+                )
+                credit_leg_id = TigerBeetleAdapter.derive_transfer_id(
+                    str(transfer_uuid), "cross_currency_credit"
                 )
 
-                try:
-                    credit_reference = self.__tigerbeetle_adapter.transfer(
-                        payer=int(payee_mint_account_id),
-                        payee=int(payee_account_id),
-                        amount=int(credit_minor_amount),
-                        ledger=int(CurrencyLedgerId.from_currency(payee_currency)),
+                if self.__tigerbeetle_adapter.supports_linked_transfers:
+                    debit_reference, credit_reference = (
+                        self.__tigerbeetle_adapter.transfer_linked(
+                            legs=[
+                                {
+                                    "payer": int(payer_account_id),
+                                    "payee": int(payer_mint_account_id),
+                                    "amount": int(debit_minor_amount),
+                                    "ledger": payer_ledger,
+                                },
+                                {
+                                    "payer": int(payee_mint_account_id),
+                                    "payee": int(payee_account_id),
+                                    "amount": int(credit_minor_amount),
+                                    "ledger": payee_ledger,
+                                },
+                            ],
+                            transfer_ids=[debit_leg_id, credit_leg_id],
+                        )
                     )
-                except Exception as credit_error:
-                    logger.error(
-                        "Cross-currency credit leg failed, attempting rollback debit_reference=%s error=%s",
-                        str(debit_reference),
-                        str(credit_error),
+                else:
+                    saga_key = f"cross_currency_saga:{transfer_uuid}"
+                    saga_record = {
+                        "status": "pending",
+                        "debit_leg_id": str(debit_leg_id),
+                        "credit_leg_id": str(credit_leg_id),
+                        "payer_account_id": str(payer_account_id),
+                        "payer_mint_account_id": str(payer_mint_account_id),
+                        "payee_account_id": str(payee_account_id),
+                        "payee_mint_account_id": str(payee_mint_account_id),
+                        "debit_minor_amount": int(debit_minor_amount),
+                        "credit_minor_amount": int(credit_minor_amount),
+                        "payer_currency": payer_currency,
+                        "payee_currency": payee_currency,
+                        "payer_ledger": payer_ledger,
+                        "payee_ledger": payee_ledger,
+                        "tenant_id": context.tenant_id,
+                    }
+                    # Mandatory write: refuse to move funds without a
+                    # recoverable pending record.
+                    self._save_saga_record(saga_key, saga_record)
+
+                    debit_reference = self.__tigerbeetle_adapter.transfer(
+                        payer=int(payer_account_id),
+                        payee=int(payer_mint_account_id),
+                        amount=int(debit_minor_amount),
+                        ledger=payer_ledger,
+                        transfer_id=debit_leg_id,
                     )
+
                     try:
-                        rollback_reference = self.__tigerbeetle_adapter.transfer(
-                            payer=int(payer_mint_account_id),
-                            payee=int(payer_account_id),
-                            amount=int(debit_minor_amount),
-                            ledger=int(CurrencyLedgerId.from_currency(payer_currency)),
+                        credit_reference = self.__tigerbeetle_adapter.transfer(
+                            payer=int(payee_mint_account_id),
+                            payee=int(payee_account_id),
+                            amount=int(credit_minor_amount),
+                            ledger=payee_ledger,
+                            transfer_id=credit_leg_id,
                         )
-                        logger.info(
-                            "Cross-currency rollback completed rollback_reference=%s",
-                            str(rollback_reference),
-                        )
-                    except Exception as rollback_error:
-                        logger.critical(
-                            "UNRECOVERABLE cross_currency_rollback_failed debit_reference=%s "
-                            "rollback_error=%s original_credit_error=%s "
-                            "ACTION=manual_ops_recovery_required",
+                    except Exception as credit_error:
+                        logger.error(
+                            "Cross-currency credit leg failed, attempting rollback debit_reference=%s error=%s",
                             str(debit_reference),
-                            str(rollback_error),
                             str(credit_error),
                         )
-                        raise Exception(
-                            f"Debit unrecoverable: rollback failed after credit failure "
-                            f"(debit_reference={debit_reference}). Manual ops recovery required."
-                        ) from rollback_error
+                        saga_record["status"] = "compensating"
+                        saga_record["credit_error"] = str(credit_error)
+                        saga_record["debit_reference"] = str(debit_reference)
+                        self._save_saga_record(saga_key, saga_record, best_effort=True)
+
+                        compensated = False
+                        last_rollback_error = None
+                        for attempt in range(1, 4):
+                            try:
+                                rollback_reference = self.__tigerbeetle_adapter.transfer(
+                                    payer=int(payer_mint_account_id),
+                                    payee=int(payer_account_id),
+                                    amount=int(debit_minor_amount),
+                                    ledger=payer_ledger,
+                                    transfer_id=TigerBeetleAdapter.derive_transfer_id(
+                                        str(transfer_uuid),
+                                        f"cross_currency_rollback:{attempt}",
+                                    ),
+                                )
+                                compensated = True
+                                logger.info(
+                                    "Cross-currency rollback completed rollback_reference=%s attempt=%d",
+                                    str(rollback_reference),
+                                    attempt,
+                                )
+                                break
+                            except Exception as rollback_error:
+                                last_rollback_error = rollback_error
+                                logger.error(
+                                    "Cross-currency rollback attempt=%d failed debit_reference=%s error=%s",
+                                    attempt,
+                                    str(debit_reference),
+                                    str(rollback_error),
+                                )
+
+                        if not compensated:
+                            saga_record["status"] = "compensation_failed"
+                            self._save_saga_record(
+                                saga_key, saga_record, best_effort=True
+                            )
+                            logger.critical(
+                                "UNRECOVERABLE cross_currency_rollback_failed debit_reference=%s "
+                                "saga_key=%s rollback_error=%s original_credit_error=%s "
+                                "ACTION=manual_ops_recovery_required",
+                                str(debit_reference),
+                                saga_key,
+                                str(last_rollback_error),
+                                str(credit_error),
+                            )
+                            raise Exception(
+                                f"Debit unrecoverable: rollback failed after credit failure "
+                                f"(debit_reference={debit_reference}, saga={saga_key}). "
+                                f"Manual ops recovery required."
+                            ) from last_rollback_error
+
+                        saga_record["status"] = "compensated"
+                        saga_record["rollback_reference"] = str(rollback_reference)
+                        self._save_saga_record(saga_key, saga_record, best_effort=True)
 
                     publish_transaction_event(
                         PubsubTopics.TRANSACTION_INITIATED,
@@ -895,6 +1034,11 @@ class PaymentService:
                     raise Exception(
                         f"Cross-currency transfer failed during credit leg: {str(credit_error)}"
                     )
+
+                    saga_record["status"] = "completed"
+                    saga_record["debit_reference"] = str(debit_reference)
+                    saga_record["credit_reference"] = str(credit_reference)
+                    self._save_saga_record(saga_key, saga_record, best_effort=True)
 
                 reference = f"{debit_reference}:{credit_reference}"
 
@@ -967,6 +1111,7 @@ class PaymentService:
                 payee=int(payee_account_id),
                 amount=net_amount_minor,
                 ledger=int(context.ledger_id),
+                transfer_id=transfer_uuid,
             )
             transaction_id = str(id)
             logger.info("Transfer created transaction_id=%s", transaction_id)
@@ -1126,10 +1271,18 @@ class PaymentService:
 
         payload_currency = str(payload.amount.currency).upper()
         if payload_currency != payee_currency:
+            # NF-FF-22: never credit a currency mismatch 1:1 — hard fail (4xx).
             logger.warning(
-                "External credit payload currency (%s) differs from payee account currency (%s); using payee account currency ledger",
+                "Rejected external credit: payload currency=%s payee account currency=%s",
                 payload_currency,
                 payee_currency,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Currency mismatch: payload currency {payload_currency} does not "
+                    f"match the payee account currency {payee_currency}."
+                ),
             )
 
         commission = self.__commission_service_adapter.calculate_commission(
@@ -1344,7 +1497,7 @@ class PaymentService:
 
         debit_currency = str(payload.amount.currency).upper()
         transaction_id = None
-       
+
         try:
             reference = self.__tigerbeetle_adapter.transfer(
                 payer=int(payer_account_id),
@@ -1353,7 +1506,7 @@ class PaymentService:
                 ledger=int(context.ledger_id),
             )
             transaction_id = str(reference)
-           
+
             logger.info(
                 "External debit processed payer=%s mint=%s amount_minor=%s currency=%s reference=%s",
                 str(payer_account_id),
@@ -1363,7 +1516,7 @@ class PaymentService:
                 transaction_id,
             )
 
-            
+
 
             publish_transaction_event(
                 PubsubTopics.TRANSACTION_SUCCESS,
@@ -1458,6 +1611,7 @@ class PaymentService:
         )
 
         transaction_id = None
+        outstanding_debit = None  # NF-FF-11: net amount still debited from payer
         try:
             id = self.__tigerbeetle_adapter.transfer(
                 payer=payload.payer,
@@ -1466,6 +1620,7 @@ class PaymentService:
                 ledger=int(context.ledger_id),
             )
             transaction_id = str(id)
+            outstanding_debit = int(payload.amount)
             logger.info("Loan payment transfer created transaction_id=%s", transaction_id)
 
             completed_at = datetime.now(timezone.utc)
@@ -1526,6 +1681,7 @@ class PaymentService:
                 )
 
                 logger.info("Loan payment refund transaction_id=%s", str(refund_id))
+                outstanding_debit = int(recorded_amount)
 
                 publish_transaction_event(
                     PubsubTopics.TRANSACTION_SUCCESS,
@@ -1577,6 +1733,39 @@ class PaymentService:
 
         except Exception as e:
             logger.error("Loan payment failed loan_id=%s error=%s", payload.loan_id, str(e))
+            if transaction_id and outstanding_debit:
+                # NF-FF-11: the TigerBeetle debit already posted but the loan
+                # payment was not recorded — compensate with a refund transfer
+                # (mirrors the LPO refund path). A compensation failure is
+                # logged CRITICAL and re-raised; it is never swallowed.
+                try:
+                    compensation_id = self.__tigerbeetle_adapter.transfer(
+                        payer=int(context.mint_account_id),
+                        payee=payload.payer,
+                        amount=int(outstanding_debit),
+                        ledger=int(context.ledger_id),
+                    )
+                    logger.info(
+                        "Loan payment compensating refund transaction_id=%s compensation_id=%s amount=%s",
+                        transaction_id,
+                        str(compensation_id),
+                        outstanding_debit,
+                    )
+                except Exception as compensation_error:
+                    logger.critical(
+                        "UNRECOVERABLE loan_payment_compensation_failed transaction_id=%s "
+                        "amount=%s compensation_error=%s original_error=%s "
+                        "ACTION=manual_ops_recovery_required",
+                        transaction_id,
+                        outstanding_debit,
+                        str(compensation_error),
+                        str(e),
+                    )
+                    raise Exception(
+                        f"Loan payment failed and the compensating refund of "
+                        f"{outstanding_debit} also failed "
+                        f"(transaction_id={transaction_id}). Manual ops recovery required."
+                    ) from compensation_error
             if transaction_id:
                 publish_transaction_event(
                     PubsubTopics.TRANSACTION_FAILED,
@@ -1609,18 +1798,49 @@ class PaymentService:
 
         logger.info("LPO Details: %s", lpo_details)
 
-        amount: float = lpo_details.get("total_repayment", 0)
-
-        logger.info("LPO Amount: %s", amount)
-
+        # NF-FF-23: check existence BEFORE dereferencing any field — previously
+        # total_repayment was read before the None check (AttributeError -> 500).
         if not lpo_details:
-            raise ValueError("Invalid LPO")
+            raise HTTPException(status_code=404, detail="LPO not found")
 
         if lpo_details.get("status") == "completed":
-            raise ValueError("LPO payment is already completed")
+            raise HTTPException(
+                status_code=409, detail="LPO payment is already completed"
+            )
 
         if lpo_details.get("status") != "disbursed":
             raise ValueError("You can only make payments on disbursed LPOs")
+
+        # NF-FF-23: debit only the OUTSTANDING balance — never the full
+        # total_repayment when prior payments have already been made.
+        total_repayment = float(lpo_details.get("total_repayment") or 0)
+        paid_so_far = None
+        for field in ("total_paid", "amount_paid", "amount_repaid", "paid_amount"):
+            if lpo_details.get(field) is not None:
+                paid_so_far = float(lpo_details.get(field) or 0)
+                break
+        if paid_so_far is None:
+            prior_payments = lpo_details.get("payments")
+            if isinstance(prior_payments, list):
+                paid_so_far = sum(
+                    float(pmt.get("amount", 0) or 0)
+                    for pmt in prior_payments
+                    if isinstance(pmt, dict)
+                )
+            else:
+                paid_so_far = 0.0
+
+        amount: float = round(total_repayment - paid_so_far, 2)
+        if amount <= 0:
+            raise HTTPException(
+                status_code=409,
+                detail="LPO has no outstanding balance to pay.",
+            )
+
+        logger.info(
+            "LPO outstanding amount=%s (total_repayment=%s paid_so_far=%s)",
+            amount, total_repayment, paid_so_far,
+        )
 
         # Validate Account
 

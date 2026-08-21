@@ -94,13 +94,10 @@ logger = logging.getLogger(__name__)
 
 # --- Application Initialization ---
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/cross_border")
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -132,15 +129,18 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     except Exception:
         pass
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": "cross-border"}
-
+app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     debug=settings.DEBUG,
     description="API for managing Cross-Border Payments, Parties, and FX Rates.",
 )
+apply_middleware(app, enable_auth=True)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "cross-border"}
+
 
 # --- Event Handlers ---
 

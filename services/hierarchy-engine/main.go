@@ -327,7 +327,8 @@ func main() {
 	// Get database URL from environment
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgresql://banking_user:banking_pass@localhost:5432/remittance?sslmode=disable"
+		// NF-SEC-6: no hardcoded DSN/credential fallback — fail closed.
+		log.Fatal("DATABASE_URL environment variable must be set")
 	}
 
 	// Create engine

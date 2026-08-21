@@ -114,18 +114,12 @@ POSTGRES_URL = os.getenv("DATABASE_URL", "postgresql://ngapp:password@localhost:
 KYB_ENGINE_URL = os.getenv("KYB_ENGINE_URL", "http://localhost:8130")
 KYB_RISK_ENGINE_URL = os.getenv("KYB_RISK_ENGINE_URL", "http://localhost:8131")
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/kyb_analytics")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -156,6 +150,8 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="KYB Analytics Service",
     description=(
         "ML-based KYB fraud detection, compliance reporting, "
@@ -163,6 +159,11 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     ),
     version="1.0.0",
 )
+apply_middleware(app, enable_auth=True)
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 app.add_middleware(
     CORSMiddleware,

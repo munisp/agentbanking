@@ -11,7 +11,7 @@ class Settings:
     Application settings loaded from environment variables.
     """
     # Database configuration
-        DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/neural_network_service")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/neural_network_service")
     # Set to False for production to prevent accidental table recreation
     ECHO_SQL: bool = os.getenv("ECHO_SQL", "False").lower() in ("true", "1", "t")
 

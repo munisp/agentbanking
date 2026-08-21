@@ -90,14 +90,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- Application Initialization ---
-app = FastAPI(
 
 import psycopg2
 import psycopg2.extras
 import os
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/stablecoin_defi")
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -117,6 +115,19 @@ def init_db():
     conn.close()
 
 init_db()
+
+
+
+
+
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    description=settings.DESCRIPTION,
+    openapi_url="/api/v1/openapi.json"
+)
+apply_middleware(app, enable_auth=True)
 
 @app.get("/api/v1/items")
 async def list_items():
@@ -207,11 +218,6 @@ async def delete_item(item_id: int):
 async def health():
     return {"status": "ok", "service": "stablecoin-defi"}
 
-    title=settings.PROJECT_NAME,
-    version=settings.VERSION,
-    description=settings.DESCRIPTION,
-    openapi_url="/api/v1/openapi.json"
-)
 
 # --- CORS Middleware ---
 app.add_middleware(

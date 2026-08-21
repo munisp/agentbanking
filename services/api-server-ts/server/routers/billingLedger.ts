@@ -2,9 +2,10 @@
  * Billing Ledger tRPC Router — Sprint 81 + Sprint 79 test-compatible
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
+  agents,
   platformBillingLedger,
   tenantBillingConfig,
 } from "../../drizzle/schema";
@@ -218,7 +219,9 @@ const _billingLedger_db = {
 };
 
 export const billingLedgerRouter = router({
-  recordSplit: protectedProcedure
+  // NF-FF-29: admin-only — this mutation writes financial ledger rows and the
+  // caller supplies agentId/amounts, so it must not be callable by agents.
+  recordSplit: adminProcedure
     .input(
       z.object({
         transactionId: z.string().optional(),
@@ -255,8 +258,72 @@ export const billingLedgerRouter = router({
       const netRevenue = platformShare - input.switchFee;
       const splitRatio = grossFee > 0 ? platformShare / grossFee : 0;
 
+      // NF-FF-29: fail closed — a billing ledger entry that is not persisted
+      // must never be reported as recorded.
+      const db = await getDb();
+      if (!db || (db as any)?._isNoop)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — refusing to record billing split",
+        });
+
+      // Verify the caller-supplied agentId references a real agent.
+      const agentIdNum = Number(input.agentId);
+      if (!Number.isFinite(agentIdNum) || agentIdNum <= 0)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "recordSplit: invalid agentId",
+        });
+      const [agentRow] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(eq(agents.id, agentIdNum))
+        .limit(1);
+      if (!agentRow)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `recordSplit: agent ${agentIdNum} does not exist`,
+        });
+
+      const [inserted] = await db
+        .insert(platformBillingLedger)
+        .values({
+          transactionId: 0,
+          transactionRef:
+            input.transactionId || input.transactionRef || `TX-${Date.now()}`,
+          transactionType: input.transactionType,
+          agentId: agentIdNum,
+          posTerminalId: input.posTerminalId ?? null,
+          grossAmount: String(input.grossAmount ?? grossFee),
+          grossFee: String(grossFee),
+          agentCommission: String(input.agentCommission),
+          switchFee: String(input.switchFee),
+          aggregatorFee: String(input.aggregatorFee),
+          platformNetFee: String(netRevenue),
+          billingModel: input.billingModel,
+          clientRevenue: String(clientShare),
+          platformRevenue: String(platformShare),
+          revenueSharePct: String(input.revenueSharePct),
+          currency: input.currency,
+          region: input.region ?? null,
+          carrier: input.carrier ?? null,
+        })
+        .returning({ id: platformBillingLedger.id });
+      if (!inserted)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Billing ledger insert returned no row",
+        });
+      auditFinancialAction(
+        "CREATE",
+        "billingLedger",
+        "recordSplit",
+        `Billing split recorded: ${input.transactionType} gross=${grossFee} net=${netRevenue}`
+      );
+
       const record = {
-        id: "BL-" + Date.now(),
+        id: `BL-${inserted.id}`,
+        ledgerId: inserted.id,
         transactionId:
           input.transactionId || input.transactionRef || "TX-" + Date.now(),
         transactionType: input.transactionType,
@@ -275,45 +342,12 @@ export const billingLedgerRouter = router({
         calculatedTax: taxResult.taxAmount,
         agentCommissionCalc: commissionResult.agentShare,
         platformCommissionCalc: commissionResult.platformShare,
-        syncedToTigerBeetle: true,
-        syncedToOpenSearch: true,
+        // NF-FF-29: no TigerBeetle/OpenSearch sync call is performed by this
+        // procedure, so these flags must never report true.
+        syncedToTigerBeetle: false,
+        syncedToOpenSearch: false,
         createdAt: Date.now(),
       };
-
-      try {
-        const db = await tryDb();
-        if (db) {
-          await db.insert(platformBillingLedger).values({
-            transactionId: 0,
-            transactionRef:
-              input.transactionId || input.transactionRef || `TX-${Date.now()}`,
-            transactionType: input.transactionType,
-            agentId: Number(input.agentId) || 0,
-            posTerminalId: input.posTerminalId ?? null,
-            grossAmount: String(input.grossAmount ?? grossFee),
-            grossFee: String(grossFee),
-            agentCommission: String(input.agentCommission),
-            switchFee: String(input.switchFee),
-            aggregatorFee: String(input.aggregatorFee),
-            platformNetFee: String(netRevenue),
-            billingModel: input.billingModel,
-            clientRevenue: String(clientShare),
-            platformRevenue: String(platformShare),
-            revenueSharePct: String(input.revenueSharePct),
-            currency: input.currency,
-            region: input.region ?? null,
-            carrier: input.carrier ?? null,
-          });
-          auditFinancialAction(
-            "CREATE",
-            "billingLedger",
-            "recordSplit",
-            `Billing split recorded: ${input.transactionType} gross=${grossFee} net=${netRevenue}`
-          );
-        }
-      } catch {
-        // Fail open — return computed result even if DB write fails
-      }
 
       return record;
     }),

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { publicProcedure, adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { agents } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
@@ -328,7 +328,7 @@ export const agentHierarchyRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
-  list: publicProcedure
+  list: adminProcedure
     .input(
       z
         .object({

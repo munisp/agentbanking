@@ -89,11 +89,11 @@ async def close_db_pool():
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="API service for Compliance and Know Your Customer (KYC) operations.",
-apply_middleware(app, enable_auth=True)
     version="1.0.0",
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     lifespan=lifespan
 )
+apply_middleware(app, enable_auth=True)
 
 # CORS Middleware
 app.add_middleware(

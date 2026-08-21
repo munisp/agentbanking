@@ -117,6 +117,10 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       <<: *healthcheck
     restart: unless-stopped
+    # MB-14: MOJALOOP_URL points at mojaloop-simulator, which is not defined in this
+    # compose file — gate the dependent service behind the "simulation" profile so
+    # default runs do not start with a dangling Mojaloop dependency.
+    profiles: ["simulation"]
 
   # ─── Consolidated Go Services ─────────────────────────────────────────────
   # 78 Go services → 6 consolidated containers

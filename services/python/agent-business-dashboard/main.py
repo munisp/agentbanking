@@ -90,19 +90,12 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
-import os
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/agent_business_dashboard")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -124,6 +117,19 @@ def init_db():
     conn.close()
 
 init_db()
+
+
+
+app = FastAPI(
+    title="Agent Business Dashboard API",
+    description="Backend API for agent business intelligence dashboard with revenue, growth, and operational metrics",
+    version="1.0.0",
+)
+apply_middleware(app, enable_auth=True)
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 @app.get("/api/v1/dashboard/{agent_id}")
 async def get_dashboard(agent_id: str):
@@ -180,10 +186,6 @@ async def get_leaderboard():
     rows = cursor.fetchall()
     conn.close()
     return {"leaderboard": [{"agent_id": r[0], "total_transactions": r[1], "total_volume": r[2], "total_commission": r[3]} for r in rows]}
-    title="Agent Business Dashboard API",
-    description="Backend API for agent business intelligence dashboard with revenue, growth, and operational metrics",
-    version="1.0.0",
-)
 
 app.add_middleware(
     CORSMiddleware,

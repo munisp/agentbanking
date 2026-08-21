@@ -9,8 +9,8 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { agents, gl_journal_entries } from "../../drizzle/schema";
-import { eq, sql, gte, lte, desc, count } from "drizzle-orm";
+import { agents, gl_journal_entries, transactions } from "../../drizzle/schema";
+import { eq, and, sql, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { validateInput } from "../lib/routerHelpers";
@@ -21,6 +21,10 @@ import {
   auditFinancialAction,
   withTransaction,
   withIdempotency,
+  claimIdempotencyKey,
+  completeIdempotencyKey,
+  failIdempotencyKey,
+  hashIdempotencyPayload,
 } from "../lib/transactionHelper";
 
 import {
@@ -177,6 +181,11 @@ export const agentFloatTransferRouter = router({
       const fees = calculateFee(txAmount, "floatTopUp");
       const commission = calculateCommission(fees.fee, "floatTopUp");
       const tax = calculateTax(fees.fee, "vat");
+      // NF-FF-10: idempotency claim state (declared outside try so the catch
+      // block can release a claim whose operation failed) — same claim-first
+      // pattern as transactions.ts.
+      let idemHash: string | null = null;
+      let idemClaimed = false;
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -194,63 +203,110 @@ export const agentFloatTransferRouter = router({
             message: "Cannot transfer to yourself",
           });
 
-        const [sender] = await db
-          .select({ floatBalance: agents.floatBalance })
-          .from(agents)
-          .where(eq(agents.id, session.id))
-          .limit(1);
-        if (!sender || Number(sender.floatBalance) < input.amount)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Insufficient float balance",
-          });
-
-        const [recipient] = await db
-          .select({ id: agents.id, agentCode: agents.agentCode })
-          .from(agents)
-          .where(eq(agents.agentCode, input.recipientAgentCode))
-          .limit(1);
-        if (!recipient)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Recipient agent not found",
-          });
-
-        // Debit sender
-        await db
-          .update(agents)
-          .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)}`,
-          })
-          .where(eq(agents.id, session.id));
-
-        // Double-entry journal entry
-        await db.insert(gl_journal_entries).values({
-          entryNumber: `JE-CI-${Date.now()}`,
-          description: `agentFloatTransfer transaction`,
-          debitAccountId: 2001,
-          creditAccountId: 1001,
-          amount: Math.round(
-            (typeof input === "object" && "amount" in input
-              ? Number((input as any).amount)
-              : 0) * 100
-          ),
-          currency: "NGN",
-          referenceType: "transaction",
-          referenceId: ref ?? String(Date.now()),
-          postedBy: session?.agentCode ?? "system",
-          status: "posted",
+        // ── NF-FF-10: Idempotency — claim-first, fail closed ──────────────
+        idemHash = hashIdempotencyPayload({
+          agentId: session.id,
+          recipientAgentCode: input.recipientAgentCode,
+          amount: input.amount,
+          narration: input.narration ?? null,
         });
-
-        // Credit recipient
-        await db
-          .update(agents)
-          .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(input.amount)}`,
-          })
-          .where(eq(agents.id, recipient.id));
+        const claim = await claimIdempotencyKey(
+          input.idempotencyKey,
+          idemHash
+        );
+        if (claim.kind === "replay") {
+          // Same key + same payload already completed — return stored result.
+          return claim.result as any;
+        }
+        idemClaimed = true;
 
         const ref = `AFT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+
+        // ── NF-FF-10: single ACID transaction ──────────────────────────────
+        // Guarded conditional sender debit (balance predicate inside the
+        // UPDATE — closes the check-then-act TOCTOU), recipient credit, GL
+        // journal entry, and the transactions ledger row all commit or roll
+        // back together.
+        await db.transaction(async (tx: any) => {
+          const [recipient] = await tx
+            .select({ id: agents.id, agentCode: agents.agentCode })
+            .from(agents)
+            .where(eq(agents.agentCode, input.recipientAgentCode))
+            .limit(1);
+          if (!recipient)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Recipient agent not found",
+            });
+
+          const debited = await tx
+            .update(agents)
+            .set({
+              floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)}`,
+            })
+            .where(
+              and(
+                eq(agents.id, session.id),
+                sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)} >= 0`
+              )
+            )
+            .returning({ id: agents.id });
+          if (debited.length === 0)
+            throw new TRPCError({
+              code: "UNPROCESSABLE_CONTENT",
+              message: "Insufficient float balance",
+            });
+
+          // Credit recipient
+          const credited = await tx
+            .update(agents)
+            .set({
+              floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(input.amount)}`,
+            })
+            .where(eq(agents.id, recipient.id))
+            .returning({ id: agents.id });
+          if (credited.length === 0)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Recipient agent not found",
+            });
+
+          // Double-entry journal entry (inside the same transaction)
+          await tx.insert(gl_journal_entries).values({
+            entryNumber: `JE-CI-${Date.now()}`,
+            description: `agentFloatTransfer transaction`,
+            debitAccountId: 2001,
+            creditAccountId: 1001,
+            amount: Math.round(
+              (typeof input === "object" && "amount" in input
+                ? Number((input as any).amount)
+                : 0) * 100
+            ),
+            currency: "NGN",
+            referenceType: "transaction",
+            referenceId: ref,
+            postedBy: session?.agentCode ?? "system",
+            status: "posted",
+          });
+
+          // Immutable ledger row for the transfer, inside the same tx.
+          await tx.insert(transactions).values({
+            ref,
+            agentId: session.id,
+            type: "Float Transfer",
+            amount: String(input.amount),
+            fee: "0.00",
+            commission: "0.00",
+            channel: "App",
+            status: "success",
+            metadata: {
+              recipientAgentCode: input.recipientAgentCode,
+              recipientAgentId: recipient.id,
+              narration: input.narration ?? null,
+            },
+            idempotencyKey: input.idempotencyKey ?? null,
+          });
+        });
 
         await writeAuditLog({
           agentId: session.id,
@@ -266,14 +322,29 @@ export const agentFloatTransferRouter = router({
           },
         });
 
-        return {
+        const result = {
           ref,
           amount: input.amount,
           recipientCode: input.recipientAgentCode,
           status: "completed",
           timestamp: new Date().toISOString(),
         };
+        // NF-FF-10: finalize the idempotency claim so a replay returns this
+        // exact result.
+        if (idemClaimed && idemHash) {
+          await completeIdempotencyKey(input.idempotencyKey, idemHash, result);
+        }
+        return result;
       } catch (error) {
+        // NF-FF-10: release the claim (mark failed) so a retry presenting the
+        // same key + payload can safely resume.
+        if (idemClaimed && idemHash) {
+          await failIdempotencyKey(
+            input.idempotencyKey,
+            idemHash,
+            error instanceof Error ? error.message : String(error)
+          );
+        }
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",

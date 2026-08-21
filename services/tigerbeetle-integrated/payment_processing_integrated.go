@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -661,10 +662,15 @@ func (ps *TigerBeetleIntegratedPaymentService) createAgentPaymentHandler(c *gin.
 
 func payment_processing_integratedMain() {
 	// Initialize service
+	// NF-SEC-6: no hardcoded DSN/credential fallback — fail closed.
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL environment variable must be set")
+	}
 	service, err := NewTigerBeetleIntegratedPaymentService(
 		"http://localhost:3000",  // Zig endpoint
 		"http://localhost:3001",  // Edge endpoint
-		"postgres://user:pass@localhost/payments_db",
+		dbURL,
 		"redis://localhost:6379",
 	)
 	if err != nil {

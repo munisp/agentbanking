@@ -31,6 +31,15 @@ from circuit_breaker import circuit_breaker_registry, ResilientHttpClient
 from inventory_reservation import InventoryReservationManager, InsufficientInventoryError
 from idempotency import IdempotencyService, IdempotencyConflictError, IdempotencyInProgressError
 from kafka_consumer import (
+    InventoryEventConsumer, InventoryEventProducer,
+    InventoryEventType, create_default_consumer
+)
+from batch_inventory import BatchInventoryService, BatchItem, BatchResult
+from temporal_workflows import temporal_service, OrderRequest, OrderResult
+from carrier_api import (
+    CarrierAggregator, create_carrier_aggregator,
+    Address, Package, ShipmentRate, ShipmentLabel, TrackingEvent
+)
 
 # --- Production: Graceful Shutdown ---
 import signal
@@ -58,15 +67,6 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
-    InventoryEventConsumer, InventoryEventProducer,
-    InventoryEventType, create_default_consumer
-)
-from batch_inventory import BatchInventoryService, BatchItem, BatchResult
-from temporal_workflows import temporal_service, OrderRequest, OrderResult
-from carrier_api import (
-    CarrierAggregator, create_carrier_aggregator,
-    Address, Package, ShipmentRate, ShipmentLabel, TrackingEvent
-)
 
 # Configure logging
 logging.basicConfig(
@@ -158,13 +158,10 @@ async def lifespan(app: FastAPI):
     
     logger.info("E-commerce service shutdown complete")
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/ecommerce_service")
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -195,11 +192,14 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="E-commerce Service",
     description="Production-ready e-commerce and inventory management",
     version="2.0.0",
     lifespan=lifespan
 )
+apply_middleware(app, enable_auth=True)
 
 app.add_middleware(
     CORSMiddleware,

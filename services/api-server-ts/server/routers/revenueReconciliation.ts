@@ -6,7 +6,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { reconciliationItems, transactions } from "../../drizzle/schema";
 import { eq, desc, count, sql, and, gte, lte } from "drizzle-orm";
 import {
   validateAmount,
@@ -405,7 +405,7 @@ export const revenueReconciliationRouter = router({
         note: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       if (input.amount !== undefined) {
         const check = validateAmount(input.amount, {
           min: 0,
@@ -419,6 +419,61 @@ export const revenueReconciliationRouter = router({
         }
       }
 
+      // NF-FF-27: verify the discrepancy entry exists and persist the
+      // resolution to the reconciliation_items discrepancies table with a
+      // session-derived actor. No fabricated receipts.
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — cannot persist resolution",
+        });
+
+      const asId = /^\d+$/.test(input.entryId) ? Number(input.entryId) : null;
+      const entryWhere =
+        asId !== null
+          ? eq(reconciliationItems.id, asId)
+          : eq(reconciliationItems.externalRef, input.entryId);
+      const [entry] = await db
+        .select()
+        .from(reconciliationItems)
+        .where(entryWhere)
+        .limit(1);
+      if (!entry)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Discrepancy entry ${input.entryId} not found`,
+        });
+      if (entry.matchStatus === "resolved")
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Discrepancy entry ${input.entryId} is already resolved`,
+        });
+
+      const [updated] = await db
+        .update(reconciliationItems)
+        .set({
+          resolution: input.note
+            ? `${input.resolution} — ${input.note}`
+            : input.resolution,
+          resolvedBy: ctx.user.id,
+          resolvedAt: new Date(),
+          matchStatus: "resolved",
+        })
+        .where(
+          and(
+            entryWhere,
+            eq(reconciliationItems.matchStatus, entry.matchStatus)
+          )
+        )
+        .returning();
+      if (!updated)
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "Discrepancy entry changed concurrently — retry the resolution",
+        });
+
       auditFinancialAction(
         "UPDATE",
         "revenueReconciliation.discrepancy",
@@ -431,8 +486,8 @@ export const revenueReconciliationRouter = router({
         entryId: input.entryId,
         resolution: input.resolution,
         note: input.note || "",
-        resolvedAt: Date.now(),
-        resolvedBy: "billing-test-user",
+        resolvedAt: updated.resolvedAt?.getTime() ?? Date.now(),
+        resolvedBy: String(ctx.user.id),
       };
     }),
 

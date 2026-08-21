@@ -14,7 +14,7 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { auditLog, systemConfig } from "../../drizzle/schema";
+import { systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -311,31 +311,15 @@ export const agentMicroInsuranceRouter = router({
       );
 
       try {
-        const db = await getDb();
-        if (!db) throw new Error("DB not available");
-        const premium = Math.floor(input.coverageAmount * 0.003);
-        await db.insert(auditLog).values({
-          action: "insurance_policy_created",
-          resource: "insurance",
-          resourceId: String(input.agentId),
-          status: "success",
-          metadata: {
-            type: input.type,
-            coverageAmount: input.coverageAmount,
-            premium,
-          },
+        // NF-FF-28: fail loud — there is NO insurance policies table in the
+        // drizzle schema, so a policy cannot be persisted. Returning an
+        // unpersisted "pending_underwriting" policy would be a fabricated
+        // confirmation. Refuse instead of writing a misleading success audit.
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "createPolicy is not implemented: no insurance policies table exists in the schema to persist the policy",
         });
-        return {
-          success: true,
-          policy: {
-            agentId: input.agentId,
-            type: input.type,
-            coverageAmount: input.coverageAmount,
-            premium,
-            status: "pending_underwriting",
-            createdAt: new Date().toISOString(),
-          },
-        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -355,20 +339,14 @@ export const agentMicroInsuranceRouter = router({
     )
     .mutation(async ({ input }) => {
       try {
-        const db = await getDb();
-        if (!db) throw new Error("DB not available");
-        await db.insert(auditLog).values({
-          action: "insurance_claim_filed",
-          resource: "insurance",
-          resourceId: input.policyId,
-          status: "success",
-          metadata: { amount: input.amount, description: input.description },
+        // NF-FF-28: fail loud — there is NO insurance claims table in the
+        // drizzle schema, so a claim cannot be persisted. Returning a
+        // never-persisted claimId would be a fabricated confirmation.
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "fileClaim is not implemented: no insurance claims table exists in the schema to persist the claim",
         });
-        return {
-          success: true,
-          claimId: "CLM-" + crypto.randomUUID().toUpperCase(),
-          status: "under_review",
-        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

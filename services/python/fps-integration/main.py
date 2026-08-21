@@ -96,17 +96,17 @@ logger = logging.getLogger(__name__)
 # --- Application Setup ---
 
 app = FastAPI(
-
-@app.get("/health")
-apply_middleware(app, enable_auth=True)
-async def health():
-    return {"status": "ok", "service": "fps-integration"}
-
     title=settings.APP_NAME,
     description="API service for managing Fast Payment System (FPS) transaction integration and webhooks.",
     version="1.0.0",
     debug=settings.DEBUG,
 )
+apply_middleware(app, enable_auth=True)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "fps-integration"}
+
 
 # --- Database Initialization ---
 

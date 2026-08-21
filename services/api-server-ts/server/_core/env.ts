@@ -11,6 +11,21 @@
  *   https://auth.54agent.io       — Keycloak OIDC
  *   mqtt://broker.54agent.io:1883 — MQTT broker (TLS: 8883)
  */
+// NF-SEC-10: production-fatal accessor for secret-bearing env vars — mirrors
+// the production-fatal style of validateEnv()/getJwtSecret() in envValidation.ts.
+// In production (NODE_ENV=production) an unset secret is fatal; outside
+// production the clearly-labelled development fallback is kept.
+function requireSecretEnv(name: string, devFallback: string): string {
+  const value = process.env[name];
+  if (value && value.trim() !== "") return value;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      `FATAL: ${name} must be set in production; no default credential is allowed`
+    );
+  }
+  return devFallback;
+}
+
 export const ENV = {
   // ── Manus Platform ──────────────────────────────────────────────────────────
   appId: process.env.VITE_APP_ID ?? "",
@@ -67,7 +82,7 @@ export const ENV = {
 
   // ── Platform APISix gateway ─────────────────────────────────────────────────
   platformBaseUrl: process.env.PLATFORM_BASE_URL ?? "http://apisix:9080",
-  platformApiKey: process.env.PLATFORM_API_KEY ?? "54agent-platform-dev-api-key",
+  platformApiKey: requireSecretEnv("PLATFORM_API_KEY", "54agent-platform-dev-api-key"),
   platformServiceToken:
     process.env.PLATFORM_SERVICE_TOKEN ?? "54agent-service-token-dev",
 
@@ -133,7 +148,7 @@ export const ENV = {
 
   // ── Termii SMS / OTP ────────────────────────────────────────────────────────
   // Override TERMII_API_KEY in production Secrets panel.
-  termiiApiKey: process.env.TERMII_API_KEY ?? "TLtest_54agent_dev_key",
+  termiiApiKey: requireSecretEnv("TERMII_API_KEY", "TLtest_54agent_dev_key"),
 
   // ── Web Push (VAPID) ────────────────────────────────────────────────────────
   // These are dev/demo VAPID keys — override via VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY in production.
@@ -168,7 +183,7 @@ export const ENV = {
 
   // ── Fluvio streaming cluster ─────────────────────────────────────────────────
   fluvioEndpoint: process.env.FLUVIO_ENDPOINT ?? "http://fluvio:9003",
-  fluvioApiKey: process.env.FLUVIO_API_KEY ?? "54agent-fluvio-dev-key",
+  fluvioApiKey: requireSecretEnv("FLUVIO_API_KEY", "54agent-fluvio-dev-key"),
 
   // ── MQTT broker (InfinyOn MQTT Source Connector) ─────────────────────────────
   mqttBrokerUrl: process.env.MQTT_BROKER_URL ?? "mqtt://mosquitto:1883",

@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
+import { getAgentFromCookie } from "../middleware/agentAuth";
 import {
   eq,
   desc,
@@ -211,110 +212,66 @@ export const agentFloatInsuranceClaimsRouter = router({
       z.object({ agentId: z.number(), amount: z.string(), reason: z.string() })
     )
     .mutation(async ({ input, ctx }) => {
-      // ── Enforce STATUS_TRANSITIONS state machine ──
-      if (typeof input === "object" && "status" in input) {
-        const newStatus = (input as Record<string, unknown>).status as string;
-        const currentStatus =
-          ((input as Record<string, unknown>).currentStatus as string) ||
-          "pending";
-        const allowed =
-          STATUS_TRANSITIONS[currentStatus as keyof typeof STATUS_TRANSITIONS];
-        if (allowed && !allowed.includes(newStatus)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid status transition from ${currentStatus} to ${newStatus}`,
-          });
-        }
-      }
-      const txAmount =
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0;
-      const fees = calculateFee(txAmount, "floatTopUp");
-      const commission = calculateCommission(fees.fee, "floatTopUp");
-      const tax = calculateTax(fees.fee, "vat");
-      try {
-        const db = await getDb();
-        if (!db) throw new Error("DB not available");
-        const [claim] = await db
-          .insert(floatReconciliations)
-          .values({
-            agentId: input.agentId,
-            expectedBalance: input.amount,
-            actualBalance: "0",
-            discrepancy: input.amount,
-            date: new Date(),
-            status: "pending",
-          })
-          .returning();
-
-        // Double-entry GL journal entry
-        await db.insert(gl_journal_entries).values({
-          entryNumber: `JE-${Date.now()}`,
-          description: `agentFloatInsuranceClaims transaction`,
-          debitAccountId: 2001,
-          creditAccountId: 1001,
-          amount: Math.round(
-            (typeof input === "object" && "amount" in input
-              ? Number((input as any).amount)
-              : 0) * 100
-          ),
-          currency: "NGN",
-          status: "posted",
-        });
-        await db.insert(auditLog).values({
-          action: "float_claim_filed",
-          resource: "float_claims",
-          resourceId: String(claim.id),
-          status: "success",
-          metadata: { agentId: input.agentId, amount: input.amount },
-        });
-        await writeAuditLog({
-          agentId:
-            typeof ctx === "object" && ctx !== null && "user" in ctx
-              ? ((ctx as any).user?.id ?? 0)
-              : 0,
-
-          agentCode:
-            typeof ctx === "object" && ctx !== null && "user" in ctx
-              ? ((ctx as any).user?.agentCode ?? "system")
-              : "system",
-
-          action: "MUTATION",
-
-          resource: "agentFloatInsuranceClaims",
-
-          resourceId:
-            typeof input === "object" && input !== null && "id" in input
-              ? String((input as any).id)
-              : "new",
-
-          status: "success",
-
-          metadata: { input: typeof input === "object" ? input : {} },
-        });
-
-        return { success: true, claim };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
+      // NF-FF-25: agentId is session-derived — a caller may only file a claim
+      // for their own agent session unless they are an admin.
+      const session = await getAgentFromCookie(ctx.req);
+      if (!session)
         throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
+          code: "UNAUTHORIZED",
+          message: "Agent session required",
         });
-      }
+      const isAdmin = ctx.user?.role === "admin" || session.role === "admin";
+      if (input.agentId !== session.id && !isAdmin)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Cannot file an insurance claim for another agent",
+        });
+
+      // NF-FF-25: fail loud — there is NO float insurance claims table in the
+      // drizzle schema. No claim row is persisted, no fabricated
+      // floatReconciliations discrepancy row and no fabricated GL journal
+      // entry are written. Claims intake is not implemented; do not silently
+      // fabricate records.
+      logOperation("CLAIM_NOT_IMPLEMENTED", {
+        agentId: session.id,
+        amount: input.amount,
+        reason: input.reason,
+      });
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Float insurance claims are not implemented: no claims table exists in the schema",
+      });
     }),
-  approveClaim: protectedProcedure
+  approveClaim: adminProcedure
     .input(z.object({ claimId: z.number(), notes: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
+        // NF-FF-25: conditional transition pending → resolved; 0 rows => 409.
+        // NOTE: this updates workflow status ONLY — there is intentionally NO
+        // funds leg (no payout / float credit) because no claims settlement
+        // mechanism exists in the schema.
         const [updated] = await db
           .update(floatReconciliations)
-          .set({ status: "resolved", resolvedAt: new Date() })
-          .where(eq(floatReconciliations.id, input.claimId))
+          .set({
+            status: "resolved",
+            resolvedBy: ctx.user.id,
+            resolvedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(floatReconciliations.id, input.claimId),
+              eq(floatReconciliations.status, "pending")
+            )
+          )
           .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Claim not found or not in pending status",
+          });
         await db.insert(auditLog).values({
           action: "float_claim_approved",
           resource: "float_claims",

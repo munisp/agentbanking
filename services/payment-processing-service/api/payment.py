@@ -17,6 +17,7 @@ from utils import get_config
 from dapr.clients import DaprClient
 import json
 import hashlib
+import os
 
 config = get_config()
 logger = create_logger(__name__)
@@ -26,6 +27,31 @@ payment_router = APIRouter()
 
 logger = create_logger(__name__)
 
+# NF-FF-21: ledger identity is deployment configuration, never caller input.
+# Client-supplied x-ledger-id / x-mint-account-id headers are IGNORED; the
+# service fails closed at startup when the configured values are missing.
+_TB_LEDGER_ID = os.environ.get("TB_LEDGER_ID")
+_TB_MINT_ACCOUNT_ID = os.environ.get("TB_MINT_ACCOUNT_ID")
+if not _TB_LEDGER_ID or not _TB_MINT_ACCOUNT_ID:
+    raise RuntimeError(
+        "TB_LEDGER_ID and TB_MINT_ACCOUNT_ID environment variables must be set; "
+        "refusing to start because caller-supplied ledger identity is not trusted."
+    )
+
+
+def _resolve_ledger_ids(ledger_id_header, mint_account_id_header) -> tuple:
+    """Return the configured ledger identity, warning when client headers differ."""
+    if ledger_id_header and ledger_id_header != _TB_LEDGER_ID:
+        logger.warning(
+            "Ignoring client-supplied x-ledger-id=%s (differs from configured ledger)",
+            ledger_id_header,
+        )
+    if mint_account_id_header and mint_account_id_header != _TB_MINT_ACCOUNT_ID:
+        logger.warning(
+            "Ignoring client-supplied x-mint-account-id (differs from configured value)"
+        )
+    return _TB_LEDGER_ID, _TB_MINT_ACCOUNT_ID
+
 
 def _get_dapr_client() -> DaprClient:
     global _dapr
@@ -34,73 +60,143 @@ def _get_dapr_client() -> DaprClient:
     return _dapr
 
 
-def _is_state_store_unavailable(error: Exception) -> bool:
-    """True when the Dapr state store is not yet reachable (transient or config issue)."""
-    message = str(error).lower()
-    return (
-        ("state store" in message and "not configured" in message)
-        or "dapr health check timed out" in message
-        or "connection refused" in message
-        or "connection reset" in message
-    )
+# NF-FF-13/20: idempotency is enforced as an ATOMIC first-write-wins claim
+# against the Dapr state store, bound to a hash of the request payload.
+# Money-movement endpoints FAIL CLOSED: any state-store error aborts the
+# request with 503 instead of letting an unprotected duplicate through.
+
+try:  # Dapr python SDK state options (etag / first-write concurrency)
+    from dapr.clients.grpc._state import Concurrency, Consistency, StateOptions
+
+    _FIRST_WRITE_SUPPORTED = True
+except Exception:  # pragma: no cover - older SDKs without state options
+    _FIRST_WRITE_SUPPORTED = False
 
 
-def _check_idempotency(key: str, label: str) -> responses.JSONResponse | None:
-    """
-    Read idempotency key from Dapr state store.
-    Returns a cached JSONResponse if the key exists, None otherwise.
-    Raises on unexpected errors (not transient store unavailability).
-    """
+def _payload_fingerprint(payload, *extra) -> str:
+    """Stable SHA-256 fingerprint binding an idempotency key to its payload."""
     try:
-        existing = _get_dapr_client().get_state(config.STATE_STORE_NAME, key)
-        if existing and existing.data:
-            body = (
-                existing.data.decode("utf-8")
-                if isinstance(existing.data, (bytes, bytearray))
-                else existing.data
-            )
-            logger.info(
-                "idempotency_hit key=%s label=%s", key, label,
-                extra={"idempotency_key": key, "label": label},
-            )
-            return responses.JSONResponse(content=json.loads(body), status_code=202)
+        raw = payload.model_dump_json()  # pydantic v2
+    except AttributeError:
+        raw = payload.json()  # pydantic v1
+    combined = "|".join([raw, *[str(e) for e in extra]])
+    return hashlib.sha256(combined.encode("utf-8")).hexdigest()
+
+
+def _read_idempotency_record(client, key: str, label: str) -> dict | None:
+    """Read the idempotency record, failing closed (503) on any store error."""
+    try:
+        existing = client.get_state(config.STATE_STORE_NAME, key)
     except Exception as exc:
-        if _is_state_store_unavailable(exc):
-            logger.warning(
-                "idempotency_store_unavailable key=%s label=%s error=%s",
-                key, label, str(exc),
+        logger.error(
+            "idempotency_read_error key=%s label=%s error=%s", key, label, str(exc)
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Payment gateway temporarily unavailable. Please retry.",
+        )
+    if not existing or not existing.data:
+        return None
+    body = (
+        existing.data.decode("utf-8")
+        if isinstance(existing.data, (bytes, bytearray))
+        else existing.data
+    )
+    try:
+        return json.loads(body)
+    except (TypeError, ValueError):
+        logger.error("idempotency_record_corrupt key=%s label=%s", key, label)
+        raise HTTPException(
+            status_code=503,
+            detail="Payment gateway temporarily unavailable. Please retry.",
+        )
+
+
+def _claim_idempotency(
+    key: str, payload_hash: str, label: str
+) -> responses.JSONResponse | None:
+    """Atomically claim an idempotency key (first-write-wins).
+
+    Returns None when THIS request won the claim and must execute the payment.
+    Returns a JSONResponse when an identical request already completed (cached
+    response, 202) or is still in progress (202). Raises 409 when the same key
+    was used with a different payload, and 503 on any state-store error.
+    """
+    client = _get_dapr_client()
+
+    def _replay_or_conflict(record: dict) -> responses.JSONResponse:
+        if record.get("payload_hash") != payload_hash:
+            logger.warning("idempotency_payload_mismatch key=%s label=%s", key, label)
+            raise HTTPException(
+                status_code=409,
+                detail="Idempotency key was already used with a different payload.",
             )
-            # Fail-open: allow the request through but log the gap.
-            # The write path will also fail, meaning retries are NOT protected
-            # until the store recovers.  Ops must be alerted on this metric.
+        if record.get("status") == "completed" and record.get("response") is not None:
+            logger.info("idempotency_hit key=%s label=%s", key, label)
+            return responses.JSONResponse(content=record["response"], status_code=202)
+        logger.info("idempotency_in_progress key=%s label=%s", key, label)
+        return responses.JSONResponse(
+            content={"message": "duplicate request already in progress"},
+            status_code=202,
+        )
+
+    record = _read_idempotency_record(client, key, label)
+    if record is not None:
+        return _replay_or_conflict(record)
+
+    claim = {"payload_hash": payload_hash, "status": "in_progress", "response": None}
+    try:
+        if _FIRST_WRITE_SUPPORTED:
+            # etag="" + first-write concurrency == create-only-if-absent,
+            # which makes the claim atomic (no check-then-act race).
+            client.save_state(
+                config.STATE_STORE_NAME,
+                key,
+                json.dumps(claim),
+                etag="",
+                state_options=StateOptions(
+                    consistency=Consistency.strong,
+                    concurrency=Concurrency.first_write,
+                ),
+            )
         else:
-            logger.error(
-                "idempotency_read_error key=%s label=%s error=%s",
-                key, label, str(exc),
-            )
+            client.save_state(config.STATE_STORE_NAME, key, json.dumps(claim))
+    except Exception as exc:
+        # Lost the race OR the store failed. Re-read to disambiguate; when no
+        # existing claim can be confirmed, fail closed.
+        logger.warning(
+            "idempotency_claim_failed key=%s label=%s error=%s", key, label, str(exc)
+        )
+        record = _read_idempotency_record(client, key, label)
+        if record is None:
             raise HTTPException(
                 status_code=503,
                 detail="Payment gateway temporarily unavailable. Please retry.",
             )
+        return _replay_or_conflict(record)
     return None
 
 
-def _save_idempotency(key: str, body: dict, label: str) -> None:
-    """Persist idempotency result to Dapr state store with best-effort."""
+def _finalize_idempotency(key: str, payload_hash: str, body: dict, label: str) -> None:
+    """Record the successful response under a previously claimed key.
+
+    A failure here is logged CRITICAL but never swallowed silently: the claim
+    marker remains in place, so retries stay replay-safe even without the
+    cached response.
+    """
+    record = {"payload_hash": payload_hash, "status": "completed", "response": body}
     try:
-        _get_dapr_client().save_state(config.STATE_STORE_NAME, key, json.dumps(body))
-        logger.debug("idempotency_saved key=%s label=%s", key, label)
+        _get_dapr_client().save_state(
+            config.STATE_STORE_NAME, key, json.dumps(record)
+        )
+        logger.debug("idempotency_finalized key=%s label=%s", key, label)
     except Exception as exc:
-        if _is_state_store_unavailable(exc):
-            logger.warning(
-                "idempotency_save_skipped key=%s label=%s error=%s",
-                key, label, str(exc),
-            )
-        else:
-            logger.error(
-                "idempotency_save_error key=%s label=%s error=%s",
-                key, label, str(exc),
-            )
+        logger.critical(
+            "idempotency_finalize_failed key=%s label=%s error=%s",
+            key,
+            label,
+            str(exc),
+        )
 
 
 def _idempotency_key_for_payload(prefix: str, *parts: str) -> str:
@@ -120,17 +216,20 @@ def deposit(
     payload: InitiateDepositSchema,
     tenant_id: str = Header(..., alias="x-tenant-id"),
     keycloak_id: str = Header(..., alias="x-keycloak-id"),
-    ledger_id: str = Header(..., alias="x-ledger-id"),
-    mint_account_id: str = Header(..., alias="x-mint-account-id"),
+    ledger_id: str = Header(None, alias="x-ledger-id"),  # ignored: derived from env (NF-FF-21)
+    mint_account_id: str = Header(None, alias="x-mint-account-id"),  # ignored: derived from env (NF-FF-21)
     idempotency_key: str = Header(None, alias="x-idempotency-key"),
 ):
     """Deposit handler. Idempotent when x-idempotency-key header is supplied."""
 
+    resolved_ledger_id, resolved_mint_account_id = _resolve_ledger_ids(
+        ledger_id, mint_account_id
+    )
     context = Context(
         tenant_id=tenant_id,
         keycloak_id=keycloak_id,
-        ledger_id=ledger_id,
-        mint_account_id=mint_account_id,
+        ledger_id=resolved_ledger_id,
+        mint_account_id=resolved_mint_account_id,
     )
 
     idem_key = (
@@ -143,7 +242,8 @@ def deposit(
         )
     )
 
-    cached = _check_idempotency(idem_key, "deposit")
+    payload_hash = _payload_fingerprint(payload, tenant_id, keycloak_id)
+    cached = _claim_idempotency(idem_key, payload_hash, "deposit")
     if cached is not None:
         return cached
 
@@ -151,7 +251,7 @@ def deposit(
         payment_service = PaymentService()
         reference = payment_service.initiate_deposit(payload, context)
         resp_body = {"message": "success", "reference": reference}
-        _save_idempotency(idem_key, resp_body, "deposit")
+        _finalize_idempotency(idem_key, payload_hash, resp_body, "deposit")
         return responses.JSONResponse(content=resp_body, status_code=200)
     except HTTPException as e:
         raise e
@@ -168,17 +268,20 @@ def deposit_with_account_number(
     payload: InitiateDepositWithAccountNumberSchema,
     tenant_id: str = Header(..., alias="x-tenant-id"),
     keycloak_id: str = Header(..., alias="x-keycloak-id"),
-    ledger_id: str = Header(..., alias="x-ledger-id"),
-    mint_account_id: str = Header(..., alias="x-mint-account-id"),
+    ledger_id: str = Header(None, alias="x-ledger-id"),  # ignored: derived from env (NF-FF-21)
+    mint_account_id: str = Header(None, alias="x-mint-account-id"),  # ignored: derived from env (NF-FF-21)
     idempotency_key: str = Header(None, alias="x-idempotency-key"),
 ):
     """Deposit handler using recipient account number. Idempotent via x-idempotency-key."""
 
+    resolved_ledger_id, resolved_mint_account_id = _resolve_ledger_ids(
+        ledger_id, mint_account_id
+    )
     context = Context(
         tenant_id=tenant_id,
         keycloak_id=keycloak_id,
-        ledger_id=ledger_id,
-        mint_account_id=mint_account_id,
+        ledger_id=resolved_ledger_id,
+        mint_account_id=resolved_mint_account_id,
     )
 
     idem_key = (
@@ -191,7 +294,8 @@ def deposit_with_account_number(
         )
     )
 
-    cached = _check_idempotency(idem_key, "deposit_with_account_number")
+    payload_hash = _payload_fingerprint(payload, tenant_id, keycloak_id)
+    cached = _claim_idempotency(idem_key, payload_hash, "deposit_with_account_number")
     if cached is not None:
         return cached
 
@@ -199,7 +303,7 @@ def deposit_with_account_number(
         payment_service = PaymentService()
         reference = payment_service.initiate_deposit_with_account_number(payload, context)
         resp_body = {"message": "success", "reference": reference}
-        _save_idempotency(idem_key, resp_body, "deposit_with_account_number")
+        _finalize_idempotency(idem_key, payload_hash, resp_body, "deposit_with_account_number")
         return responses.JSONResponse(content=resp_body, status_code=200)
     except HTTPException as e:
         raise e
@@ -215,17 +319,20 @@ def transfer(
     payload: InitiatePaymentSchema,
     tenant_id: str = Header(..., alias="x-tenant-id"),
     keycloak_id: str = Header(..., alias="x-keycloak-id"),
-    ledger_id: str = Header(..., alias="x-ledger-id"),
-    mint_account_id: str = Header(..., alias="x-mint-account-id"),
+    ledger_id: str = Header(None, alias="x-ledger-id"),  # ignored: derived from env (NF-FF-21)
+    mint_account_id: str = Header(None, alias="x-mint-account-id"),  # ignored: derived from env (NF-FF-21)
     idempotency_key: str = Header(None, alias="x-idempotency-key"),
 ):
     """Initiate transfer handler. Idempotent via x-idempotency-key header."""
 
+    resolved_ledger_id, resolved_mint_account_id = _resolve_ledger_ids(
+        ledger_id, mint_account_id
+    )
     context = Context(
         tenant_id=tenant_id,
         keycloak_id=keycloak_id,
-        ledger_id=ledger_id,
-        mint_account_id=mint_account_id,
+        ledger_id=resolved_ledger_id,
+        mint_account_id=resolved_mint_account_id,
     )
 
     idem_key = (
@@ -239,7 +346,8 @@ def transfer(
         )
     )
 
-    cached = _check_idempotency(idem_key, "transfer")
+    payload_hash = _payload_fingerprint(payload, tenant_id, keycloak_id)
+    cached = _claim_idempotency(idem_key, payload_hash, "transfer")
     if cached is not None:
         return cached
 
@@ -256,7 +364,7 @@ def transfer(
             )
 
         resp_body = {"message": "success", "reference": reference}
-        _save_idempotency(idem_key, resp_body, "transfer")
+        _finalize_idempotency(idem_key, payload_hash, resp_body, "transfer")
         return responses.JSONResponse(content=resp_body, status_code=200)
     except HTTPException as e:
         raise e
@@ -274,17 +382,20 @@ def loan_payment(
     payload: InitiateLoanPaymentSchema,
     tenant_id: str = Header(..., alias="x-tenant-id"),
     keycloak_id: str = Header(..., alias="x-keycloak-id"),
-    ledger_id: str = Header(..., alias="x-ledger-id"),
-    mint_account_id: str = Header(..., alias="x-mint-account-id"),
+    ledger_id: str = Header(None, alias="x-ledger-id"),  # ignored: derived from env (NF-FF-21)
+    mint_account_id: str = Header(None, alias="x-mint-account-id"),  # ignored: derived from env (NF-FF-21)
     idempotency_key: str = Header(None, alias="x-idempotency-key"),
 ):
     """Loan Payment handler. Idempotent via x-idempotency-key."""
 
+    resolved_ledger_id, resolved_mint_account_id = _resolve_ledger_ids(
+        ledger_id, mint_account_id
+    )
     context = Context(
         tenant_id=tenant_id,
         keycloak_id=keycloak_id,
-        ledger_id=ledger_id,
-        mint_account_id=mint_account_id,
+        ledger_id=resolved_ledger_id,
+        mint_account_id=resolved_mint_account_id,
     )
 
     idem_key = (
@@ -297,7 +408,8 @@ def loan_payment(
         )
     )
 
-    cached = _check_idempotency(idem_key, "loan_payment")
+    payload_hash = _payload_fingerprint(payload, tenant_id, keycloak_id)
+    cached = _claim_idempotency(idem_key, payload_hash, "loan_payment")
     if cached is not None:
         return cached
 
@@ -305,7 +417,7 @@ def loan_payment(
         payment_service = PaymentService()
         reference = payment_service.initiate_loan_payment(payload, context)
         resp_body = {"message": "success", "reference": reference}
-        _save_idempotency(idem_key, resp_body, "loan_payment")
+        _finalize_idempotency(idem_key, payload_hash, resp_body, "loan_payment")
         return responses.JSONResponse(content=resp_body, status_code=200)
     except HTTPException as e:
         raise e
@@ -323,26 +435,40 @@ def lpo_payment(
     payload: InitiateLPOPaymentSchema,
     tenant_id: str = Header(..., alias="x-tenant-id"),
     keycloak_id: str = Header(..., alias="x-keycloak-id"),
-    ledger_id: str = Header(..., alias="x-ledger-id"),
-    mint_account_id: str = Header(..., alias="x-mint-account-id"),
+    ledger_id: str = Header(None, alias="x-ledger-id"),  # ignored: derived from env (NF-FF-21)
+    mint_account_id: str = Header(None, alias="x-mint-account-id"),  # ignored: derived from env (NF-FF-21)
+    idempotency_key: str = Header(None, alias="x-idempotency-key"),
 ):
-    """LPO payment handler."""
+    """LPO payment handler. Idempotent via x-idempotency-key."""
 
+    resolved_ledger_id, resolved_mint_account_id = _resolve_ledger_ids(
+        ledger_id, mint_account_id
+    )
     context = Context(
         tenant_id=tenant_id,
         keycloak_id=keycloak_id,
-        ledger_id=ledger_id,
-        mint_account_id=mint_account_id,
+        ledger_id=resolved_ledger_id,
+        mint_account_id=resolved_mint_account_id,
     )
+
+    payload_hash = _payload_fingerprint(payload, tenant_id, keycloak_id)
+    idem_key = (
+        f"idempotency:lpo:{idempotency_key}"
+        if idempotency_key
+        else f"idempotency:lpo:derived:{payload_hash[:32]}"
+    )
+    cached = _claim_idempotency(idem_key, payload_hash, "lpo_payment")
+    if cached is not None:
+        return cached
 
     try:
         payment_service = PaymentService()
 
         reference = payment_service.initiate_lpo_payment(payload, context)
 
-        return responses.JSONResponse(
-            content={"message": "success", "reference": reference}, status_code=200
-        )
+        resp_body = {"message": "success", "reference": reference}
+        _finalize_idempotency(idem_key, payload_hash, resp_body, "lpo_payment")
+        return responses.JSONResponse(content=resp_body, status_code=200)
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -356,26 +482,40 @@ def insurance_premium_payment(
     payload: InitiateInsurancePremiumPaymentSchema,
     tenant_id: str = Header(..., alias="x-tenant-id"),
     keycloak_id: str = Header(..., alias="x-keycloak-id"),
-    ledger_id: str = Header(..., alias="x-ledger-id"),
-    mint_account_id: str = Header(..., alias="x-mint-account-id"),
+    ledger_id: str = Header(None, alias="x-ledger-id"),  # ignored: derived from env (NF-FF-21)
+    mint_account_id: str = Header(None, alias="x-mint-account-id"),  # ignored: derived from env (NF-FF-21)
+    idempotency_key: str = Header(None, alias="x-idempotency-key"),
 ):
-    """Insurance payment handler."""
+    """Insurance payment handler. Idempotent via x-idempotency-key."""
 
+    resolved_ledger_id, resolved_mint_account_id = _resolve_ledger_ids(
+        ledger_id, mint_account_id
+    )
     context = Context(
         tenant_id=tenant_id,
         keycloak_id=keycloak_id,
-        ledger_id=ledger_id,
-        mint_account_id=mint_account_id,
+        ledger_id=resolved_ledger_id,
+        mint_account_id=resolved_mint_account_id,
     )
+
+    payload_hash = _payload_fingerprint(payload, tenant_id, keycloak_id)
+    idem_key = (
+        f"idempotency:insurance:{idempotency_key}"
+        if idempotency_key
+        else f"idempotency:insurance:derived:{payload_hash[:32]}"
+    )
+    cached = _claim_idempotency(idem_key, payload_hash, "insurance_premium_payment")
+    if cached is not None:
+        return cached
 
     try:
         payment_service = PaymentService()
 
         reference = payment_service.initiate_insurance_premium_payment(payload, context)
 
-        return responses.JSONResponse(
-            content={"message": "success", "reference": reference}, status_code=200
-        )
+        resp_body = {"message": "success", "reference": reference}
+        _finalize_idempotency(idem_key, payload_hash, resp_body, "insurance_premium_payment")
+        return responses.JSONResponse(content=resp_body, status_code=200)
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -389,26 +529,40 @@ def supply_chain_financing_payment(
     payload: SupplyChainFinancingPaymentSchema,
     tenant_id: str = Header(..., alias="x-tenant-id"),
     keycloak_id: str = Header(..., alias="x-keycloak-id"),
-    ledger_id: str = Header(..., alias="x-ledger-id"),
-    mint_account_id: str = Header(..., alias="x-mint-account-id"),
+    ledger_id: str = Header(None, alias="x-ledger-id"),  # ignored: derived from env (NF-FF-21)
+    mint_account_id: str = Header(None, alias="x-mint-account-id"),  # ignored: derived from env (NF-FF-21)
+    idempotency_key: str = Header(None, alias="x-idempotency-key"),
 ):
-    """Supply chain financing payment handler."""
+    """Supply chain financing payment handler. Idempotent via x-idempotency-key."""
 
+    resolved_ledger_id, resolved_mint_account_id = _resolve_ledger_ids(
+        ledger_id, mint_account_id
+    )
     context = Context(
         tenant_id=tenant_id,
         keycloak_id=keycloak_id,
-        ledger_id=ledger_id,
-        mint_account_id=mint_account_id,
+        ledger_id=resolved_ledger_id,
+        mint_account_id=resolved_mint_account_id,
     )
+
+    payload_hash = _payload_fingerprint(payload, tenant_id, keycloak_id)
+    idem_key = (
+        f"idempotency:scf:{idempotency_key}"
+        if idempotency_key
+        else f"idempotency:scf:derived:{payload_hash[:32]}"
+    )
+    cached = _claim_idempotency(idem_key, payload_hash, "supply_chain_financing_payment")
+    if cached is not None:
+        return cached
 
     try:
         payment_service = PaymentService()
 
         reference = payment_service.supply_chain_financing_payment(payload, context)
 
-        return responses.JSONResponse(
-            content={"message": "success", "reference": reference}, status_code=200
-        )
+        resp_body = {"message": "success", "reference": reference}
+        _finalize_idempotency(idem_key, payload_hash, resp_body, "supply_chain_financing_payment")
+        return responses.JSONResponse(content=resp_body, status_code=200)
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -422,21 +576,25 @@ def transfer_credit(
     payload: ExternalTransferSchema,
     tenant_id: str = Header(..., alias="x-tenant-id"),
     keycloak_id: str = Header(..., alias="x-keycloak-id"),
-    ledger_id: str = Header(..., alias="x-ledger-id"),
-    mint_account_id: str = Header(..., alias="x-mint-account-id"),
+    ledger_id: str = Header(None, alias="x-ledger-id"),  # ignored: derived from env (NF-FF-21)
+    mint_account_id: str = Header(None, alias="x-mint-account-id"),  # ignored: derived from env (NF-FF-21)
 ):
     """External credit (deposit) handler."""
 
+    resolved_ledger_id, resolved_mint_account_id = _resolve_ledger_ids(
+        ledger_id, mint_account_id
+    )
     context = Context(
         tenant_id=tenant_id,
         keycloak_id=keycloak_id,
-        ledger_id=ledger_id,
-        mint_account_id=mint_account_id,
+        ledger_id=resolved_ledger_id,
+        mint_account_id=resolved_mint_account_id,
     )
 
     idem_key = f"idempotency:transfer:credit:{payload.transactionId}"
 
-    cached = _check_idempotency(idem_key, "external_credit")
+    payload_hash = _payload_fingerprint(payload, tenant_id, keycloak_id)
+    cached = _claim_idempotency(idem_key, payload_hash, "external_credit")
     if cached is not None:
         return cached
 
@@ -449,7 +607,7 @@ def transfer_credit(
         payment_service = PaymentService()
         reference = payment_service.process_external_credit(payload, context)
         resp_body = {"message": "success", "reference": reference}
-        _save_idempotency(idem_key, resp_body, "external_credit")
+        _finalize_idempotency(idem_key, payload_hash, resp_body, "external_credit")
         return responses.JSONResponse(content=resp_body, status_code=202)
     except HTTPException as e:
         raise e
@@ -467,21 +625,25 @@ def transfer_debit(
     payload: ExternalDebitSchema,
     tenant_id: str = Header(..., alias="x-tenant-id"),
     keycloak_id: str = Header(..., alias="x-keycloak-id"),
-    ledger_id: str = Header(..., alias="x-ledger-id"),
-    mint_account_id: str = Header(..., alias="x-mint-account-id"),
+    ledger_id: str = Header(None, alias="x-ledger-id"),  # ignored: derived from env (NF-FF-21)
+    mint_account_id: str = Header(None, alias="x-mint-account-id"),  # ignored: derived from env (NF-FF-21)
 ):
     """External debit (withdraw) handler."""
 
+    resolved_ledger_id, resolved_mint_account_id = _resolve_ledger_ids(
+        ledger_id, mint_account_id
+    )
     context = Context(
         tenant_id=tenant_id,
         keycloak_id=keycloak_id,
-        ledger_id=ledger_id,
-        mint_account_id=mint_account_id,
+        ledger_id=resolved_ledger_id,
+        mint_account_id=resolved_mint_account_id,
     )
 
     idem_key = f"idempotency:transfer:debit:{payload.transactionId}"
 
-    cached = _check_idempotency(idem_key, "external_debit")
+    payload_hash = _payload_fingerprint(payload, tenant_id, keycloak_id)
+    cached = _claim_idempotency(idem_key, payload_hash, "external_debit")
     if cached is not None:
         return cached
 
@@ -494,7 +656,7 @@ def transfer_debit(
         payment_service = PaymentService()
         reference = payment_service.process_external_debit(payload, context)
         resp_body = {"message": "success", "reference": reference}
-        _save_idempotency(idem_key, resp_body, "external_debit")
+        _finalize_idempotency(idem_key, payload_hash, resp_body, "external_debit")
         return responses.JSONResponse(content=resp_body, status_code=202)
     except HTTPException as e:
         raise e

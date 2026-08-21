@@ -122,7 +122,7 @@ if __name__ == "__main__":
     appsec = OpenAppsecIntegration(
         management_url="https://localhost:8443",
         username="admin",
-        password="SecurePassword123!"
+        password="CHANGE_ME_EXAMPLE"
     )
     
     # Get threat statistics

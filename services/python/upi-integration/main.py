@@ -95,13 +95,11 @@ logging.basicConfig(level=settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
 
 # --- Application Initialization ---
-app = FastAPI(
 
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/upi_integration")
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -132,12 +130,15 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title=f"{settings.SERVICE_NAME.upper()} API",
     description="API service for managing UPI transaction integration and webhooks.",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
+apply_middleware(app, enable_auth=True)
 
 # --- Event Handlers ---
 

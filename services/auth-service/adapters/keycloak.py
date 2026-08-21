@@ -67,7 +67,8 @@ class KeycloakAdapter(ExternalAPIClient):
                 {"type": "password", "value": payload.password, "temporary": False}
             ]
 
-        logger.info(f"create_user_payload: {create_user_payload}")
+        # NF-SEC-3: never log the payload — it contains the plaintext password.
+        logger.info("Creating Keycloak user: username=%s", payload.user_name)
 
         response = self._post(
             endpoint=f"/admin/realms/{self.__realm}/users",
@@ -144,7 +145,8 @@ class KeycloakAdapter(ExternalAPIClient):
             "temporary": False,
         }
 
-        logger.info(f"set_user_password_payload: {set_user_password_payload}")
+        # NF-SEC-3: never log the payload — it contains the plaintext password.
+        logger.info("Setting Keycloak user password: user_id=%s", id)
 
         response = self._put(
             endpoint=f"/admin/realms/{self.__realm}/users/{id}/reset-password",

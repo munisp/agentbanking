@@ -1,9 +1,9 @@
 // Sprint 87: Upgraded from mock data to real DB queries — paymentReconciliation
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { floatReconciliations } from "../../drizzle/schema";
-import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
+import { eq, ne, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -198,18 +198,59 @@ const runReconciliation = protectedProcedure
             code: "NOT_FOUND",
             message: "runReconciliation: record not found",
           });
-        return {
-          success: true,
-          id: input.id,
-          message: "runReconciliation completed",
-          timestamp: new Date().toISOString(),
-        };
+        // NF-FF-18: real reconciliation — recompute the discrepancy from the
+        // persisted expected/actual balances and conditionally update the row
+        // (optimistic concurrency guard on the previously read status).
+        const expected = Number(existing.expectedBalance);
+        const actual = Number(existing.actualBalance);
+        const discrepancy = (actual - expected).toFixed(2);
+        const nextStatus =
+          Math.abs(actual - expected) < 0.005 ? "resolved" : "pending";
+        const [updated] = await db
+          .update(floatReconciliations)
+          .set({ discrepancy, status: nextStatus })
+          .where(
+            and(
+              eq(floatReconciliations.id, input.id),
+              eq(floatReconciliations.status, existing.status ?? "pending")
+            )
+          )
+          .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "runReconciliation: record changed concurrently — retry the operation",
+          });
+        return { success: true, ...updated, message: "runReconciliation applied" };
       }
+      // NF-FF-18: whitelist insertable columns — never mass-assign caller data
+      // (status/resolvedBy/resolvedAt are system-controlled).
+      const d = input.data ?? {};
+      if (
+        d.agentId === undefined ||
+        d.expectedBalance === undefined ||
+        d.actualBalance === undefined
+      )
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "runReconciliation: agentId, expectedBalance and actualBalance are required",
+        });
       const [row] = await db
         .insert(floatReconciliations)
-        .values(input.data || ({} as any))
+        .values({
+          agentId: Number(d.agentId),
+          date: d.date ? new Date(String(d.date)) : new Date(),
+          expectedBalance: String(d.expectedBalance),
+          actualBalance: String(d.actualBalance),
+          discrepancy: (
+            Number(d.actualBalance) - Number(d.expectedBalance)
+          ).toFixed(2),
+          notes: d.notes !== undefined ? String(d.notes) : null,
+        })
         .returning();
-      return { success: true, ...row, message: "runReconciliation completed" };
+      return { success: true, ...row, message: "runReconciliation recorded" };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({
@@ -226,32 +267,76 @@ const resolveDiscrepancy = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
     try {
       const db = (await getDb())!;
       if (input.id) {
+        // NF-FF-18: persist a real resolution — conditional UPDATE guarded on
+        // the row not already being resolved; 404 if absent, 409 on race.
         const [existing] = await db
           .select()
           .from(floatReconciliations)
           .where(eq(floatReconciliations.id, input.id))
-          .limit(100);
+          .limit(1);
         if (!existing)
           throw new TRPCError({
             code: "NOT_FOUND",
             message: "resolveDiscrepancy: record not found",
           });
+        const [updated] = await db
+          .update(floatReconciliations)
+          .set({
+            status: "resolved",
+            resolvedBy: ctx.user.id,
+            resolvedAt: new Date(),
+            ...(input.data?.notes !== undefined
+              ? { notes: String(input.data.notes) }
+              : {}),
+          })
+          .where(
+            and(
+              eq(floatReconciliations.id, input.id),
+              ne(floatReconciliations.status, "resolved")
+            )
+          )
+          .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "resolveDiscrepancy: record already resolved",
+          });
         return {
           success: true,
-          id: input.id,
-          message: "resolveDiscrepancy completed",
-          timestamp: new Date().toISOString(),
+          ...updated,
+          message: "resolveDiscrepancy applied",
         };
       }
+      // NF-FF-18: whitelist insertable columns — never mass-assign caller data.
+      const d = input.data ?? {};
+      if (
+        d.agentId === undefined ||
+        d.expectedBalance === undefined ||
+        d.actualBalance === undefined
+      )
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "resolveDiscrepancy: agentId, expectedBalance and actualBalance are required",
+        });
       const [row] = await db
         .insert(floatReconciliations)
-        .values(input.data || ({} as any))
+        .values({
+          agentId: Number(d.agentId),
+          date: d.date ? new Date(String(d.date)) : new Date(),
+          expectedBalance: String(d.expectedBalance),
+          actualBalance: String(d.actualBalance),
+          discrepancy: (
+            Number(d.actualBalance) - Number(d.expectedBalance)
+          ).toFixed(2),
+          notes: d.notes !== undefined ? String(d.notes) : null,
+        })
         .returning();
-      return { success: true, ...row, message: "resolveDiscrepancy completed" };
+      return { success: true, ...row, message: "resolveDiscrepancy recorded" };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({
@@ -261,31 +346,50 @@ const resolveDiscrepancy = protectedProcedure
       });
     }
   });
-const updateMatchRules = protectedProcedure
+// NF-FF-18: match-rule config fields only. Financial/state columns
+// (status, expectedBalance, actualBalance, discrepancy, resolvedBy,
+// resolvedAt, agentId, date) are NEVER caller-writable through this endpoint.
+const ALLOWED_MATCH_RULE_FIELDS = ["notes"] as const;
+const updateMatchRules = adminProcedure
   .input(
     z.object({ id: z.number(), data: z.record(z.string(), z.any()).optional() })
   )
   .mutation(async ({ input }) => {
     try {
       const db = (await getDb())!;
+      if (input.data) {
+        const rejected = Object.keys(input.data).filter(
+          k => !(ALLOWED_MATCH_RULE_FIELDS as readonly string[]).includes(k)
+        );
+        if (rejected.length > 0)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `updateMatchRules: fields not writable: ${rejected.join(
+              ", "
+            )}. Allowed: ${ALLOWED_MATCH_RULE_FIELDS.join(", ")}`,
+          });
+        const [updated] = await db
+          .update(floatReconciliations)
+          .set({ notes: String(input.data.notes) })
+          .where(eq(floatReconciliations.id, input.id))
+          .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "updateMatchRules: record not found",
+          });
+        return { success: true, ...updated, message: "Record updated" };
+      }
       const [existing] = await db
         .select()
         .from(floatReconciliations)
         .where(eq(floatReconciliations.id, input.id))
-        .limit(100);
+        .limit(1);
       if (!existing)
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "updateMatchRules: record not found",
         });
-      if (input.data) {
-        const [updated] = await db
-          .update(floatReconciliations)
-          .set(input.data)
-          .where(eq(floatReconciliations.id, input.id))
-          .returning();
-        return { success: true, ...updated, message: "Record updated" };
-      }
       return { success: true, ...existing, message: "No changes applied" };
     } catch (error) {
       if (error instanceof TRPCError) throw error;

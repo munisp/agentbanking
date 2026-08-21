@@ -99,18 +99,12 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("Agent Embedded Finance Service shutting down.")
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/agent_embedded_finance")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -142,10 +136,7 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     except Exception:
         pass
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": "agent-embedded-finance"}
-
+app = FastAPI(
     title="Agent Embedded Finance Service",
     description=(
         "Provides Micro-Credit and BNPL capabilities for the 54link agent network. "
@@ -154,6 +145,16 @@ async def health():
     version="1.0.0",
     lifespan=lifespan,
 )
+apply_middleware(app, enable_auth=True)
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "agent-embedded-finance"}
+
 
 app.add_middleware(
     CORSMiddleware,

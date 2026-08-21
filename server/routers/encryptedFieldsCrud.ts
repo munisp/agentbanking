@@ -41,11 +41,28 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
-const KEY = crypto.scryptSync(
-  process.env.JWT_SECRET || "default-key-for-dev",
-  "salt",
-  32
-);
+// NF-SEC-4: encryption key must come from the dedicated PII_ENCRYPTION_KEY env
+// var; the hardcoded "default-key-for-dev" fallback is dev-only and a missing
+// key is fatal in production (thrown here at module init).
+// NOTE (salt limitation): scrypt uses a static salt ("salt"); migrating to
+// random per-record salts would change the ciphertext format and is
+// intentionally out of scope for this fix.
+function resolveEncryptionKey(): Buffer {
+  const secret = process.env.PII_ENCRYPTION_KEY;
+  if (secret) {
+    return crypto.scryptSync(secret, "salt", 32);
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "FATAL: PII_ENCRYPTION_KEY must be set in production; refusing to start with the insecure development fallback key"
+    );
+  }
+  console.warn(
+    "[encryptedFieldsCrud] WARNING: PII_ENCRYPTION_KEY is not set; using the insecure development fallback key. Never run this configuration in production."
+  );
+  return crypto.scryptSync("default-key-for-dev", "salt", 32);
+}
+const KEY = resolveEncryptionKey();
 
 function encrypt(text: string): { encrypted: string; iv: string; tag: string } {
   const iv = crypto.randomBytes(16);

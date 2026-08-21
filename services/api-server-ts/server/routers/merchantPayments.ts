@@ -25,6 +25,10 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  claimIdempotencyKey,
+  completeIdempotencyKey,
+  failIdempotencyKey,
+  hashIdempotencyPayload,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -63,6 +67,12 @@ async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
     );
     throw err;
   }
+}
+
+/** drizzle node-postgres execute() returns a pg QueryResult; tolerate both shapes. */
+function rowsOf(execResult: unknown): any[] {
+  const r = execResult as any;
+  return (r && Array.isArray(r.rows) ? r.rows : r) ?? [];
 }
 
 // ── Audit Trail ────────────────────────────────────────────────────────────
@@ -161,6 +171,7 @@ export const merchantPaymentsRouter = router({
         customerPhone: z.string().max(20).optional(),
         customerName: z.string().max(128).optional(),
         narration: z.string().max(256).optional(),
+        idempotencyKey: z.string().max(64).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -179,6 +190,10 @@ export const merchantPaymentsRouter = router({
         "Executed merchantPayments mutation"
       );
 
+      // NF-FF-1: idempotency claim state (declared outside try so the catch
+      // block can release a claim whose operation failed).
+      let idemHash: string | null = null;
+      let idemClaimed = false;
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session)
@@ -189,6 +204,26 @@ export const merchantPaymentsRouter = router({
 
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        // ── NF-FF-1: Idempotency — claim-first (matches transactions.ts) ─────
+        // The key is CLAIMED before any money movement, closing the
+        // check-then-act race; the claim binds key+payload hash (same key,
+        // different payload → 409). DB errors fail closed inside
+        // claimIdempotencyKey.
+        if (input.idempotencyKey) {
+          idemHash = hashIdempotencyPayload({
+            agentId: session.id,
+            merchantCode: input.merchantCode,
+            amount: input.amount,
+            customerPhone: input.customerPhone ?? null,
+          });
+          const claim = await claimIdempotencyKey(input.idempotencyKey, idemHash);
+          if (claim.kind === "replay") {
+            // Same key + same payload already completed — return stored result.
+            return claim.result as any;
+          }
+          idemClaimed = true;
+        }
 
         const [merchant] = await db
           .select()
@@ -206,6 +241,9 @@ export const merchantPaymentsRouter = router({
             message: "Merchant not found or inactive",
           });
 
+        // Friendly float sufficiency pre-check (advisory fast-path error).
+        // NF-FF-1: the guarded conditional debit inside the transaction below
+        // is the AUTHORITATIVE balance check — this SELECT is not.
         const [agent] = await db
           .select({ floatBalance: agents.floatBalance })
           .from(agents)
@@ -221,45 +259,72 @@ export const merchantPaymentsRouter = router({
         const merchantFee = Math.round(input.amount * 0.015);
         const ref = `MPY-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
 
-        const [tx] = await db
-          .insert(transactions)
-          .values({
-            ref,
-            agentId: session.id,
-            type: "Cash In",
-            amount: String(input.amount),
-            fee: String(merchantFee),
-            commission: String(agentCommission),
-            customerPhone: input.customerPhone ?? null,
-            customerName: input.customerName ?? null,
-            status: "success",
-            channel: "App",
-            metadata: {
-              merchantCode: input.merchantCode,
-              merchantName: merchant.businessName,
-              narration: input.narration,
-              paymentType: "merchant",
-            },
-          })
-          .returning();
+        // ── NF-FF-1: Atomic money movement ───────────────────────────────────
+        // Single DB transaction: guarded float debit (0 rows → 422), merchant
+        // wallet credit, transaction row with platform fee leg recorded.
+        const txRow = await withTransaction(async (tx) => {
+          // Authoritative guarded debit — atomic compare-and-decrement.
+          const debitRows = rowsOf(
+            await tx.execute(
+              sql`UPDATE agents
+                  SET "floatBalance" = "floatBalance"::numeric - ${String(input.amount)}::numeric,
+                      "updatedAt" = NOW()
+                  WHERE id = ${session.id}
+                    AND "floatBalance"::numeric - ${String(input.amount)}::numeric >= 0
+                  RETURNING id`
+            )
+          );
+          if (debitRows.length === 0) {
+            throw new TRPCError({
+              code: "UNPROCESSABLE_CONTENT",
+              message:
+                "Insufficient agent float balance for merchant payment (concurrent update)",
+            });
+          }
 
-        // Credit merchant wallet
-        await db
-          .update(merchants)
-          .set({
-            walletBalance: sql`CAST(${merchants.walletBalance} AS numeric) + ${String(input.amount - merchantFee)}`,
-            totalVolume: sql`CAST(${merchants.totalVolume} AS numeric) + ${String(input.amount)}`,
-            totalTransactions: sql`${merchants.totalTransactions} + 1`,
-          })
-          .where(eq(merchants.id, merchant.id));
+          // Credit merchant wallet (net of merchant/platform fee)
+          await tx
+            .update(merchants)
+            .set({
+              walletBalance: sql`CAST(${merchants.walletBalance} AS numeric) + ${String(input.amount - merchantFee)}`,
+              totalVolume: sql`CAST(${merchants.totalVolume} AS numeric) + ${String(input.amount)}`,
+              totalTransactions: sql`${merchants.totalTransactions} + 1`,
+            })
+            .where(eq(merchants.id, merchant.id));
 
-        // Agent commission
-        await db
-          .update(agents)
-          .set({
-            // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(agentCommission)}`, // removed: not in schema
-          })
-          .where(eq(agents.id, session.id));
+          // Transaction row — platform fee leg recorded in fee column and
+          // metadata (no dedicated platform-fee ledger table exists).
+          const [inserted] = await tx
+            .insert(transactions)
+            .values({
+              ref,
+              idempotencyKey: input.idempotencyKey ?? null,
+              agentId: session.id,
+              type: "Cash In",
+              amount: String(input.amount),
+              fee: String(merchantFee),
+              commission: String(agentCommission),
+              customerPhone: input.customerPhone ?? null,
+              customerName: input.customerName ?? null,
+              status: "success",
+              channel: "App",
+              metadata: {
+                merchantCode: input.merchantCode,
+                merchantName: merchant.businessName,
+                narration: input.narration,
+                paymentType: "merchant",
+                platformFeeLeg: {
+                  type: "platform_revenue",
+                  amount: merchantFee,
+                  currency: "NGN",
+                  agentFloatDebited: String(input.amount),
+                  merchantCredited: String(input.amount - merchantFee),
+                },
+              },
+            })
+            .returning();
+          return inserted;
+        }, "merchantPayment");
 
         await writeAuditLog({
           agentId: session.id,
@@ -276,16 +341,30 @@ export const merchantPaymentsRouter = router({
           },
         });
 
-        return {
+        const resultPayload = {
           ref,
           merchantName: merchant.businessName,
           amount: input.amount,
           merchantFee,
           agentCommission,
           status: "success",
-          transactionId: tx.id,
+          transactionId: txRow.id,
         };
+        // NF-FF-1: finalize the idempotency claim so a replay returns this result.
+        if (idemClaimed && input.idempotencyKey && idemHash) {
+          await completeIdempotencyKey(input.idempotencyKey, idemHash, resultPayload);
+        }
+        return resultPayload;
       } catch (error) {
+        // NF-FF-1: release the claim (mark failed) so a retry presenting the
+        // same key + payload can safely resume.
+        if (idemClaimed && input.idempotencyKey && idemHash) {
+          await failIdempotencyKey(
+            input.idempotencyKey,
+            idemHash,
+            error instanceof Error ? error.message : String(error)
+          );
+        }
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",

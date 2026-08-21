@@ -43,7 +43,9 @@ stringData:
   PAPSS_SECRET_KEY: "papss-secret-key-placeholder"
   PAPSS_PARTICIPANT_ID: "NRP-NG-001"
   TIGERBEETLE_CONNECTION_STRING: "tigerbeetle://tigerbeetle-service:3000"
-  DATABASE_URL: "postgresql://papss:papss_password@postgres-service:5432/papss_db"
+  # NF-SEC-6: no hardcoded credential — inject the real DSN at deploy time
+  # (envsubst / external-secrets / sealed-secrets); never commit the value.
+  DATABASE_URL: "${PAPSS_DATABASE_URL}"
   REDIS_URL: "redis://redis-service:6379/0"
   KAFKA_BROKERS: "kafka-service:9092"
 

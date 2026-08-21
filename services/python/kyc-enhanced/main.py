@@ -95,18 +95,12 @@ logger = logging.getLogger(__name__)
 
 KYC_CORE_URL = os.getenv("KYC_CORE_SERVICE_URL", "http://kyc-service:8015")
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/kyc_enhanced")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -137,10 +131,17 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="KYC Enhanced (EDD) Gateway",
     description="Proxies to canonical KYC service for Enhanced Due Diligence operations.",
     version="2.0.0",
 )
+apply_middleware(app, enable_auth=True)
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
 

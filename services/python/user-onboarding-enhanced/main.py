@@ -91,14 +91,11 @@ logger = logging.getLogger(__name__)
 # Initialize database tables
 init_db()
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 import os
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/user_onboarding_enhanced")
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -118,6 +115,18 @@ def init_db():
     conn.close()
 
 init_db()
+
+
+
+
+
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    description="FastAPI service for Enhanced User Onboarding with KYC and Document Verification.",
+)
+apply_middleware(app, enable_auth=True)
 
 @app.get("/api/v1/items")
 async def list_items():
@@ -208,10 +217,6 @@ async def delete_item(item_id: int):
 async def health():
     return {"status": "ok", "service": "user-onboarding-enhanced"}
 
-    title=settings.PROJECT_NAME,
-    version=settings.VERSION,
-    description="FastAPI service for Enhanced User Onboarding with KYC and Document Verification.",
-)
 
 # --- CORS Middleware ---
 app.add_middleware(

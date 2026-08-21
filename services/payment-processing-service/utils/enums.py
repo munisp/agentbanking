@@ -38,3 +38,5 @@ class PubsubTopics(enum.Enum):
     TRANSACTION_INITIATED = "transaction_initiated"
     TRANSACTION_FAILED = "transaction_failed"
     TRANSACTION_SUCCESS = "transaction_success"
+    # NF-FF-35: completion events must not share the initiation topic.
+    TRANSACTION_COMPLETED = "transaction_completed"

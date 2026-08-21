@@ -124,13 +124,10 @@ APISIX_ADMIN_URL = os.getenv("APISIX_ADMIN_URL", "http://localhost:9180")
 
 # ── FastAPI App ─────────────────────────────────────────────────────────────────
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/store_analytics_engine")
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -161,10 +158,13 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Store Analytics & Recommendation Engine",
     description="Real-time analytics, forecasting, and recommendations for agent stores",
     version="1.0.0",
 )
+apply_middleware(app, enable_auth=True)
 
 app.add_middleware(
     CORSMiddleware,

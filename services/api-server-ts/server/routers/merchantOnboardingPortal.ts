@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, adminProcedure, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, sql, count, and, gte, lte } from "drizzle-orm";
 import { merchants, merchantKycDocs, auditLog } from "../../drizzle/schema";
@@ -199,7 +199,7 @@ export const merchantOnboardingPortalRouter = router({
         });
       }
     }),
-  approveMerchant: protectedProcedure
+  approveMerchant: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const _fees = calculateFee(
@@ -219,16 +219,25 @@ export const merchantOnboardingPortalRouter = router({
 
       try {
         const db = (await getDb())!;
-        await db
+        // NF-FF-31: admin-only activation; conditional UPDATE — only a pending
+        // application may be activated. 0 rows => not found or wrong state.
+        const [updated] = await db
           .update(merchants)
           .set({ status: "active" })
-          .where(eq(merchants.id, input.id));
+          .where(and(eq(merchants.id, input.id), eq(merchants.status, "pending")))
+          .returning({ id: merchants.id });
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "Merchant application not found or not in pending status — cannot activate",
+          });
         await db.insert(auditLog).values({
           action: "merchant_approved",
           resource: "merchants",
           resourceId: String(input.id),
           status: "success",
-          metadata: {},
+          metadata: { approvedBy: ctx.user.id },
         });
         return { success: true };
       } catch (error) {
@@ -240,21 +249,30 @@ export const merchantOnboardingPortalRouter = router({
         });
       }
     }),
-  rejectMerchant: protectedProcedure
+  rejectMerchant: adminProcedure
     .input(z.object({ id: z.number(), reason: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
-        await db
+        // NF-FF-31: admin-only rejection; conditional UPDATE — only a pending
+        // application may be rejected/suspended. 0 rows => wrong state.
+        const [updated] = await db
           .update(merchants)
           .set({ status: "suspended" })
-          .where(eq(merchants.id, input.id));
+          .where(and(eq(merchants.id, input.id), eq(merchants.status, "pending")))
+          .returning({ id: merchants.id });
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "Merchant application not found or not in pending status — cannot reject",
+          });
         await db.insert(auditLog).values({
           action: "merchant_rejected",
           resource: "merchants",
           resourceId: String(input.id),
           status: "success",
-          metadata: { reason: input.reason },
+          metadata: { reason: input.reason, rejectedBy: ctx.user.id },
         });
         return { success: true };
       } catch (error) {

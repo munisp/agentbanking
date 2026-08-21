@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { floatReconciliations } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { agents, floatReconciliations, transactions } from "../../drizzle/schema";
+import { desc, eq, ne, sql, and, gte, lte, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -339,6 +339,108 @@ export const floatReconciliationRouter = router({
         "Executed floatReconciliation mutation"
       );
 
-      return { reconciled: 0, discrepancies: 0, status: "completed" as const };
+      // NF-FF-26: compute against REAL balance caches — the persisted
+      // agents.floatBalance cache vs the derived sum of settled (status =
+      // 'success') transactions. No hardcoded results.
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — cannot reconcile",
+        });
+
+      let agentFilter: ReturnType<typeof eq> | undefined;
+      if (input.agentCode) {
+        const [agent] = await database
+          .select({ id: agents.id, floatBalance: agents.floatBalance })
+          .from(agents)
+          .where(eq(agents.agentCode, input.agentCode))
+          .limit(1);
+        if (!agent)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `Agent ${input.agentCode} not found`,
+          });
+        agentFilter = eq(transactions.agentId, agent.id);
+        const dateFilter = input.date
+          ? gte(transactions.createdAt, new Date(input.date))
+          : undefined;
+        const txWhere =
+          agentFilter && dateFilter
+            ? and(
+                agentFilter,
+                dateFilter,
+                eq(transactions.status, "success")
+              )
+            : and(agentFilter, eq(transactions.status, "success"));
+        const [txAgg] = await database
+          .select({
+            txCount: count(),
+            txTotal: sql<string>`COALESCE(SUM(${transactions.amount}), 0)`,
+          })
+          .from(transactions)
+          .where(txWhere);
+        const [openDiscrepancies] = await database
+          .select({ n: count() })
+          .from(floatReconciliations)
+          .where(
+            and(
+              eq(floatReconciliations.agentId, agent.id),
+              ne(floatReconciliations.status, "resolved"),
+              sql`${floatReconciliations.discrepancy} <> 0`
+            )
+          );
+        const txTotal = Number(txAgg?.txTotal ?? 0);
+        const floatBalance = Number(agent.floatBalance);
+        const variance = Math.abs(floatBalance - txTotal);
+        return {
+          reconciled: Number(txAgg?.txCount ?? 0),
+          discrepancies: Number(openDiscrepancies?.n ?? 0),
+          floatBalance,
+          settledTxTotal: txTotal,
+          variance,
+          matchRate: txTotal > 0 ? 1 - Math.min(variance / txTotal, 1) : 1,
+          status: variance < 0.005 ? ("completed" as const) : ("discrepancy" as const),
+        };
+      }
+
+      // Portfolio-wide: sum of all agent float caches vs all settled tx volume.
+      const [floatAgg] = await database
+        .select({ floatTotal: sql<string>`COALESCE(SUM(${agents.floatBalance}), 0)` })
+        .from(agents);
+      const portfolioTxWhere = input.date
+        ? and(
+            gte(transactions.createdAt, new Date(input.date)),
+            eq(transactions.status, "success")
+          )
+        : eq(transactions.status, "success");
+      const [txAgg] = await database
+        .select({
+          txCount: count(),
+          txTotal: sql<string>`COALESCE(SUM(${transactions.amount}), 0)`,
+        })
+        .from(transactions)
+        .where(portfolioTxWhere);
+      const [openDiscrepancies] = await database
+        .select({ n: count() })
+        .from(floatReconciliations)
+        .where(
+          and(
+            ne(floatReconciliations.status, "resolved"),
+            sql`${floatReconciliations.discrepancy} <> 0`
+          )
+        );
+      const txTotal = Number(txAgg?.txTotal ?? 0);
+      const floatTotal = Number(floatAgg?.floatTotal ?? 0);
+      const variance = Math.abs(floatTotal - txTotal);
+      return {
+        reconciled: Number(txAgg?.txCount ?? 0),
+        discrepancies: Number(openDiscrepancies?.n ?? 0),
+        floatBalance: floatTotal,
+        settledTxTotal: txTotal,
+        variance,
+        matchRate: txTotal > 0 ? 1 - Math.min(variance / txTotal, 1) : 1,
+        status: variance < 0.005 ? ("completed" as const) : ("discrepancy" as const),
+      };
     }),
 });

@@ -130,8 +130,6 @@ import os
 import json
 import httpx
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
@@ -166,6 +164,8 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Gaming Service",
     description="Gaming platforms (Discord/Steam) commerce",
     version="1.0.0"

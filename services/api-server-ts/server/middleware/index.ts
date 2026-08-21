@@ -127,11 +127,18 @@ export function xssSanitizeMiddleware(
 }
 
 // ─── CORS Hardening ─────────────────────────────────────────────
-const ALLOWED_ORIGINS = [
-  /^https?:\/\/localhost(:\d+)?$/,
-  /^https?:\/\/.*\.manus\.(computer|space)$/,
-  /^https?:\/\/.*\.54agent\.com$/,
-];
+// NF-SEC-9: the allowlist is environment-gated. The 54agent production domain
+// is always allowed; localhost and the *.manus.* dev-tooling origins are only
+// allowed outside production (they must never be reachable with credentials
+// in a production deployment).
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const ALLOWED_ORIGINS: RegExp[] = [/^https?:\/\/.*\.54agent\.com$/];
+if (!IS_PRODUCTION) {
+  ALLOWED_ORIGINS.push(
+    /^https?:\/\/localhost(:\d+)?$/,
+    /^https?:\/\/.*\.manus\.(computer|space)$/
+  );
+}
 
 export function corsHardeningMiddleware(
   req: Request,

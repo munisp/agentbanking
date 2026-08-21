@@ -381,6 +381,7 @@ export const merchantRouter = router({
             id: transactions.id,
             amount: transactions.amount,
             status: transactions.status,
+            agentId: transactions.agentId,
           })
           .from(transactions)
           .where(eq(transactions.ref, input.transactionRef))
@@ -394,6 +395,27 @@ export const merchantRouter = router({
         }
 
         const tx = txRows[0];
+
+        // NF-FF-31: IDOR guard — the transaction must belong to the calling
+        // merchant (transactions are linked via merchants.preferredAgentId),
+        // unless the caller is a platform admin.
+        const [merchantProfile] = await db
+          .select({ preferredAgentId: merchants.preferredAgentId })
+          .from(merchants)
+          .where(eq(merchants.id, merchant.id))
+          .limit(1);
+        const isAdmin = ctx.user?.role === "admin";
+        if (
+          !isAdmin &&
+          (!merchantProfile?.preferredAgentId ||
+            tx.agentId !== merchantProfile.preferredAgentId)
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Transaction does not belong to this merchant — cannot raise dispute",
+          });
+        }
 
         // Create dispute record
         const inserted = await db

@@ -21,6 +21,8 @@ export const txTypeEnum = pgEnum("tx_type", [
   "Reversal",
   "Nano Loan",
   "Insurance",
+  // NF-FF-10: agent-to-agent float transfer ledger rows
+  "Float Transfer",
 ]);
 export const txChannelEnum = pgEnum("tx_channel", [
   "Cash",
@@ -36,6 +38,11 @@ export const txStatusEnum = pgEnum("tx_status", [
   "failed",
   "reversed",
   "pending_reversal_approval",
+  // NF-FF-19: reconciliation annotation statuses (disjoint from the
+  // settlement-recognized value statuses above)
+  "flagged",
+  "under_review",
+  "resolved_note",
 ]);
 export const fraudSeverityEnum = pgEnum("fraud_severity", [
   "critical",

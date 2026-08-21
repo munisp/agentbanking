@@ -4,7 +4,7 @@
  * Sprint 54: Full PostgreSQL + middleware integration
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { merchantSettlements } from "../../drizzle/schema";
 import { eq, desc, count, sql, and, gte, lte } from "drizzle-orm";
@@ -359,7 +359,8 @@ export const settlementNettingEngineRouter = router({
       };
     }),
 
-  settleSession: protectedProcedure
+  // NF-FF-16: settling is an admin/back-office operation — adminProcedure.
+  settleSession: adminProcedure
     .input(z.object({ sessionId: z.string() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -369,18 +370,47 @@ export const settlementNettingEngineRouter = router({
           message: "Database unavailable",
         });
       }
-      const numId = parseInt(input.sessionId.replace(/\D/g, "")) || 0;
+      // NF-FF-16: reject unparseable/non-positive ids instead of silently
+      // falling back to 0 (which used to target a non-existent row and still
+      // return a fabricated confirmation).
+      const numId = parseInt(input.sessionId.replace(/\D/g, ""), 10);
+      if (!Number.isFinite(numId) || numId <= 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Invalid settlement session id",
+        });
+      }
       const confirmationRef = `SREF-${Date.now()}`;
+      let settledRow: any;
       try {
-        await db
+        // NF-FF-16: conditional transition — only a session still in
+        // 'calculating' may be settled, atomically. 0 rows means the session
+        // does not exist or was already settled/failed → 409, no fabricated
+        // confirmation.
+        const updatedRows = await db
           .update(merchantSettlements)
           .set({
             status: "settled",
             settledAt: new Date(),
             bankRef: confirmationRef,
           } as any)
-          .where(eq(merchantSettlements.id, numId));
+          .where(
+            and(
+              eq(merchantSettlements.id, numId),
+              eq(merchantSettlements.status, "calculating")
+            )
+          )
+          .returning({ id: merchantSettlements.id });
+        if (updatedRows.length === 0) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "Settlement session is not in 'calculating' status (unknown id or already settled)",
+          });
+        }
+        settledRow = updatedRows[0];
       } catch (e) {
+        if (e instanceof TRPCError) throw e;
         // @ts-expect-error middleware type mismatch
         logger.warn("[NettingEngine]", e);
         throw new TRPCError({

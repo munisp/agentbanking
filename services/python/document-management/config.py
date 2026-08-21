@@ -13,7 +13,7 @@ load_dotenv()
 
 class Settings(BaseModel):
     """Application settings loaded from environment variables."""
-        DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/document_management")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/document_management")
     SERVICE_NAME: str = "document-management"
     
     # Pagination settings

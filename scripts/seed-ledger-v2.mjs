@@ -1,6 +1,28 @@
 import pg from "pg";
 const { Pool } = pg;
-const pool = new Pool({ connectionString: "postgresql://posadmin:pos54link123@localhost:5432/pos54link" });
+
+// NF-SEC-6: the database connection must come from the environment; there is
+// no hardcoded credential default. A passwordless localhost DSN is allowed
+// only with an explicit ALLOW_INSECURE_LOCAL_DB=true opt-in, and never in
+// production. (Matches scripts/seed.mjs round-1 pattern.)
+const ALLOW_INSECURE_LOCAL_DB = process.env.ALLOW_INSECURE_LOCAL_DB === "true";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+let POSTGRES_URL = process.env.POSTGRES_URL ?? process.env.DATABASE_URL;
+if (!POSTGRES_URL) {
+  if (IS_PRODUCTION) {
+    console.error("FATAL: DATABASE_URL (or POSTGRES_URL) must be set when NODE_ENV=production; no default database credential exists.");
+    process.exit(1);
+  }
+  if (!ALLOW_INSECURE_LOCAL_DB) {
+    console.error("FATAL: DATABASE_URL (or POSTGRES_URL) is not set. Set it, or set ALLOW_INSECURE_LOCAL_DB=true to use a passwordless localhost DSN for local development only.");
+    process.exit(1);
+  }
+  console.warn("WARNING: ALLOW_INSECURE_LOCAL_DB=true — using passwordless localhost database DSN (development only).");
+  POSTGRES_URL = "postgresql://localhost:5432/pos54link";
+}
+
+const pool = new Pool({ connectionString: POSTGRES_URL, ssl: false });
 
 async function seed() {
   const client = await pool.connect();

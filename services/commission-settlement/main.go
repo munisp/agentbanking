@@ -1976,7 +1976,8 @@ func main() {
 	// Database connection
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://remittance:remittance@postgresql:5432/remittance?sslmode=disable"
+		// NF-SEC-6: no hardcoded DSN/credential fallback — fail closed.
+		log.Fatal("DATABASE_URL environment variable must be set")
 	}
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{

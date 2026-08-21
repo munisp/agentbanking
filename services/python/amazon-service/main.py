@@ -129,8 +129,6 @@ import uvicorn
 import os
 import httpx
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
@@ -165,6 +163,8 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Amazon Marketplace Service",
     description="Amazon Marketplace integration",
     version="1.0.0"

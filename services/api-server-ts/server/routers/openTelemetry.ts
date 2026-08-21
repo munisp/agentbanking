@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { publicProcedure, adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog, platform_health_checks } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
@@ -317,7 +317,7 @@ export const openTelemetryRouter = router({
       uptime: 99.95,
     };
   }),
-  traceSearch: publicProcedure
+  traceSearch: adminProcedure
     .input(z.object({ query: z.string().optional() }).optional())
     .query(async () => {
       return {

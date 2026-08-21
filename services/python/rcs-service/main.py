@@ -134,8 +134,6 @@ import httpx
 import asyncio
 from enum import Enum
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
@@ -170,6 +168,8 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Rcs Service",
     description="Rich Communication Services",
     version="1.0.0"

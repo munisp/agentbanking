@@ -3,13 +3,15 @@
 TB Account Replay Script
 Run this inside the account-service pod or anywhere with TB + postgres access.
 """
+import os
+
 import tigerbeetle as tb
 from decimal import Decimal
 from sqlalchemy import create_engine, text
 
-DATABASE_URL = "postgresql://doadmin:AVNS_MSy6CW3EGXnA8wJgkLv@db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com:25060/link_core_banking"
-TB_CLUSTER_ID = 233240165285264747596733200182526600436
-TB_ADDRESS = "10.233.107.176:3000,10.233.85.61:3000,10.233.95.243:3000"
+DATABASE_URL = os.environ["DATABASE_URL"]
+TB_CLUSTER_ID = int(os.environ["TB_CLUSTER_ID"])
+TB_ADDRESS = os.environ["TB_ADDRESS"]
 
 engine = create_engine(DATABASE_URL)
 client = tb.ClientSync(cluster_id=int(Decimal(str(TB_CLUSTER_ID))), replica_addresses=TB_ADDRESS)

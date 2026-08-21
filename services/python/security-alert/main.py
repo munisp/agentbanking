@@ -74,13 +74,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # FastAPI app
-app = FastAPI(
 
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/security_alert")
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -111,10 +109,13 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Security Alert Service",
     description="Real-time security monitoring and alerting",
     version="1.0.0"
 )
+apply_middleware(app, enable_auth=True)
 
 security = HTTPBearer()
 

@@ -13,8 +13,8 @@ CHARTS_DIR    = "infrastructure/charts"
 ROUTES_DIR    = "infrastructure/apisix-resources/routes"
 
 COMMON_SECRETS = {
-    "DATABASE_URL":              "postgresql://doadmin:AVNS_MSy6CW3EGXnA8wJgkLv@db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com:25060/link_core_banking",
-    "DATABASE_URI":              "postgresql://doadmin:AVNS_MSy6CW3EGXnA8wJgkLv@db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com:25060/link_core_banking",
+    "DATABASE_URL":              os.environ["DATABASE_URL"],
+    "DATABASE_URI":              os.environ["DATABASE_URL"],
     "DATABASE_POOL_SIZE":        "3",
     "DATABASE_MAX_OVERFLOW":     "2",
     "DATABASE_POOL_TIMEOUT":     "30",
@@ -22,8 +22,8 @@ COMMON_SECRETS = {
     "DB_HOST":                   "db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com",
     "DB_PORT":                   "25060",
     "DB_NAME":                   "link_core_banking",
-    "DB_USER":                   "doadmin",
-    "DB_PASSWORD":               "AVNS_MSy6CW3EGXnA8wJgkLv",
+    "DB_USER":                   os.environ["DB_USER"],
+    "DB_PASSWORD":               os.environ["DB_PASSWORD"],
     "REDIS_URL":                 "redis-master.redis.svc.cluster.local:6379",
     "REDIS_ADDRESS":             "redis-master.redis.svc.cluster.local:6379",
     "REDIS_HOST":                "redis-master.redis.svc.cluster.local",

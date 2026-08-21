@@ -1,8 +1,8 @@
 """
 54Link Carbon Credit Marketplace — Python Microservice
-Port: 8283
+Port: 8256
 
-Carbon verification ML, project impact scoring, market analytics
+Carbon price forecasting, offset portfolio analytics, ESG reporting
 
 Integrations:
 - Kafka (Dapr): Publishes analytics events via Dapr sidecar
@@ -15,10 +15,10 @@ Integrations:
 - Lakehouse: Long-term analytical storage (Iceberg/Delta)
 
 Endpoints:
-#   POST /api/v1/carbon/verify/project — ML-based project verification
-#   GET  /api/v1/carbon/analytics/market — Market analytics and pricing
-#   GET  /api/v1/carbon/analytics/impact — Environmental impact scoring
-#   GET  /api/v1/carbon/analytics/trends — Trading trend analysis
+#   GET  /api/v1/carbon/analytics/prices — Carbon price forecasting
+#   GET  /api/v1/carbon/analytics/portfolio — Offset portfolio analytics
+#   GET  /api/v1/carbon/analytics/esg — ESG impact reporting
+#   POST /api/v1/carbon/analytics/forecast — Market forecast
 """
 
 import os
@@ -73,7 +73,7 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-PORT = int(os.getenv("PORT", "8283"))
+PORT = int(os.getenv("PORT", "8256"))
 DAPR_HTTP_PORT = int(os.getenv("DAPR_HTTP_PORT", "3500"))
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/12")
 FLUVIO_ENDPOINT = os.getenv("FLUVIO_ENDPOINT", "localhost:9003")
@@ -92,13 +92,10 @@ OPENAPPSEC_URL = os.getenv("OPENAPPSEC_URL", "http://localhost:8085")
 
 # ── FastAPI App ─────────────────────────────────────────────────────────────────
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/carbon_credit_marketplace")
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -129,10 +126,13 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Carbon Credit Marketplace Analytics Engine",
-    description="Carbon verification ML, project impact scoring, market analytics",
+    description="Carbon price forecasting, offset portfolio analytics, ESG reporting",
     version="1.0.0",
 )
+apply_middleware(app, enable_auth=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -615,7 +615,7 @@ class OpenAppSecClient:
             pass
         return None
 
-pg_client = PostgresClient(DATABASE_URL, "carbon_analytics")
+pg_client = PostgresClient(DATABASE_URL, "carbon_credit_analytics")
 
 keycloak_client = KeycloakClient(KEYCLOAK_URL)
 permify_client = PermifyClient(PERMIFY_HOST, PERMIFY_PORT)
@@ -845,7 +845,7 @@ async def detect_anomalies(threshold: float = QueryParam(default=2.0)):
 @app.get("/api/v1/analytics/search")
 async def search_analytics(q: str = QueryParam(..., min_length=1)):
     # Try OpenSearch first
-    results = await opensearch.search("carbon_projects", q)
+    results = await opensearch.search("carbon_credits", q)
     if results:
         return {"items": results, "total": len(results), "source": "opensearch"}
     # Fallback to in-memory

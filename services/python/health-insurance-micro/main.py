@@ -92,13 +92,10 @@ OPENAPPSEC_URL = os.getenv("OPENAPPSEC_URL", "http://localhost:8085")
 
 # ── FastAPI App ─────────────────────────────────────────────────────────────────
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/health_insurance_micro")
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -129,10 +126,13 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Health Insurance Micro-Products Analytics Engine",
     description="Actuarial modeling, claims prediction, provider analytics, fraud detection",
     version="1.0.0",
 )
+apply_middleware(app, enable_auth=True)
 
 app.add_middleware(
     CORSMiddleware,

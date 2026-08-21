@@ -24,6 +24,25 @@ import type {
   Kafka as KafkaClient,
   EachMessagePayload,
 } from "kafkajs";
+import {
+  claimIdempotencyKey,
+  completeIdempotencyKey,
+  failIdempotencyKey,
+  hashIdempotencyPayload,
+} from "./lib/transactionHelper";
+
+/**
+ * FF-17: marker error for idempotency-store failures. When the DB-backed
+ * claim cannot be verified (DB down / claim error), the consumer must NOT
+ * process the event unverified and must NOT dead-letter it (that would drop
+ * a money event). Instead the error is rethrown so Kafka redelivers.
+ */
+class KafkaIdempotencyStoreError extends Error {
+  constructor(message: string, readonly cause?: unknown) {
+    super(message);
+    this.name = "KafkaIdempotencyStoreError";
+  }
+}
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -120,14 +139,14 @@ eventHandlers.set("payment.failed", async event => {
 eventHandlers.set("agent.registered", async event => {
   const { agentId, name, region, tier } = event.payload as any;
   console.log(
-    `[Kafka] Agent registered: ${agentId} name=${name} region=${region}`
+    `[Kafka] Agent registered: agentId=${agentId} name=${name} region=${region}`
   );
   // Initialize float account, send welcome notification, assign to region
 });
 
 eventHandlers.set("agent.suspended", async event => {
   const { agentId, reason, suspendedBy } = event.payload as any;
-  console.log(`[Kafka] Agent suspended: ${agentId} reason=${reason}`);
+  console.log(`[Kafka] Agent suspended: agentId=${agentId} reason=${reason}`);
   // Lock float, disable terminal, notify compliance
 });
 
@@ -263,7 +282,9 @@ export class PosEventConsumer {
 
       const event: PosEvent = JSON.parse(value);
 
-      // Idempotency check
+      // Idempotency check — fast path: in-memory cache (FF-17: retained as a
+      // cache only; the DB claim below is authoritative, so a restart or the
+      // 100k-cap eviction can no longer cause a money event to be reprocessed).
       if (this.config.enableIdempotency && this.processedIds.has(event.id)) {
         return; // Already processed
       }
@@ -271,15 +292,55 @@ export class PosEventConsumer {
       // Find and execute handler
       const handler = eventHandlers.get(event.type);
       if (handler) {
-        await handler(event);
-        this.metrics.messagesProcessed++;
+        if (this.config.enableIdempotency) {
+          // FF-17: claim-first, DB-authoritative idempotency via the shared
+          // idempotency_keys table (see lib/transactionHelper). The claim
+          // happens BEFORE the handler runs; on success the claim is
+          // completed, on handler failure it is marked failed (retry-safe).
+          const idemKey = `kafka:${event.id}`;
+          const requestHash = hashIdempotencyPayload(event);
+          let claim;
+          try {
+            claim = await claimIdempotencyKey(idemKey, requestHash);
+          } catch (claimErr) {
+            // Fail CLOSED for money events: the processed-event record could
+            // not be verified. Rethrow so Kafka redelivers — never process an
+            // unverified money event, never DLQ it (that would drop it).
+            throw new KafkaIdempotencyStoreError(
+              `Idempotency claim failed for event ${event.id} — refusing to process unverified: ${(claimErr as Error).message}`,
+              claimErr
+            );
+          }
+          if (claim.kind === "replay") {
+            // Already processed durably (possibly by a previous process or
+            // consumer replica) — skip and cache locally.
+            this.processedIds.add(event.id);
+            this.metrics.lastMessageAt = Date.now();
+            return;
+          }
+          try {
+            await handler(event);
+            await completeIdempotencyKey(idemKey, requestHash, null);
+          } catch (handlerErr) {
+            await failIdempotencyKey(
+              idemKey,
+              requestHash,
+              handlerErr instanceof Error ? handlerErr.message : String(handlerErr)
+            );
+            throw handlerErr;
+          }
+          this.metrics.messagesProcessed++;
+        } else {
+          await handler(event);
+          this.metrics.messagesProcessed++;
+        }
       } else {
         console.warn(
           `[Kafka Consumer] No handler for event type: ${event.type}`
         );
       }
 
-      // Mark as processed
+      // Mark as processed (in-memory fast-path cache)
       if (this.config.enableIdempotency) {
         this.processedIds.add(event.id);
         if (this.processedIds.size > 100_000) {
@@ -290,6 +351,16 @@ export class PosEventConsumer {
 
       this.metrics.lastMessageAt = Date.now();
     } catch (error: any) {
+      if (error instanceof KafkaIdempotencyStoreError) {
+        // FF-17 fail-closed: the event was NOT processed and must NOT be
+        // dead-lettered. Rethrow so kafkajs does not commit the offset and
+        // the event is redelivered once the idempotency store recovers.
+        console.error(
+          `[Kafka Consumer] Idempotency store unavailable on ${topic}:${partition} — event ${message.key} will be redelivered:`,
+          error.message
+        );
+        throw error;
+      }
       this.metrics.messagesFailed++;
       console.error(
         `[Kafka Consumer] Processing error on ${topic}:${partition}:`,

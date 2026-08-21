@@ -212,7 +212,6 @@ const processBatch = protectedProcedure
   .input(
     z.object({
       id: z.number().optional(),
-      data: z.record(z.string(), z.any()).optional(),
     })
   )
   .mutation(async ({ input, ctx }) => {
@@ -241,43 +240,43 @@ const processBatch = protectedProcedure
     try {
       const db = (await getDb())!;
       if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(merchantPayouts)
-          .where(eq(merchantPayouts.id, input.id))
-          .limit(100);
-        if (!existing)
+        // NF-FF-17: claim the batch for processing with a conditional
+        // transition. Only a 'pending' payout can move to 'processing';
+        // 0 rows means unknown id or already claimed → 409 instead of the
+        // old fabricated "completed" response.
+        const claimed = await db
+          .update(merchantPayouts)
+          .set({ status: "processing" } as any)
+          .where(
+            and(
+              eq(merchantPayouts.id, input.id),
+              eq(merchantPayouts.status, "pending")
+            )
+          )
+          .returning();
+        if (claimed.length === 0)
           throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "processBatch: record not found",
+            code: "CONFLICT",
+            message:
+              "processBatch: payout is not in 'pending' status (unknown id or already claimed)",
           });
         return {
           success: true,
           id: input.id,
-          message: "processBatch completed",
+          status: "processing",
+          message: "processBatch claimed for processing",
           timestamp: new Date().toISOString(),
         };
       }
-      const [row] = await db
-        .insert(merchantPayouts)
-        .values(input.data || ({} as any))
-        .returning();
-
-      // Double-entry GL journal entry
-      await db.insert(gl_journal_entries).values({
-        entryNumber: `JE-${Date.now()}`,
-        description: `bulkPaymentProcessor transaction`,
-        debitAccountId: 2001,
-        creditAccountId: 1001,
-        amount: Math.round(
-          (typeof input === "object" && "amount" in input
-            ? Number((input as any).amount)
-            : 0) * 100
-        ),
-        currency: "NGN",
-        status: "posted",
+      // NF-FF-17: no-id branch previously mass-assigned input.data into
+      // merchantPayouts, posted a fabricated GL journal entry, and returned
+      // success. There is no payment-provider integration to create+process
+      // a batch here, so refuse explicitly.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "processBatch: creating a new payout batch is not implemented (no payment provider integration)",
       });
-      return { success: true, ...row, message: "processBatch completed" };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({

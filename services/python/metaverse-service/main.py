@@ -118,8 +118,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
@@ -154,6 +152,8 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Metaverse Service",
     description="Integration service for metaverse platforms and virtual economies",
     version="1.0.0"

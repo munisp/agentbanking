@@ -30,7 +30,7 @@ kubectl apply -f openappsec-deployment.yaml
 
 ## Access
 - Management Console: https://localhost:8443
-- Default credentials: admin / SecurePassword123!
+- Default credentials: admin / CHANGE_ME_EXAMPLE (set a strong password via OPENAPPSEC_ADMIN_PASSWORD; no default is committed)
 
 ## Configuration
 

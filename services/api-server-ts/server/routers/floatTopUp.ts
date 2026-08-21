@@ -280,8 +280,13 @@ export const floatTopUpRouter = router({
               title: `Large Float Top-Up Requires Supervisor Approval — ₦${input.amount.toLocaleString()}`,
               content: `Agent ${session.agentCode} (${session.name}) has requested a float top-up of ₦${input.amount.toLocaleString()} (above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()} threshold). Please review in the Supervisor Dashboard → Pending Float Approvals.`,
             });
-          } catch {
-            // Non-critical
+          } catch (notifyErr) {
+            // MB-15/16: non-blocking, but NOT silent — a missed supervisor
+            // notification stalls the approval workflow for a large top-up.
+            console.error(
+              `[floatTopUp] supervisor notification failed for top-up request ${result[0].id}:`,
+              notifyErr instanceof Error ? notifyErr.message : notifyErr
+            );
           }
         }
 

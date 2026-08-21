@@ -171,7 +171,7 @@ class Alert(Base, TimestampMixin, SoftDeleteMixin, AuditMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     service_id: Mapped[int] = mapped_column(
-        ForeignKey("services.id", ondelete="CASCADE"),
+        ForeignKey("alerts.id", ondelete="RESTRICT"), # RESTRICT to prevent deleting an alert that caused an incident
         nullable=False,
         index=True,
         doc="Foreign key to the Service that triggered the alert."
@@ -237,7 +237,7 @@ if __name__ == '__main__':
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-        engine = create_engine("postgresql://postgres:postgres@localhost:5432/user_onboarding_enhanced")
+    engine = create_engine("postgresql://postgres:postgres@localhost:5432/user_onboarding_enhanced")
     
     print("Creating tables...")
     create_tables(engine)

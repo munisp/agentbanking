@@ -1,10 +1,10 @@
 import { useState } from "react";
 
 export default function Customer360Page() {
-  const { data, isLoading } = {data: null, isLoading: false, refetch: () => {}};
+  const { data, isLoading, refetch: _refetchList } = {data: null as any, isLoading: false, refetch: () => {}};
   const [selectedId, setSelectedId] = useState("");
-  const { data: profile } = {data: null, isLoading: false, refetch: () => {}};
-  const sentiment = {mutate: () => {}, mutateAsync: async () => {}, isPending: false, isLoading: false};
+  const { data: profile } = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const sentiment = {mutate: (_vars?: any) => {}, mutateAsync: async (_vars?: any) => {}, isPending: false, isLoading: false, data: null as any};
 
   if (isLoading)
     return <div className="p-8 text-center">Loading customer 360...</div>;

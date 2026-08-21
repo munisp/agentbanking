@@ -2,6 +2,7 @@
  * Payment Cancel Callback Page — 54agent POS Shell
  * Displays cancellation message with retry CTA after Stripe checkout cancellation.
  */
+import { Link } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { XCircle, ArrowLeft, RefreshCw } from "lucide-react";

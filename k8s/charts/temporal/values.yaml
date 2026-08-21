@@ -70,5 +70,5 @@ env:
   DB_PORT: "5432"
   USER: temporal
   POSTGRES_USER: temporal
-  POSTGRES_PWD: password
+  POSTGRES_PWD: ""  # REQUIRED: Set via --set env.POSTGRES_PWD or a K8S secret; template fails closed if empty
   POSTGRES_SEEDS: postgresql

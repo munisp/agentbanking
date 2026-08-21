@@ -69,7 +69,6 @@ export default function DataThresholdAlerts() {
   const { data: operatorsData } =
     // @ts-ignore — Sprint 85: strict-mode suppression
     trpc.thresholdAlerts.operators.useQuery() as any;
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: eventsData } = trpc.thresholdAlerts.events.useQuery({}) as any;
 
   // @ts-ignore — Sprint 85: strict-mode suppression

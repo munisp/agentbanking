@@ -356,32 +356,14 @@ export async function initiateIlpSettlementTransfer(params: {
   ilpPacket: string;
   condition: string;
 } | null> {
-  try {
-    const res = await fetch(
-      `${MOJALOOP_SIDECAR_URL}/mojaloop/settlement-transfer`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          payerFsp: params.payerFsp,
-          payeeFsp: params.payeeFsp,
-          amount: params.amount,
-          currency: params.currency,
-          transactionRef: params.batchId,
-        }),
-        signal: AbortSignal.timeout(5000),
-      }
-    );
-    if (res.ok) return await res.json();
-    return null;
-  } catch (e) {
-    logger.error(
-      `[Mojaloop] ILP settlement transfer failed (fail-closed): ${(e as Error).message}`
-    );
-    throw new Error(
-      `Interbank settlement failed — refusing to proceed without ILP confirmation: ${(e as Error).message}`
-    );
-  }
+  // NF-FF-30: fail loud — amount/payeeFsp must be sourced from a persisted
+  // settlement batch row (looked up by batchId), never from caller-supplied
+  // parameters. No settlement-batches table exists in the drizzle schema, so
+  // this transfer cannot be safely parameterized. Refuse to move funds.
+  void params;
+  throw new Error(
+    "initiateIlpSettlementTransfer is not implemented: no persisted settlement-batches store exists to source and bound amount/payeeFsp by batchId — refusing caller-supplied transfer parameters"
+  );
 }
 
 // ── Middleware Health Check ───────────────────────────────────────────────

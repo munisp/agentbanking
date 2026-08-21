@@ -15,7 +15,7 @@ services:
       - DB=postgresql
       - DB_PORT=5432
       - POSTGRES_USER=${TEMPORAL_DB_USER:-temporal}
-      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:-temporal-secret}
+      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:?must be set}
       - POSTGRES_SEEDS=postgres-primary
       - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/dynamic-config.yaml
       - TEMPORAL_BROADCAST_ADDRESS=temporal-frontend-1
@@ -39,7 +39,7 @@ services:
       - DB=postgresql
       - DB_PORT=5432
       - POSTGRES_USER=${TEMPORAL_DB_USER:-temporal}
-      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:-temporal-secret}
+      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:?must be set}
       - POSTGRES_SEEDS=postgres-primary
       - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/dynamic-config.yaml
       - TEMPORAL_BROADCAST_ADDRESS=temporal-frontend-2
@@ -60,7 +60,7 @@ services:
       - DB=postgresql
       - DB_PORT=5432
       - POSTGRES_USER=${TEMPORAL_DB_USER:-temporal}
-      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:-temporal-secret}
+      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:?must be set}
       - POSTGRES_SEEDS=postgres-primary
       - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/dynamic-config.yaml
       - TEMPORAL_BROADCAST_ADDRESS=temporal-history-1
@@ -82,7 +82,7 @@ services:
       - DB=postgresql
       - DB_PORT=5432
       - POSTGRES_USER=${TEMPORAL_DB_USER:-temporal}
-      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:-temporal-secret}
+      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:?must be set}
       - POSTGRES_SEEDS=postgres-primary
       - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/dynamic-config.yaml
       - TEMPORAL_BROADCAST_ADDRESS=temporal-history-2
@@ -103,7 +103,7 @@ services:
       - DB=postgresql
       - DB_PORT=5432
       - POSTGRES_USER=${TEMPORAL_DB_USER:-temporal}
-      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:-temporal-secret}
+      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:?must be set}
       - POSTGRES_SEEDS=postgres-primary
       - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/dynamic-config.yaml
       - TEMPORAL_BROADCAST_ADDRESS=temporal-matching-1
@@ -123,7 +123,7 @@ services:
       - DB=postgresql
       - DB_PORT=5432
       - POSTGRES_USER=${TEMPORAL_DB_USER:-temporal}
-      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:-temporal-secret}
+      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:?must be set}
       - POSTGRES_SEEDS=postgres-primary
       - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/dynamic-config.yaml
       - TEMPORAL_BROADCAST_ADDRESS=temporal-worker-1

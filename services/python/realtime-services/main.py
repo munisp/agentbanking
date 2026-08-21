@@ -119,6 +119,7 @@ init_db()
 
 
 
+
 app = FastAPI(
     title="Real-time Event Services",
     description="WebSocket-based real-time event broadcasting for transaction updates, alerts, and dashboard feeds",

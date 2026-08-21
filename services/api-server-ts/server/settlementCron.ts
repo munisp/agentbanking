@@ -555,8 +555,13 @@ export async function runDeadLetterDigest(): Promise<void> {
         const parsed = parseInt(cfgRows[0].value, 10);
         if (!isNaN(parsed) && parsed >= 0) autoRetryThreshold = parsed;
       }
-    } catch {
-      // fall back to default of 5
+    } catch (cfgErr) {
+      // MB-15/16: config read failure must be visible; falling back to the
+      // default threshold still triggers dead-letter auto-retries below.
+      console.error(
+        "[deadLetterDigest] failed to read dead_letter_auto_retry_threshold from system_config; using default 5:",
+        cfgErr instanceof Error ? cfgErr.message : cfgErr
+      );
     }
     if (failedItems.length <= autoRetryThreshold) {
       const now = new Date();

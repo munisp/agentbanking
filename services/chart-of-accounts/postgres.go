@@ -34,13 +34,14 @@ func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 		}
 		password := os.Getenv("POSTGRES_PASSWORD")
 		if password == "" {
-			password = "coa_password"
+			// NF-SEC-6: no hardcoded database password fallback — fail closed.
+			log.Fatal("POSTGRES_PASSWORD must be set (or provide POSTGRES_URL)")
 		}
 		dbname := os.Getenv("POSTGRES_DB")
 		if dbname == "" {
 			dbname = "coa_db"
 		}
-		connStr = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		connStr = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=require",
 			host, port, user, password, dbname)
 	}
 

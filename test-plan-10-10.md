@@ -1,5 +1,7 @@
 # Test Plan: 10/10 Business Logic Production Readiness
 
+> ⚠️ **2026-08 correction (assurance re-verification @ `505705ac`):** the "477 router files" and "4,277+ tests" figures below are session-specific claims from the PR #37 session and are **not reproducible from the current tree**: `server/routers/` contains 418 `.ts` files (478 in the `services/api-server-ts` mirror), and `services/api-server-ts` contains 2 test files with 174 test cases. No 4,000+ test suite exists in the repository. Treat the numeric pass criteria below as historical.
+
 ## What Changed
 
 477 tRPC router files enhanced with business logic: data integrity checks, transaction safety wrappers, error handling guards, domain calculation helpers, audit trail metadata, and extended validation schemas. Score improved from 6.2/10 → 9.8/10.
@@ -28,7 +30,7 @@ All changes are backend (server/routers/\*.ts). No UI changes. **Shell-only test
 **Assertions (concrete expected values):**
 
 - `calculateFee(10000, "transfer")` → `{fee: 50, breakdown: {flat: 25, percentage: 25}}`
-- `calculateFee(10000, "cashOut")` → `{fee: 200, breakdown: {flat: 100, percentage: 100}}`
+- `calculateFee(10000, "cashOut")` → `{fee: 200, breakdown: {flat: 100, percentage: 100}}` (minimum fee enforced)
 - `calculateFee(0, "transfer")` → `{fee: 25, breakdown: {flat: 25, percentage: 0}}` (minimum fee enforced)
 - `calculateCommission(50, "transfer")` → `{agentShare: 17.5, platformShare: 17.5, superAgentShare: 10, aggregatorShare: 5}` (total = 50)
 - `calculateTax(50, "VAT")` → `{taxAmount: 3.75, netAmount: 46.25, taxRate: 7.5}`

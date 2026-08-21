@@ -94,18 +94,12 @@ logger = logging.getLogger(__name__)
 # Create database tables on startup
 database.create_db_and_tables()
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/multi_currency_accounts")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
-apply_middleware(app, enable_auth=True)
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -137,16 +131,23 @@ def log_audit(action: str, entity_id: str, data: str = ""):
     except Exception:
         pass
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": "multi-currency-accounts"}
-
+app = FastAPI(
     title=settings.APP_NAME,
     version=settings.VERSION,
     description="API for managing multi-currency accounts and balances.",
     docs_url="/docs",
     redoc_url="/redoc"
 )
+apply_middleware(app, enable_auth=True)
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "multi-currency-accounts"}
+
 
 # --- Middleware ---
 

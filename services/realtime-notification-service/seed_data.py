@@ -23,9 +23,8 @@ from main import (
 )
 
 # Database setup
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:password@localhost:5432/link_core_banking"
-)
+# NF-SEC-6: no hardcoded credential fallback — fail closed when unset.
+DATABASE_URL = os.environ["DATABASE_URL"]
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

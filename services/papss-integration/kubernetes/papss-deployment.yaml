@@ -425,3 +425,4 @@ spec:
                 memory: "512Mi"
                 cpu: "500m"
           restartPolicy: OnFailure
+

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -1104,10 +1105,15 @@ func (as *TigerBeetleIntegratedAccountService) searchAccountsHandler(c *gin.Cont
 
 func account_service_integratedMain() {
 	// Initialize service
+	// NF-SEC-6: no hardcoded DSN/credential fallback — fail closed.
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL environment variable must be set")
+	}
 	service, err := NewTigerBeetleIntegratedAccountService(
 		"http://localhost:3000",  // Zig endpoint
 		"http://localhost:3001",  // Edge endpoint
-		"postgres://user:pass@localhost/accounts_db",
+		dbURL,
 		"redis://localhost:6379",
 	)
 	if err != nil {
@@ -1122,4 +1128,5 @@ func account_service_integratedMain() {
 	log.Printf("Starting TigerBeetle Integrated Account Service on port %s", port)
 	log.Fatal(router.Run(port))
 }
+
 

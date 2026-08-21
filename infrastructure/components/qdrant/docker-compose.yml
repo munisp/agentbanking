@@ -16,7 +16,7 @@ services:
       - qdrant_storage:/qdrant/storage
       - ./config.yaml:/qdrant/config/production.yaml
     environment:
-      QDRANT__SERVICE__API_KEY: "${QDRANT_API_KEY:-changeme}"
+      QDRANT__SERVICE__API_KEY: "${QDRANT_API_KEY:?must be set}"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
       interval: 30s

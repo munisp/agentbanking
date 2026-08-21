@@ -102,16 +102,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/gaming_integration")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
 
 def get_db():
@@ -143,10 +138,16 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Gaming Integration Service",
     description="Integration service for gaming platforms and in-game purchases",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 # CORS middleware
 app.add_middleware(
@@ -585,4 +586,5 @@ async def get_gaming_analytics(agent_id: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8081)
+
 

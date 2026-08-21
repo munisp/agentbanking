@@ -3,7 +3,7 @@ import { Loader2, RefreshCw, Download, Search, Filter } from "lucide-react";
 import { toast } from "sonner";
 
 export default function AgentKycDocVault() {
-  const stats = {data: null, isLoading: false, refetch: () => {}};
+  const stats = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
   const [searchTerm, setSearchTerm] = useState("");
 
   return (

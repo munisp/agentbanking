@@ -513,7 +513,7 @@ services:
     environment:
       NIFI_WEB_HTTPS_PORT: 8443
       SINGLE_USER_CREDENTIALS_USERNAME: admin
-      SINGLE_USER_CREDENTIALS_PASSWORD: admin123456789
+      SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_ADMIN_PASSWORD:?must be set}
     volumes:
       - nifi-data:/opt/nifi/nifi-current/conf
     restart: unless-stopped
@@ -530,12 +530,12 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER:-postgres}:${PG_PASSWORD:-postgres}@postgres:5432/airflow
-      AIRFLOW__CORE__FERNET_KEY: "change-me-fernet-key-base64-encoded-32-bytes"
-      AIRFLOW__WEBSERVER__SECRET_KEY: "change-me-secret-key"
+      AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW_FERNET_KEY:?must be set}"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "${AIRFLOW_WEBSERVER_SECRET_KEY:?must be set}"
       _AIRFLOW_DB_MIGRATE: "true"
       _AIRFLOW_WWW_USER_CREATE: "true"
       _AIRFLOW_WWW_USER_USERNAME: admin
-      _AIRFLOW_WWW_USER_PASSWORD: admin
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?must be set}
     volumes:
       - airflow-dags:/opt/airflow/dags
       - airflow-logs:/opt/airflow/logs
@@ -554,7 +554,7 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER:-postgres}:${PG_PASSWORD:-postgres}@postgres:5432/airflow
-      AIRFLOW__CORE__FERNET_KEY: "change-me-fernet-key-base64-encoded-32-bytes"
+      AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW_FERNET_KEY:?must be set}"
     volumes:
       - airflow-dags:/opt/airflow/dags
       - airflow-logs:/opt/airflow/logs
@@ -1016,7 +1016,7 @@ services:
       LAKEHOUSE_ENDPOINT: http://lakehouse:8181
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: 54link
-      PERMIFY_ENDPOINT: http://permify:3476
+      PERMIFY_ENDPOINT: permify:3476
       TB_HUB_URL: http://tigerbeetle-middleware-hub:9300
       TB_BRIDGE_URL: http://tigerbeetle-middleware-bridge:9400
     networks:

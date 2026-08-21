@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# DB credentials must come from the environment (never hardcode secrets)
+: "${DB_USER:?DB_USER required}"
+: "${DB_PASSWORD:?DB_PASSWORD required}"
+: "${DATABASE_URL:?DATABASE_URL required}"
+
 # Prompt user for chart name and version
 read -p "Enter new chart name: " CHART_NAME
 read -p "Enter new chart description: " CHART_DESC
@@ -88,10 +93,10 @@ dapr:
 secrets:
   DB_HOST: db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com
   DB_PORT: 25060
-  DB_USER: doadmin
-  DB_PASSWORD: AVNS_MSy6CW3EGXnA8wJgkLv
+  DB_USER: $DB_USER
+  DB_PASSWORD: $DB_PASSWORD
   DB_NAME: link_core_banking
-  DATABASE_URI: postgresql://doadmin:AVNS_MSy6CW3EGXnA8wJgkLv@db-postgresql-nyc1-18193-do-user-10555812-0.e.db.ondigitalocean.com:25060/link_core_banking
+  DATABASE_URI: $DATABASE_URL
   DAPR_PUBSUB_NAME: pubsub
 EOL
 

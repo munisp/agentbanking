@@ -42,8 +42,8 @@ services:
       --replica-lazy-flush yes
       --io-threads 4
       --io-threads-do-reads yes
-      --requirepass ${REDIS_PASSWORD:-pos54-redis-secret}
-      --masterauth ${REDIS_PASSWORD:-pos54-redis-secret}
+      --requirepass ${REDIS_PASSWORD:?must be set}
+      --masterauth ${REDIS_PASSWORD:?must be set}
     volumes:
       - redis-master-data:/data
 
@@ -58,8 +58,8 @@ services:
       --maxmemory-policy allkeys-lru
       --appendonly yes
       --appendfsync everysec
-      --requirepass ${REDIS_PASSWORD:-pos54-redis-secret}
-      --masterauth ${REDIS_PASSWORD:-pos54-redis-secret}
+      --requirepass ${REDIS_PASSWORD:?must be set}
+      --masterauth ${REDIS_PASSWORD:?must be set}
       --replica-read-only yes
       --replica-serve-stale-data yes
       --repl-diskless-sync yes
@@ -81,8 +81,8 @@ services:
       --maxmemory-policy allkeys-lru
       --appendonly yes
       --appendfsync everysec
-      --requirepass ${REDIS_PASSWORD:-pos54-redis-secret}
-      --masterauth ${REDIS_PASSWORD:-pos54-redis-secret}
+      --requirepass ${REDIS_PASSWORD:?must be set}
+      --masterauth ${REDIS_PASSWORD:?must be set}
       --replica-read-only yes
       --replica-serve-stale-data yes
       --repl-diskless-sync yes

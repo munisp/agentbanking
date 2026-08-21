@@ -21,7 +21,7 @@ const STATUS_COLORS: Record<string, string> = {
 // ─── inline gateway launcher ──────────────────────────────────────────────────
 // Dynamically loads the gateway SDK script once and calls the appropriate popup.
 function launchGateway(
-  result: { gateway: string; authorization_url: string; access_code?: string; public_key?: string },
+  result: { gateway: string; authorization_url: string; access_code?: string; public_key?: string; reference?: string },
   onSuccess: (ref: string) => void,
   onClose: () => void,
 ) {

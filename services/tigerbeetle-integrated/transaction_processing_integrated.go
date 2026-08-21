@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -1071,10 +1072,15 @@ func (ts *TigerBeetleIntegratedTransactionService) resolveReconciliationHandler(
 
 func transaction_processing_integratedMain() {
 	// Initialize service
+	// NF-SEC-6: no hardcoded DSN/credential fallback — fail closed.
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL environment variable must be set")
+	}
 	service, err := NewTigerBeetleIntegratedTransactionService(
 		"http://localhost:3000",  // Zig endpoint
 		"http://localhost:3001",  // Edge endpoint
-		"postgres://user:pass@localhost/transactions_db",
+		dbURL,
 		"redis://localhost:6379",
 	)
 	if err != nil {

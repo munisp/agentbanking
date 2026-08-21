@@ -90,16 +90,15 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 # Initialize FastAPI app
 app = FastAPI(
-    title=get_settings()
+    title=get_settings().app_name,
+    description="Service for managing offline synchronization of remittance data.",
+    version="1.0.0",
+)
+apply_middleware(app, enable_auth=True)
 
 @app.on_event("startup")
 async def _init_pg_pool():
     await get_pg_pool()
-.app_name,
-apply_middleware(app, enable_auth=True)
-    description="Service for managing offline synchronization of remittance data.",
-    version="1.0.0",
-)
 
 # Database setup
 Base.metadata.create_all(bind=engine)
@@ -151,7 +150,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, get_settings(, algorithms=["RS256", "HS256"]).jwt_secret_key, algorithms=[get_settings().jwt_algorithm])
+        payload = jwt.decode(token, get_settings().jwt_secret_key, algorithms=[get_settings().jwt_algorithm])
         username: str = payload.get("sub")
         if username is None:
             raise credentials_exception

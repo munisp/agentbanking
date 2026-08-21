@@ -4,9 +4,12 @@ import { defineConfig, devices } from "@playwright/test";
  * 54Link POS Shell — Playwright E2E Configuration
  * Run: pnpm exec playwright test
  * Report: pnpm exec playwright show-report
+ *
+ * round3-W2: testDir fixed — specs live in tests/e2e (the pre-restructure
+ * ./e2e directory no longer exists).
  */
 export default defineConfig({
-  testDir: "./e2e",
+  testDir: "./tests/e2e",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

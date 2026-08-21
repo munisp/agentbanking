@@ -39,7 +39,7 @@ Base = declarative_base()
 
 def get_db() -> Generator:
     """
-    Dependency function that provides a database session.
+    Dependency function that yields a database session.
     The session is automatically closed after the request is finished.
     """
     db = SessionLocal()

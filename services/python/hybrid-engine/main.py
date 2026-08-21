@@ -148,16 +148,11 @@ def storage_keys(pattern: str = "*"):
         print(f"Storage keys error: {e}")
         return []
 
-app = FastAPI(
-
 import psycopg2
 import psycopg2.extras
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/hybrid_engine")
 
-@app.on_event("startup")
-async def _init_pg_pool():
-    await get_pg_pool()
 
 
 def get_db():
@@ -189,10 +184,16 @@ def log_audit(action: str, entity_id: str, data: str = ""):
         conn.close()
     except Exception:
         pass
+
+app = FastAPI(
     title="Hybrid Engine",
     description="Hybrid Engine for Remittance Platform",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+async def _init_pg_pool():
+    await get_pg_pool()
 
 app.add_middleware(
     CORSMiddleware,

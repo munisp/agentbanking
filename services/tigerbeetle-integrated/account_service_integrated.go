@@ -1129,4 +1129,3 @@ func account_service_integratedMain() {
 	log.Fatal(router.Run(port))
 }
 
-

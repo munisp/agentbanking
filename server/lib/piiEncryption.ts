@@ -19,15 +19,32 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
 const TAG_LENGTH = 16;
 
+// NF-SEC-4: fail fast at module init when the dedicated PII key is absent in
+// production — never silently fall back to a hardcoded development secret.
+if (process.env.NODE_ENV === "production") {
+  const k = process.env.PII_ENCRYPTION_KEY;
+  if (!k || k.length < 64) {
+    throw new Error(
+      "FATAL: PII_ENCRYPTION_KEY must be set (64+ hex chars) in production; refusing to start with the insecure development fallback key"
+    );
+  }
+}
+
 function getEncryptionKey(): Buffer {
   const keyHex = process.env.PII_ENCRYPTION_KEY;
-  if (!keyHex || keyHex.length < 64) {
-    // Fallback: derive from JWT_SECRET for dev environments
-    const secret =
-      process.env.JWT_SECRET ?? "54link-dev-key-not-for-production";
-    return crypto.scryptSync(secret, "54link-pii-salt", 32);
+  if (keyHex && keyHex.length >= 64) {
+    return Buffer.from(keyHex, "hex");
   }
-  return Buffer.from(keyHex, "hex");
+  // Dev-only fallback (production is guarded at module init above).
+  // NOTE (salt limitation): this scrypt derivation uses a static salt
+  // ("54link-pii-salt"); migrating to random per-record salts would change the
+  // ciphertext format and is intentionally out of scope for this fix.
+  console.warn(
+    "[piiEncryption] WARNING: PII_ENCRYPTION_KEY is not set or too short; using the insecure development fallback key. Never run this configuration in production."
+  );
+  const secret =
+    process.env.JWT_SECRET ?? "54link-dev-key-not-for-production";
+  return crypto.scryptSync(secret, "54link-pii-salt", 32);
 }
 
 /**

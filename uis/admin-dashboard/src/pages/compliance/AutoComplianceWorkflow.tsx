@@ -27,7 +27,7 @@ export default function AutoComplianceWorkflow() {
   const summary = {data: null, isLoading: false, refetch: () => {}}?.data as
     | Record<string, unknown>
     | undefined;
-  const listQ = {data: null, isLoading: false, refetch: () => {}};
+  const listQ = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
   const items = (listQ.data as any)?.items ?? (listQ.data as any)?.data ?? [];
   const total = (listQ.data as any)?.total ?? 0;
 

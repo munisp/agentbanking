@@ -14,8 +14,8 @@ conf:
     access_log:
       file_path: /dev/stdout
 authentication:
-  secret: pos54-dashboard-secret
+  secret: CHANGE_ME_EXAMPLE
   expire_time: 3600
   users:
     - username: admin
-      password: admin
+      password: CHANGE_ME_EXAMPLE

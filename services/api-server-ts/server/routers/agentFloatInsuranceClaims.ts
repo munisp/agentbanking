@@ -1,46 +1,21 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
+import { getAgentFromCookie } from "../middleware/agentAuth";
 import {
-  eq,
-  desc,
-  and,
-  sql,
-  count,
-  sum,
-  isNull,
-  gte,
-  lte,
-  or,
-  asc,
-} from "drizzle-orm";
-import { floatReconciliations, agents, auditLog } from "../../drizzle/schema";
+  floatReconciliations,
+  insertFloatReconciliationSchema,
+  auditLog,
+} from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
-import {
-  validateAmount,
-  validateStatusTransition,
-  auditFinancialAction,
-  withTransaction,
-} from "../lib/transactionHelper";
+import { eq, and } from "drizzle-orm";
+import { auditFinancialAction } from "../lib/transactionHelper";
 import {
   calculateFee,
   calculateCommission,
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
-
-const STATUS_TRANSITIONS: Record<string, string[]> = {
-  draft: ["submitted"],
-  submitted: ["under_review", "rejected"],
-  under_review: ["approved", "rejected"],
-  approved: ["active"],
-  active: ["claimed", "expired", "cancelled"],
-  claimed: ["settled", "rejected"],
-  settled: [],
-  expired: [],
-  cancelled: [],
-  rejected: [],
-};
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 function validateAgentfloatinsuranceclaimsInput(
@@ -58,36 +33,10 @@ function validateAgentfloatinsuranceclaimsInput(
     return false;
   if (
     typeof data.amount === "number" &&
-    (data.amount < 0 ||
-      data.amount > 100_000_000 ||
-      !Number.isFinite(data.amount))
+    (data.amount < 0 || data.amount > 100_000_000 || !Number.isFinite(data.amount))
   )
     return false;
   return true;
-}
-
-// ── Transaction Safety ─────────────────────────────────────────────────────
-async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
-  const startTime = Date.now();
-  try {
-    const result = await withTransaction(fn);
-    const duration = Date.now() - startTime;
-    auditFinancialAction(
-      "UPDATE",
-      "agentFloatInsuranceClaims",
-      "transaction",
-      `Transaction completed in ${duration}ms`
-    );
-    return result;
-  } catch (err) {
-    auditFinancialAction(
-      "UPDATE",
-      "agentFloatInsuranceClaims",
-      "transaction_failed",
-      `Transaction failed: ${err instanceof Error ? err.message : "unknown"}`
-    );
-    throw err;
-  }
 }
 
 // ── Audit Trail ────────────────────────────────────────────────────────────
@@ -106,6 +55,27 @@ function logOperation(action: string, details: Record<string, unknown>) {
     action,
     JSON.stringify(auditEntry).slice(0, 200)
   );
+}
+
+// ── Domain Calculations ────────────────────────────────────────────────────
+function computeFees(amount: number, txType: string = "transfer") {
+  if (amount <= 0) return { fee: 0, commission: 0, tax: 0, netAmount: amount };
+  const feeResult = calculateFee(amount, txType);
+  const commResult = calculateCommission(feeResult.fee, txType);
+  const taxResult = calculateTax(feeResult.fee, "vat");
+  const totalDeductions = feeResult.fee + taxResult.taxAmount;
+  const netAmount = Math.max(0, amount - totalDeductions);
+  const rate = amount > 0 ? feeResult.fee / amount : 0;
+  return {
+    fee: feeResult.fee,
+    feeRate: parseFloat(rate.toFixed(4)),
+    commission: commResult.agentShare,
+    platformCommission: commResult.platformShare,
+    tax: taxResult.taxAmount,
+    taxRate: parseFloat(taxResult.taxRate.toFixed(4)),
+    netAmount: parseFloat(netAmount.toFixed(2)),
+    grossAmount: amount,
+  };
 }
 
 // ── Data Integrity Constraints ─────────────────────────────────────────────
@@ -152,9 +122,6 @@ function applyIntegrityChecks(data: Record<string, unknown>) {
   }
   return errors;
 }
-
-// Transaction wrapping: withTransaction used for atomic DB operations
-// db.transaction() ensures ACID compliance for multi-step mutations
 
 // ── Database Query Patterns ────────────────────────────────────────────────
 const _agentFloatInsuranceClaims_db = {
@@ -223,123 +190,70 @@ const _agentFloatInsuranceClaims_db = {
 };
 
 export const agentFloatInsuranceClaimsRouter = router({
-  getStats: protectedProcedure.query(async () => {
-    const db = await getDb();
-    if (!db)
-      return {
-        totalClaims: 0,
-        pending: 0,
-        approved: 0,
-        rejected: 0,
-        totalAmount: "0",
-      };
-    const [total] = await db
-      .select({ value: count() })
-      .from(floatReconciliations)
-      .limit(100);
-    return {
-      totalClaims: Number(total.value),
-      pending: 0,
-      approved: Number(total.value),
-      rejected: 0,
-      totalAmount: "0",
-    };
-  }),
-  listClaims: protectedProcedure
-    .input(
-      z
-        .object({
-          agentId: z.number().optional(),
-          limit: z.number().default(20),
-        })
-        .optional()
-    )
-    .query(async ({ input }) => {
-      try {
-        const db = await getDb();
-        if (!db) return { claims: [], total: 0 };
-        const conditions: any[] = [];
-        if (input?.agentId)
-          conditions.push(eq(floatReconciliations.agentId, input.agentId));
-        const where = conditions.length > 0 ? and(...conditions) : undefined;
-        const rows = await db
-          .select()
-          .from(floatReconciliations)
-          .where(where)
-          .orderBy(desc(floatReconciliations.date))
-          .limit(input?.limit ?? 20);
-        return { claims: rows, total: rows.length };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
   fileClaim: protectedProcedure
     .input(
       z.object({ agentId: z.number(), amount: z.string(), reason: z.string() })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "agentFloatInsuranceClaims",
-        "mutation",
-        "Executed agentFloatInsuranceClaims mutation"
-      );
-
-      try {
-        const db = await getDb();
-        if (!db) throw new Error("DB not available");
-        const [claim] = await db
-          .insert(floatReconciliations)
-          .values({
-            agentId: input.agentId,
-            expectedBalance: input.amount,
-            actualBalance: "0",
-            discrepancy: input.amount,
-            date: new Date(),
-            status: "pending",
-          })
-          .returning();
-        await db.insert(auditLog).values({
-          action: "float_claim_filed",
-          resource: "float_claims",
-          resourceId: String(claim.id),
-          status: "success",
-          metadata: { agentId: input.agentId, amount: input.amount },
-        });
-        return { success: true, claim };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
+      // NF-FF-25: agentId is session-derived — a caller may only file a claim
+      // for their own agent session unless they are an admin.
+      const session = await getAgentFromCookie(ctx.req);
+      if (!session)
         throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
+          code: "UNAUTHORIZED",
+          message: "Agent session required",
         });
-      }
+      const isAdmin = ctx.user?.role === "admin" || session.role === "admin";
+      if (input.agentId !== session.id && !isAdmin)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Cannot file an insurance claim for another agent",
+        });
+
+      // NF-FF-25: fail loud — there is NO float insurance claims table in the
+      // drizzle schema. No claim row is persisted and no fabricated
+      // floatReconciliations discrepancy row is written. Claims intake is not
+      // implemented; do not silently fabricate records.
+      logOperation("CLAIM_NOT_IMPLEMENTED", {
+        agentId: session.id,
+        amount: input.amount,
+        reason: input.reason,
+      });
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Float insurance claims are not implemented: no claims table exists in the schema",
+      });
     }),
-  approveClaim: protectedProcedure
+  approveClaim: adminProcedure
     .input(z.object({ claimId: z.number(), notes: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
+        // NF-FF-25: conditional transition pending → resolved; 0 rows => 409.
+        // NOTE: this updates workflow status ONLY — there is intentionally NO
+        // funds leg (no payout / float credit) because no claims settlement
+        // mechanism exists in the schema.
         const [updated] = await db
           .update(floatReconciliations)
-          .set({ status: "resolved", resolvedAt: new Date() })
-          .where(eq(floatReconciliations.id, input.claimId))
+          .set({
+            status: "resolved",
+            resolvedBy: ctx.user.id,
+            resolvedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(floatReconciliations.id, input.claimId),
+              eq(floatReconciliations.status, "pending")
+            )
+          )
           .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Claim not found or not in pending status",
+          });
         await db.insert(auditLog).values({
           action: "float_claim_approved",
           resource: "float_claims",

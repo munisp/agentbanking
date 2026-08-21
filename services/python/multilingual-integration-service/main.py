@@ -192,14 +192,14 @@ UI_TRANSLATIONS = {
         },
         "transfer": {
             "en": "Transfer",
-            "yo": "Fi owo ranşẹ",
+            "yo": "Fi owo ranṣẹ",
             "ig": "Zipu ego",
             "ha": "Tura kudi",
             "pcm": "Transfer"
         },
         "transaction_history": {
             "en": "Transaction History",
-            "yo": "Itan İşowo",
+            "yo": "Itan Iṣowo",
             "ig": "Akụkọ Azụmahịa",
             "ha": "Tarihin Ciniki",
             "pcm": "Transaction History"
@@ -273,14 +273,14 @@ UI_TRANSLATIONS = {
         },
         "order": {
             "en": "Order",
-            "yo": "Aşẹ",
+            "yo": "Aṣẹ",
             "ig": "Ọda",
             "ha": "Oda",
             "pcm": "Order"
         },
         "place_order": {
             "en": "Place Order",
-            "yo": "Fi aşẹ silẹ",
+            "yo": "Fi aṣẹ silẹ",
             "ig": "Tinye ọda",
             "ha": "Sanya oda",
             "pcm": "Place Order"
@@ -379,7 +379,7 @@ UI_TRANSLATIONS = {
         },
         "filter": {
             "en": "Filter",
-            "yo": "Şẹ",
+            "yo": "Ṣẹ",
             "ig": "Họrọ",
             "ha": "Tace",
             "pcm": "Filter"
@@ -425,35 +425,35 @@ UI_TRANSLATIONS = {
     "messages": {
         "success": {
             "en": "Operation successful!",
-            "yo": "İşẹ şaşeyọri!",
+            "yo": "Iṣẹ ṣaṣeyọri!",
             "ig": "Ọrụ gara nke ọma!",
             "ha": "Aikin ya yi nasara!",
             "pcm": "Operation don successful!"
         },
         "error": {
             "en": "An error occurred. Please try again.",
-            "yo": "Aşişe kan şẹlẹ. Jọwọ gbiyanju lẹẹkansi.",
+            "yo": "Aṣiṣe kan ṣẹlẹ. Jọwọ gbiyanju lẹẹkansi.",
             "ig": "Njehie mere. Biko nwaa ọzọ.",
             "ha": "Kuskure ya faru. Don Allah sake gwadawa.",
             "pcm": "Error happen. Abeg try again."
         },
         "loading": {
             "en": "Loading...",
-            "yo": "N şişẹ...",
+            "yo": "N ṣiṣẹ...",
             "ig": "Na-ebu...",
             "ha": "Ana lodawa...",
             "pcm": "Dey load..."
         },
         "confirm": {
             "en": "Are you sure?",
-            "yo": "Şe o da ọ loju?",
+            "yo": "Ṣe o da ọ loju?",
             "ig": "Ị ji n'aka?",
             "ha": "Ka tabbata?",
             "pcm": "You sure?"
         },
         "delete_confirm": {
             "en": "Are you sure you want to delete this?",
-            "yo": "Şe o da ọ loju pe o fẹ pa eyi rẹ?",
+            "yo": "Ṣe o da ọ loju pe o fẹ pa eyi rẹ?",
             "ig": "Ị ji n'aka na ịchọrọ ihicha nke a?",
             "ha": "Ka tabbata kana son share wannan?",
             "pcm": "You sure say you wan delete this?"

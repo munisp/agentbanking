@@ -402,8 +402,8 @@ kind: CronJob
 metadata:
   name: papss-fx-rate-update
   namespace: papss-integration
-  spec:
-    schedule: "*/5 * * * *"  # Every 5 minutes
+spec:
+  schedule: "*/5 * * * *"  # Every 5 minutes
   jobTemplate:
     spec:
       template:

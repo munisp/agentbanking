@@ -80,6 +80,79 @@ class TigerBeetleAdapter:
 
         return id
 
+    @property
+    def supports_linked_transfers(self) -> bool:
+        """True when the TigerBeetle client library supports linked (atomic) transfers."""
+        transfer_flags = getattr(tb, "TransferFlags", None)
+        return transfer_flags is not None and hasattr(transfer_flags, "linked")
+
+    def transfer_linked(self, legs: list, transfer_ids: list | None = None):
+        """Create multiple transfers as an atomic linked chain (all-or-nothing).
+
+        NF-FF-12: cross-currency movements use this so the debit and credit
+        legs can never drift apart. `legs` is a list of dicts with keys
+        payer/payee/amount/ledger. Returns the list of transfer ids.
+        Raises TigerBeetleBusinessError for insufficient funds.
+        """
+        if not self.supports_linked_transfers:
+            raise NotImplementedError(
+                "TigerBeetle client does not support linked transfers"
+            )
+
+        ids = []
+        transfers = []
+        last_index = len(legs) - 1
+        for index, leg in enumerate(legs):
+            transfer_id = (
+                transfer_ids[index] if transfer_ids is not None else None
+            )
+            if transfer_id is None:
+                leg_id = tb.id()
+            elif isinstance(transfer_id, uuid.UUID):
+                leg_id = transfer_id.int
+            elif isinstance(transfer_id, str):
+                leg_id = uuid.UUID(transfer_id).int
+            else:
+                leg_id = int(transfer_id)
+            ids.append(leg_id)
+            transfers.append(
+                tb.Transfer(
+                    id=leg_id,
+                    debit_account_id=leg["payer"],
+                    credit_account_id=leg["payee"],
+                    amount=leg["amount"],
+                    code=1,
+                    ledger=leg["ledger"],
+                    # all but the last transfer carry the linked flag, chaining
+                    # the batch into a single atomic commit
+                    flags=(
+                        tb.TransferFlags.linked if index < last_index else tb.TransferFlags(0)
+                    ),
+                )
+            )
+
+        with tb.ClientSync(
+            cluster_id=self._cluster_id, replica_addresses=self._address
+        ) as client:
+            transfer_errors = client.create_transfers(transfers)
+            logger.info(f"TigerBeetle linked transfer errors: {transfer_errors}")
+
+            if len(transfer_errors) > 0:
+                # linked chain: when any leg fails, NONE of the legs commit
+                error_codes = [
+                    str(getattr(error, "result", "")) for error in transfer_errors
+                ]
+                if any("EXCEEDS_CREDITS" in code for code in error_codes):
+                    raise TigerBeetleBusinessError(
+                        "Insufficient balance for linked transfer.",
+                        error_code="EXCEEDS_CREDITS",
+                    )
+                raise Exception(
+                    f"TigerBeetle linked transfer failed: {transfer_errors}"
+                )
+
+        return ids
+
     def get_account(self, id: int):
         with tb.ClientSync(
             cluster_id=self._cluster_id, replica_addresses=self._address

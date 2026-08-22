@@ -11,9 +11,9 @@ export default function GdprDashboard() {
   >("requests");
   const [reason, setReason] = useState("");
 
-  const requestsQ = {data: null, isLoading: false, refetch: () => {}};
-  const exportQ = {data: null, isLoading: false, refetch: () => {}};
-  const erasureMut = {mutate: () => {}, mutateAsync: async () => {}, isPending: false, isLoading: false};
+  const requestsQ = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const exportQ = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const erasureMut = {mutate: (_vars?: any) => {}, mutateAsync: async (_vars?: any) => {}, isPending: false, isLoading: false, data: null as any, error: null as any};
 
   const tabs = [
     { id: "requests" as const, label: "All Requests" },

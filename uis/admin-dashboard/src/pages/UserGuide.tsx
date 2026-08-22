@@ -13,6 +13,7 @@
  * 9. Troubleshooting
  * 10. FAQ
  */
+import { useLocation } from "wouter";
 import { useState, useMemo, useCallback } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";

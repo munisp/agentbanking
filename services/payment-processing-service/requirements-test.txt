@@ -1,0 +1,5 @@
+# Test-only dependencies for the funds-flow unit tests (tests/).
+# Kept separate from requirements.txt so the pinned runtime image is unchanged.
+# Usage: pip install -r requirements-test.txt && python -m pytest
+-r requirements.txt
+pytest>=8,<10

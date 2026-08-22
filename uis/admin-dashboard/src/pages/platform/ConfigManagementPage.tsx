@@ -1,7 +1,6 @@
 import { trpc } from "@/lib/trpc";
 
 export default function ConfigManagementPage() {
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data, isLoading } = trpc.configManagement.dashboard.useQuery() as any;
 
   if (isLoading)

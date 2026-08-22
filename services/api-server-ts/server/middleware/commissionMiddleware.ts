@@ -89,7 +89,13 @@ export async function getCachedSplitRatios(
   try {
     const cached = await cacheGet(`commission:splits:${txType}`);
     return cached ? JSON.parse(cached) : null;
-  } catch {
+  } catch (cacheErr) {
+    // MB-15/16: cache-aside miss semantics preserved (null → recompute from
+    // DB), but a broken cache backend must be visible, not silent.
+    console.warn(
+      "[commissionMiddleware] commission cache read failed — treating as cache miss:",
+      cacheErr instanceof Error ? cacheErr.message : cacheErr
+    );
     return null;
   }
 }
@@ -104,8 +110,12 @@ export async function setCachedSplitRatios(
       JSON.stringify(splits),
       SPLIT_CACHE_TTL
     );
-  } catch {
-    /* cache write — non-critical, do not block */
+  } catch (cacheErr) {
+    /* cache write — non-critical, do not block — but log it (MB-15/16) */
+    console.warn(
+      "[commissionMiddleware] commission cache write failed:",
+      cacheErr instanceof Error ? cacheErr.message : cacheErr
+    );
   }
 }
 
@@ -124,8 +134,12 @@ export async function invalidateSplitCache(txType?: string): Promise<void> {
       for (const t of types) await cacheDel(`commission:splits:${t}`);
       await cacheDel("commission:splits:all");
     }
-  } catch {
-    /* cache invalidation — non-critical, do not block */
+  } catch (cacheErr) {
+    /* cache invalidation — non-critical, do not block — but log it (MB-15/16) */
+    console.warn(
+      "[commissionMiddleware] commission cache invalidation failed:",
+      cacheErr instanceof Error ? cacheErr.message : cacheErr
+    );
   }
 }
 
@@ -138,7 +152,13 @@ export async function getCachedHierarchyChain(agentId: number): Promise<Array<{
   try {
     const cached = await cacheGet(`commission:hierarchy:${agentId}`);
     return cached ? JSON.parse(cached) : null;
-  } catch {
+  } catch (cacheErr) {
+    // MB-15/16: cache-aside miss semantics preserved (null → recompute from
+    // DB), but a broken cache backend must be visible, not silent.
+    console.warn(
+      "[commissionMiddleware] commission cache read failed — treating as cache miss:",
+      cacheErr instanceof Error ? cacheErr.message : cacheErr
+    );
     return null;
   }
 }
@@ -158,8 +178,12 @@ export async function setCachedHierarchyChain(
       JSON.stringify(chain),
       HIERARCHY_CACHE_TTL
     );
-  } catch {
-    /* cache write — non-critical, do not block */
+  } catch (cacheErr) {
+    /* cache write — non-critical, do not block — but log it (MB-15/16) */
+    console.warn(
+      "[commissionMiddleware] commission cache write failed:",
+      cacheErr instanceof Error ? cacheErr.message : cacheErr
+    );
   }
 }
 
@@ -246,8 +270,15 @@ export async function canUpdateSplitRatios(
       entityId: "split_ratios",
       permission: "edit",
     });
-  } catch {
-    return ["admin", "super_agent"].includes(agentRole);
+  } catch (permErr) {
+    // MB-15/16: fail CLOSED. The previous fallback granted commission-admin
+    // rights based on the session role claim alone when the permission check
+    // itself errored.
+    console.error(
+      "[commissionMiddleware] canUpdateSplitRatios permission check failed — denying (fail closed):",
+      permErr instanceof Error ? permErr.message : permErr
+    );
+    return false;
   }
 }
 
@@ -263,8 +294,15 @@ export async function canApproveCommissionPayout(
       entityId: "*",
       permission: "approve",
     });
-  } catch {
-    return ["admin", "supervisor"].includes(agentRole);
+  } catch (permErr) {
+    // MB-15/16: fail CLOSED. The previous fallback granted payout-approval
+    // rights based on the session role claim alone when the permission check
+    // itself errored.
+    console.error(
+      "[commissionMiddleware] canApproveCommissionPayout permission check failed — denying (fail closed):",
+      permErr instanceof Error ? permErr.message : permErr
+    );
+    return false;
   }
 }
 
@@ -353,7 +391,12 @@ export async function daprGetCommissionState(
     );
     if (res.ok) return await res.json();
     return null;
-  } catch {
+  } catch (daprErr) {
+    // MB-15/16: state-store read failure = cache miss semantics, logged.
+    console.warn(
+      "[commissionMiddleware] dapr state read failed — treating as miss:",
+      daprErr instanceof Error ? daprErr.message : daprErr
+    );
     return null;
   }
 }
@@ -373,7 +416,12 @@ export async function daprSetCommissionState(
       }
     );
     return res.ok;
-  } catch {
+  } catch (daprErr) {
+    // MB-15/16: state-store write failure must be visible, not silent.
+    console.warn(
+      "[commissionMiddleware] dapr state write failed:",
+      daprErr instanceof Error ? daprErr.message : daprErr
+    );
     return false;
   }
 }

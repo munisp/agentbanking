@@ -4,9 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, MapPin, Activity, Eye } from "lucide-react";
 
 export default function FraudRealtimeVizPage() {
-  const { data: live } = {data: null, isLoading: false, refetch: () => {}};
-  const { data: stream } = {data: null, isLoading: false, refetch: () => {}};
-  const { data: heatmap } = {data: null, isLoading: false, refetch: () => {}};
+  const { data: live } = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const { data: stream } = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const { data: heatmap } = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
 
   const summary = live?.summary;
 

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 // socket.io-client not available — using polling fallback
-const io = (_url: string, _opts?: any) => ({ on: () => {}, off: () => {}, disconnect: () => {}, emit: () => {} });
+const io = (_url: string, _opts?: any) => ({ on: (_event?: string, _cb?: (...args: any[]) => void) => {}, off: (_event?: string, _cb?: (...args: any[]) => void) => {}, connect: () => {}, disconnect: () => {}, emit: (_event?: string, ..._args: any[]) => {} });
 type Socket = ReturnType<typeof io>;
 
 interface LiveTransaction {

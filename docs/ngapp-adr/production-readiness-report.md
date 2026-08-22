@@ -6,6 +6,8 @@
 **Prepared by:** 54Link Engineering Team  
 **Overall Score: 9.4 / 10**
 
+> ⚠️ **2026-08 assurance re-verification (@ `505705ac`):** this is a point-in-time report (2026-03-31). Its headline claims — "all 149 tests pass", "TypeScript compiles with zero errors", "19 tRPC routers", "33 screens" — reflect that date and are **not reproducible from the current tree**. Verified today: `services/api-server-ts` contains 2 test files with 174 test cases; `tsc --noEmit` is not error-free repo-wide (remediation in progress); `server/routers/` holds 418 router files and `client/src/pages/` 101 page components.
+
 ---
 
 ## Executive Summary
@@ -278,8 +280,8 @@ The following gaps are ranked by risk to production launch:
 
 The following items must be confirmed before go-live:
 
-- [x] All 149 unit and integration tests passing
-- [x] TypeScript compiles with zero errors
+- [x] All 149 unit and integration tests passing ← *as of 2026-03-31; not reproducible in 2026-08 re-verification (see note at top)*
+- [x] TypeScript compiles with zero errors ← *as of 2026-03-31; no longer true — remediation in progress (see note at top)*
 - [x] Content Security Policy configured for production
 - [x] HSTS, X-Frame-Options, X-Content-Type-Options headers set
 - [x] Rate limiting on all endpoints
@@ -314,9 +316,9 @@ The following items must be confirmed before go-live:
 
 ## Conclusion
 
-The 54agent POS Shell achieves a production readiness score of **9.4 / 10**. The two P1 items (k6 load test execution and mTLS wiring) should be resolved before the first production traffic is directed to the system. All other gaps are non-blocking and can be addressed in the next sprint without impacting the launch timeline.
+The 54agent POS Shell achieves a production readiness score of **9.4 / 10** (self-assessed, as of 2026-03-31). The two P1 items (k6 load test execution and mTLS wiring) should be resolved before the first production traffic is directed to the system. All other gaps are non-blocking and can be addressed in the next sprint without impacting the launch timeline.
 
-The platform demonstrates a mature, defence-in-depth security posture, comprehensive platform proxy integration with fail-open resilience, and a well-structured test suite. It is ready for controlled production launch with the P1 items addressed.
+The platform demonstrates a mature, defence-in-depth security posture, comprehensive platform proxy integration with fail-open resilience, and a well-structured test suite. As of this report's date it was considered ready for controlled production launch with the P1 items addressed; re-validate against the current tree before any launch decision (see 2026-08 correction note at top).
 
 ---
 

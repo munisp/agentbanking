@@ -1,5 +1,7 @@
 # Test Report: 10/10 Business Logic Production Readiness (PR #37)
 
+> ⚠️ **2026-08 correction (assurance re-verification @ `505705ac`):** the "477 routers / 477 modified files" and "4,277 tests pass" results below are session-specific claims from the PR #37 session and are **not reproducible from the current tree**: `server/routers/` contains 418 `.ts` files (478 in the `services/api-server-ts` mirror), and `services/api-server-ts` contains 2 test files with 174 test cases (155 smoke + 19 caddy-tls). No 4,000+ test suite exists in the repository. Treat this report as a historical session artifact.
+
 **Tested:** 477 tRPC router business logic enhancements (6.2→9.8/10 audit score)
 **Method:** Shell-based testing — TypeScript compilation, test suite, runtime library verification, dev server + tRPC endpoint testing
 **Session:** https://app.devin.ai/sessions/3ebd42bf0430422a9a2bd85ed9f9cd4c

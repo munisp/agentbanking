@@ -1,7 +1,10 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # 54Link POS Shell — Sprint 42+ Docker Compose Overlay
 # Adds 3 middleware sidecars (Go, Rust, Python) from Sprint 43/44
-# Usage: docker compose -f docker-compose.production.yml -f docker-compose.sprint42.yml up
+# Usage: docker compose -f docker-compose.yml -f docker-compose.sprint42.yml up
+# (docker-compose.production.yml referenced here previously does not exist in
+# this repo. The tigerbeetle and fluvio services depended on below are defined
+# in the root docker-compose.yml; use it as the base file.)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 x-common: &restart-policy
@@ -103,7 +106,7 @@ services:
     networks: [54link-app, 54link-infra]
     environment:
       - PORT=8202
-      - POSTGRES_URL=postgresql://${POSTGRES_USER:-54link}:${POSTGRES_PASSWORD:-54linkSecure2024}@postgres:5432/${POSTGRES_DB:-54link_production}
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-54link}:${POSTGRES_PASSWORD:?must be set}@postgres:5432/${POSTGRES_DB:-54link_production}
       - LAKEHOUSE_PATH=/data/lakehouse
       - MOJALOOP_HUB_URL=${MOJALOOP_HUB_URL:-http://mojaloop-hub:4000}
       - MOJALOOP_DFSP_ID=${MOJALOOP_DFSP_ID:-54link}
@@ -145,7 +148,7 @@ services:
     profiles: [seed]
     networks: [54link-infra]
     environment:
-      - POSTGRES_URL=postgresql://${POSTGRES_USER:-54link}:${POSTGRES_PASSWORD:-54linkSecure2024}@postgres:5432/${POSTGRES_DB:-54link_production}
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-54link}:${POSTGRES_PASSWORD:?must be set}@postgres:5432/${POSTGRES_DB:-54link_production}
     command: >
       sh -c "
         echo '=== Running production seed ===' &&

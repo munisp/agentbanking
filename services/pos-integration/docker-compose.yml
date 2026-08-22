@@ -12,9 +12,9 @@ services:
       - DATABASE_URL=postgresql://pos_user:pos_password@postgres:5432/pos_db
       - REDIS_URL=redis://redis:6379
       - QR_ENCRYPTION_PASSWORD=${QR_ENCRYPTION_PASSWORD:?must be set}
-      - QR_ENCRYPTION_SALT=secure_salt_2024
-      - QR_SIGNATURE_SECRET=qr_signature_secret_key_2024
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_dummy}
+      - QR_ENCRYPTION_SALT=${QR_ENCRYPTION_SALT:?must be set}
+      - QR_SIGNATURE_SECRET=${QR_SIGNATURE_SECRET:?must be set}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:?must be set}
       - FRAUD_DETECTION_ENABLED=true
       - MULTI_CURRENCY_ENABLED=true
     depends_on:
@@ -44,8 +44,8 @@ services:
       - DATABASE_URL=postgresql://pos_user:pos_password@postgres:5432/pos_db
       - REDIS_URL=redis://redis:6379
       - QR_ENCRYPTION_PASSWORD=${QR_ENCRYPTION_PASSWORD:?must be set}
-      - QR_ENCRYPTION_SALT=secure_salt_2024
-      - QR_SIGNATURE_SECRET=qr_signature_secret_key_2024
+      - QR_ENCRYPTION_SALT=${QR_ENCRYPTION_SALT:?must be set}
+      - QR_SIGNATURE_SECRET=${QR_SIGNATURE_SECRET:?must be set}
       - FRAUD_DETECTION_ENABLED=true
     depends_on:
       - postgres

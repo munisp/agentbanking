@@ -3,6 +3,8 @@
 **Date:** July 11, 2026
 **Auditor:** Manus AI
 
+> ⚠️ **2026-08 note (@ `505705ac`):** this report describes changes made in commit `3b7fef3b` to `docker-compose.production.yml` and `drizzle/schema.ts`. Neither file exists at the current HEAD — there is no `docker-compose.production.yml` (root `docker-compose.yml` is the only full-stack compose file) and no root `drizzle/schema.ts` (the 161-table schema now lives at `services/api-server-ts/drizzle/schema.ts`). Treat §4's file references as historical.
+
 ## 1. Executive Summary
 
 A comprehensive audit of the `munisp/agentbanking` repository was conducted to verify the integration of all required infrastructure components: Keycloak, TigerBeetle, PostgreSQL, APISIX, Permify, Dapr, OpenSource tools, Temporal, Redis, Lakehouse, OpenAppSec, and Fluvio.

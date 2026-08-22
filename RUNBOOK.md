@@ -2,6 +2,8 @@
 
 **Version:** Phase 161 | **Last Updated:** April 2026 | **Owner:** 54Link SRE Team
 
+> ⚠️ **2026-08 correction (@ `505705ac`):** this runbook originally referenced `docker-compose.production.yml`, which **does not exist in the repository**; commands now use the root `docker-compose.yml`. The main application service is named `app` in that file (not `pos-shell` — updated below). Several services referenced in this runbook (Vault, MinIO, TigerBeetle cluster nodes `tigerbeetle-0..2`, `cbn-reporting-engine`, `fraud-engine`, Fluvio) are **not defined** in the current `docker-compose.yml`; adapt those commands to your deployment or extend the compose file accordingly.
+
 ---
 
 ## Table of Contents
@@ -56,8 +58,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/54link/pos-shell-demo.git
-cd pos-shell-demo
+git clone https://github.com/munisp/agentbanking.git
+cd agentbanking
 
 # Run the full bootstrap (creates network, volumes, starts all services)
 bash scripts/bootstrap-production.sh
@@ -86,7 +88,7 @@ docker network create 54link-net
 bash infra/tigerbeetle/init-cluster.sh
 
 # 3. Start infrastructure
-docker compose -f docker-compose.production.yml up -d \
+docker compose -f docker-compose.yml up -d \
   postgres redis kafka minio vault keycloak
 
 # 4. Wait for Postgres
@@ -108,7 +110,7 @@ bash infra/fluvio/deploy-smartmodule.sh
 bash infra/tigerbeetle/provision.sh
 
 # 10. Start all services
-docker compose -f docker-compose.production.yml up -d
+docker compose -f docker-compose.yml up -d
 ```
 
 ---
@@ -125,33 +127,33 @@ make -f Makefile.production health-check
 
 ```bash
 # All services (last 100 lines each)
-docker compose -f docker-compose.production.yml logs --tail=100
+docker compose -f docker-compose.yml logs --tail=100
 
 # Specific service
-docker compose -f docker-compose.production.yml logs -f pos-shell
+docker compose -f docker-compose.yml logs -f app
 
 # Error logs only
-docker compose -f docker-compose.production.yml logs --tail=200 | grep -i "error\|fatal\|panic"
+docker compose -f docker-compose.yml logs --tail=200 | grep -i "error\|fatal\|panic"
 ```
 
 ### 3.3 Restart a Service
 
 ```bash
 # Graceful restart
-docker compose -f docker-compose.production.yml restart <service-name>
+docker compose -f docker-compose.yml restart <service-name>
 
 # Force recreate (use when config changes)
-docker compose -f docker-compose.production.yml up -d --force-recreate <service-name>
+docker compose -f docker-compose.yml up -d --force-recreate <service-name>
 ```
 
 ### 3.4 Deploy a New Version
 
 ```bash
 # Pull latest images
-docker compose -f docker-compose.production.yml pull
+docker compose -f docker-compose.yml pull
 
 # Rolling restart (zero downtime for stateless services)
-docker compose -f docker-compose.production.yml up -d --no-deps --build pos-shell
+docker compose -f docker-compose.yml up -d --no-deps --build app
 
 # Run migrations if schema changed
 pnpm db:push
@@ -184,13 +186,13 @@ docker exec pos-kafka kafka-consumer-groups.sh \
   --describe --group pos-shell-consumers
 
 # 5. Check recent error logs
-docker compose -f docker-compose.production.yml logs --tail=50 pos-shell | grep -i error
+docker compose -f docker-compose.yml logs --tail=50 app | grep -i error
 ```
 
 **Resolution:**
 
-- If Postgres is down: `docker compose -f docker-compose.production.yml restart postgres`
-- If TigerBeetle node is down: `docker compose -f docker-compose.production.yml restart tigerbeetle-0`
+- If Postgres is down: `docker compose -f docker-compose.yml restart postgres`
+- If TigerBeetle node is down: `docker compose -f docker-compose.yml restart tigerbeetle-0`
 - If Kafka lag is high: restart the affected consumer service
 
 ### P1: Vault Sealed
@@ -219,7 +221,7 @@ docker exec pos-vault vault status | grep "Sealed.*false"
 fluvio topic describe mdm-heartbeats
 
 # Scale up MDM compliance engine replicas
-docker compose -f docker-compose.production.yml up -d --scale mdm-compliance-engine=3
+docker compose -f docker-compose.yml up -d --scale mdm-compliance-engine=3
 ```
 
 ### P1: CBN Report Submission Failure
@@ -228,7 +230,7 @@ docker compose -f docker-compose.production.yml up -d --scale mdm-compliance-eng
 
 ```bash
 # Check CBN reporting engine logs
-docker compose -f docker-compose.production.yml logs --tail=100 cbn-reporting-engine
+docker compose -f docker-compose.yml logs --tail=100 cbn-reporting-engine
 
 # Trigger manual report generation
 curl -X POST http://localhost:8095/api/v1/reports/generate \
@@ -248,7 +250,7 @@ mc ls myminio/54link-reports/54LINK001/monthly_activity/2026/03/
 docker compose logs temporal | tail -50
 
 # Restart Temporal
-docker compose -f docker-compose.production.yml restart temporal temporal-ui
+docker compose -f docker-compose.yml restart temporal temporal-ui
 
 # Manually trigger settlement
 # Admin Panel → Overview → "Run Settlement Now"
@@ -263,7 +265,7 @@ docker compose -f docker-compose.production.yml restart temporal temporal-ui
 curl -sf http://localhost:8085/health | jq .
 
 # Review blocked transactions
-docker compose -f docker-compose.production.yml logs --tail=100 fraud-engine | grep "BLOCKED\|HIGH_RISK"
+docker compose -f docker-compose.yml logs --tail=100 fraud-engine | grep "BLOCKED\|HIGH_RISK"
 ```
 
 ### P2: SIM Failover Rate High
@@ -284,13 +286,13 @@ docker compose -f docker-compose.production.yml logs --tail=100 fraud-engine | g
 
 ```bash
 # Scale POS Shell to 3 replicas
-docker compose -f docker-compose.production.yml up -d --scale pos-shell=3
+docker compose -f docker-compose.yml up -d --scale app=3
 
 # Scale MDM compliance engine
-docker compose -f docker-compose.production.yml up -d --scale mdm-compliance-engine=3
+docker compose -f docker-compose.yml up -d --scale mdm-compliance-engine=3
 
 # Scale CBN reporting engine
-docker compose -f docker-compose.production.yml up -d --scale cbn-reporting-engine=2
+docker compose -f docker-compose.yml up -d --scale cbn-reporting-engine=2
 ```
 
 ### 5.2 Kafka Partition Scaling
@@ -326,13 +328,13 @@ gunzip -c /backups/postgres/54link_20260401_000000.sql.gz | \
 
 ```bash
 # Stop TigerBeetle nodes before backup
-docker compose -f docker-compose.production.yml stop tigerbeetle-0 tigerbeetle-1 tigerbeetle-2
+docker compose -f docker-compose.yml stop tigerbeetle-0 tigerbeetle-1 tigerbeetle-2
 
 # Copy data files
 cp -r /var/lib/tigerbeetle/ /backups/tigerbeetle/$(date +%Y%m%d)/
 
 # Restart cluster
-docker compose -f docker-compose.production.yml start tigerbeetle-0 tigerbeetle-1 tigerbeetle-2
+docker compose -f docker-compose.yml start tigerbeetle-0 tigerbeetle-1 tigerbeetle-2
 ```
 
 ### 6.3 Full Service Restore from Checkpoint
@@ -359,7 +361,7 @@ docker exec pos-vault vault kv put secret/54link/jwt JWT_SECRET="$NEW_SECRET"
 sed -i "s/JWT_SECRET=.*/JWT_SECRET=$NEW_SECRET/" .env.production
 
 # 4. Rolling restart (existing sessions will be invalidated)
-docker compose -f docker-compose.production.yml up -d --force-recreate pos-shell
+docker compose -f docker-compose.yml up -d --force-recreate app
 echo "JWT secret rotated. All active sessions have been invalidated."
 ```
 
@@ -375,7 +377,7 @@ docker exec pos-postgres psql -U postgres -c \
 
 # 3. Update .env.production and restart services
 sed -i "s/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$NEW_PASS/" .env.production
-docker compose -f docker-compose.production.yml up -d --force-recreate pos-shell
+docker compose -f docker-compose.yml up -d --force-recreate app
 ```
 
 ---

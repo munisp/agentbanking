@@ -162,7 +162,6 @@ export default function WeeklyReports() {
   const recipientsQ = trpc.weeklyReports.listRecipients.useQuery() as any;
 
   const reportDetailQ = trpc.weeklyReports.getById.useQuery(
-    // @ts-expect-error Sprint 85 — type inference mismatch
     { id: selectedReportId ?? "" },
     { enabled: !!selectedReportId }
   ) as any;
@@ -244,7 +243,6 @@ export default function WeeklyReports() {
   const handlePdfExport = async () => {
     if (!selectedReportId) return;
     try {
-      // @ts-expect-error Sprint 85 — type inference mismatch
       const result = await utils.weeklyReports.getPdfHtml.fetch({
         reportId: selectedReportId,
       });

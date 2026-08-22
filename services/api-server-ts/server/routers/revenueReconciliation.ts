@@ -6,7 +6,11 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { reconciliationItems, transactions } from "../../drizzle/schema";
+import {
+  reconciliationBatches,
+  reconciliationItems,
+  transactions,
+} from "../../drizzle/schema";
 import { eq, desc, count, sql, and, gte, lte } from "drizzle-orm";
 import {
   validateAmount,
@@ -342,29 +346,39 @@ export const revenueReconciliationRouter = router({
       })
     )
     .query(async ({ input }) => {
+      // Real data only: read persisted reconciliation batches. The previous
+      // implementation returned a fabricated "RB-001" batch whose record
+      // counts were derived from an unrelated transactions-table count.
       try {
         const db = await getDb();
-        let recordCount = 500;
-        if (db) {
-          const [result] = await db.select({ cnt: count() }).from(transactions);
-          if ((result?.cnt ?? 0) > 0) recordCount = result.cnt;
-        }
+        if (!db) return { batches: [], total: 0 };
+
+        const [rows, totalResult] = await Promise.all([
+          db
+            .select()
+            .from(reconciliationBatches)
+            .orderBy(desc(reconciliationBatches.createdAt))
+            .limit(input.limit),
+          db.select({ total: count() }).from(reconciliationBatches),
+        ]);
 
         return {
-          batches: [
-            {
-              id: "RB-001",
-              clientId: input.clientId ?? "CLIENT-001",
-              source: "tigerbeetle",
+          batches: rows.map(b => {
+            const total = b.totalRecords ?? 0;
+            const matched = b.matchedCount ?? 0;
+            return {
+              id: b.batchReference,
+              clientId: input.clientId ?? null,
+              source: b.sourceType,
               target: "postgres",
-              totalRecords: recordCount,
-              matchedRecords: recordCount - 2,
-              matchRatePct: ((recordCount - 2) / recordCount) * 100,
-              status: "completed",
-              createdAt: Date.now() - 86400000,
-            },
-          ],
-          total: 1,
+              totalRecords: total,
+              matchedRecords: matched,
+              matchRatePct: total > 0 ? (matched / total) * 100 : 0,
+              status: b.status,
+              createdAt: b.createdAt?.getTime() ?? null,
+            };
+          }),
+          total: totalResult[0]?.total ?? 0,
         };
       } catch {
         return { batches: [], total: 0 };
@@ -379,20 +393,47 @@ export const revenueReconciliationRouter = router({
         pageSize: z.number().min(1).max(100).default(10),
       })
     )
-    .query(async () => {
+    .query(async ({ input }) => {
+      // Real data only: discrepancies are reconciliation_items rows. The
+      // previous implementation returned a fabricated "RE-001" entry.
+      const db = await getDb();
+      if (!db) return { entries: [], total: 0 };
+
+      const asId = /^\d+$/.test(input.batchId) ? Number(input.batchId) : null;
+      let batchId = asId;
+      if (batchId === null) {
+        const [batch] = await db
+          .select({ id: reconciliationBatches.id })
+          .from(reconciliationBatches)
+          .where(eq(reconciliationBatches.batchReference, input.batchId))
+          .limit(1);
+        batchId = batch?.id ?? null;
+      }
+      if (batchId === null) return { entries: [], total: 0 };
+
+      const where = eq(reconciliationItems.batchId, batchId);
+      const [rows, totalResult] = await Promise.all([
+        db
+          .select()
+          .from(reconciliationItems)
+          .where(where)
+          .orderBy(desc(reconciliationItems.createdAt))
+          .limit(input.pageSize)
+          .offset((input.page - 1) * input.pageSize),
+        db.select({ total: count() }).from(reconciliationItems).where(where),
+      ]);
+
       return {
-        entries: [
-          {
-            id: "RE-001",
-            batchId: "RB-001",
-            type: "amount_mismatch",
-            sourceAmount: 50000,
-            targetAmount: 49500,
-            diff: 500,
-            status: "open",
-          },
-        ],
-        total: 1,
+        entries: rows.map(r => ({
+          id: r.externalRef,
+          batchId: input.batchId,
+          type: "amount_mismatch",
+          sourceAmount: Number(r.externalAmount),
+          targetAmount: r.internalAmount !== null ? Number(r.internalAmount) : null,
+          diff: r.discrepancy !== null ? Number(r.discrepancy) : null,
+          status: r.matchStatus,
+        })),
+        total: totalResult[0]?.total ?? 0,
       };
     }),
 
@@ -494,25 +535,73 @@ export const revenueReconciliationRouter = router({
   getMetrics: protectedProcedure
     .input(z.object({}).optional())
     .query(async () => {
+      // Real data only: aggregate persisted reconciliation batches and items.
+      // The previous implementation returned fabricated metrics (150 batches,
+      // 99.85% match rate, hardcoded discrepancy trend).
       try {
         const db = await getDb();
-        let totalReconciled = 75000;
-        if (db) {
-          const [result] = await db.select({ cnt: count() }).from(transactions);
-          if ((result?.cnt ?? 0) > 0) totalReconciled = result.cnt;
+        if (!db)
+          return {
+            batchesProcessed: 0,
+            totalRecordsReconciled: 0,
+            avgMatchRatePct: 0,
+            openDiscrepancies: 0,
+            resolvedDiscrepancies: 0,
+            discrepancyTrend: [],
+          };
+
+        const [batchAgg] = await db
+          .select({
+            batches: count(),
+            totalRecords: sql<string>`COALESCE(SUM(${reconciliationBatches.totalRecords}), 0)`,
+            totalMatched: sql<string>`COALESCE(SUM(${reconciliationBatches.matchedCount}), 0)`,
+          })
+          .from(reconciliationBatches);
+
+        const statusRows = await db
+          .select({ matchStatus: reconciliationItems.matchStatus, cnt: count() })
+          .from(reconciliationItems)
+          .groupBy(reconciliationItems.matchStatus);
+        let openDiscrepancies = 0;
+        let resolvedDiscrepancies = 0;
+        for (const row of statusRows) {
+          if (row.matchStatus === "resolved") resolvedDiscrepancies += row.cnt;
+          else if (row.matchStatus !== "matched") openDiscrepancies += row.cnt;
         }
 
+        const trendRows = await db
+          .select({
+            date: sql<string>`TO_CHAR(${reconciliationItems.createdAt}, 'YYYY-MM-DD')`,
+            cnt: count(),
+          })
+          .from(reconciliationItems)
+          .where(
+            sql`${reconciliationItems.matchStatus} <> 'matched'`
+          )
+          .groupBy(
+            sql`TO_CHAR(${reconciliationItems.createdAt}, 'YYYY-MM-DD')`
+          )
+          .orderBy(
+            sql`TO_CHAR(${reconciliationItems.createdAt}, 'YYYY-MM-DD') DESC`
+          )
+          .limit(30);
+
+        const totalRecords = Number(batchAgg?.totalRecords ?? 0);
+        const totalMatched = Number(batchAgg?.totalMatched ?? 0);
+
         return {
-          batchesProcessed: 150,
-          totalRecordsReconciled: totalReconciled,
-          avgMatchRatePct: 99.85,
-          openDiscrepancies: 5,
-          resolvedDiscrepancies: 495,
-          discrepancyTrend: [
-            { date: "2024-05-01", count: 12 },
-            { date: "2024-05-15", count: 8 },
-            { date: "2024-06-01", count: 5 },
-          ],
+          batchesProcessed: batchAgg?.batches ?? 0,
+          totalRecordsReconciled: totalRecords,
+          avgMatchRatePct:
+            totalRecords > 0
+              ? Number(((totalMatched / totalRecords) * 100).toFixed(2))
+              : 0,
+          openDiscrepancies,
+          resolvedDiscrepancies,
+          discrepancyTrend: trendRows.map(t => ({
+            date: t.date,
+            count: t.cnt,
+          })),
           lastRunAt: new Date().toISOString(),
         };
       } catch {
@@ -530,30 +619,17 @@ export const revenueReconciliationRouter = router({
   getSettlementFileStatus: protectedProcedure
     .input(z.object({ switchProvider: z.string().min(1) }))
     .query(async ({ input }) => {
-      try {
-        const db = await getDb();
-        let recordCount = 5000;
-        if (db) {
-          const [result] = await db.select({ cnt: count() }).from(transactions);
-          if ((result?.cnt ?? 0) > 0) recordCount = result.cnt;
-        }
-
-        return {
-          switchProvider: input.switchProvider,
-          fileReceived: true,
-          reconciled: true,
-          matchRate: 99.95,
-          lastFileDate: new Date().toISOString().split("T")[0],
-          recordCount,
-        };
-      } catch {
-        return {
-          switchProvider: input.switchProvider,
-          fileReceived: false,
-          reconciled: false,
-          matchRate: 0,
-          recordCount: 0,
-        };
-      }
+      // Honest empty state: no switch settlement-file tracking table exists,
+      // so there is nothing real to report. The previous implementation
+      // fabricated fileReceived:true and a 99.95% match rate with a record
+      // count borrowed from the transactions table.
+      return {
+        switchProvider: input.switchProvider,
+        fileReceived: false,
+        reconciled: false,
+        matchRate: 0,
+        lastFileDate: null,
+        recordCount: 0,
+      };
     }),
 });

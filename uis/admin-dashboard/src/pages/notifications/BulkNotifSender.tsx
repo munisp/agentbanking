@@ -12,7 +12,6 @@ export default function BulkNotifSender() {
   const [recipientCount, setRecipientCount] = useState(100);
 
   const campaignsQ = trpc.bulkNotif.listCampaigns.useQuery() as any;
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const templatesQ = trpc.notifTemplates.list.useQuery({ channel }) as any;
   const createCampaign = trpc.bulkNotif.createCampaign.useMutation({
     onSuccess: () => {

@@ -3,6 +3,8 @@
 **Version:** Phase 136  
 **Target:** Ubuntu 22.04 LTS, Docker 24+, 8 vCPU / 32 GB RAM minimum
 
+> ⚠️ **2026-08 correction (@ `505705ac`):** this guide originally referenced `docker-compose.production.yml`, which **does not exist in the repository**. Commands below now use the root `docker-compose.yml` (the only full-stack compose file present). Caveats: (1) the main application service is named `app` in `docker-compose.yml` (previously `pos-shell` below — updated); (2) some services mentioned in this guide (Vault, MinIO, TigerBeetle cluster nodes) are **not defined** in the current `docker-compose.yml`; (3) `Makefile.production` still points at the missing `docker-compose.production.yml` and must be updated (or the file created) before `make -f Makefile.production …` targets will work.
+
 ---
 
 ## Architecture Overview
@@ -57,8 +59,8 @@ sudo apt-get install -y certbot
 ## Step 1: Clone and Configure
 
 ```bash
-git clone https://github.com/54link/pos-shell-demo.git
-cd pos-shell-demo
+git clone https://github.com/munisp/agentbanking.git
+cd agentbanking
 
 # Copy environment template
 cp .env.production.example .env.production
@@ -169,7 +171,7 @@ This starts all services in the correct dependency order:
 
 ```bash
 # Create admin agent (AGT001 / PIN: 1234)
-docker compose -f docker-compose.production.yml exec pos-shell pnpm seed
+docker compose -f docker-compose.yml exec app pnpm seed
 
 # Or run against local DB
 pnpm seed
@@ -237,7 +239,7 @@ The `deploy` target runs `docker compose pull` then `docker compose up -d --buil
 
 ```bash
 # Rollback to previous image tag
-docker compose -f docker-compose.production.yml up -d --no-deps pos-shell \
+docker compose -f docker-compose.yml up -d --no-deps app \
   --image ghcr.io/54link/pos-shell:previous-tag
 ```
 
@@ -247,7 +249,7 @@ docker compose -f docker-compose.production.yml up -d --no-deps pos-shell \
 
 ```bash
 # Scale POS Shell horizontally (requires Redis session sharing — already implemented)
-docker compose -f docker-compose.production.yml up -d --scale pos-shell=3
+docker compose -f docker-compose.yml up -d --scale app=3
 ```
 
 Note: Socket.IO requires sticky sessions at the nginx level. The provided nginx config includes `ip_hash` for this purpose.
@@ -258,14 +260,14 @@ Note: Socket.IO requires sticky sessions at the nginx level. The provided nginx 
 
 ```bash
 # PostgreSQL backup
-docker compose -f docker-compose.production.yml exec postgres \
+docker compose -f docker-compose.yml exec postgres \
   pg_dump -U postgres pos_shell > backup-$(date +%Y%m%d).sql
 
 # MinIO backup (sync to S3)
 mc mirror minio/54link-transactions s3/54link-backup/transactions/
 
 # Redis backup (RDB snapshot)
-docker compose -f docker-compose.production.yml exec redis \
+docker compose -f docker-compose.yml exec redis \
   redis-cli BGSAVE
 ```
 

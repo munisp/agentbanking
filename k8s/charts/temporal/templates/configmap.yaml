@@ -12,5 +12,5 @@ data:
   DB_PORT: {{ .Values.env.DB_PORT | quote }}
   USER: {{ .Values.env.USER | quote }}
   POSTGRES_USER: {{ .Values.env.POSTGRES_USER | quote }}
-  POSTGRES_PWD: {{ .Values.env.POSTGRES_PWD | quote }}
+  POSTGRES_PWD: {{ required "env.POSTGRES_PWD must be set (see values.yaml)" .Values.env.POSTGRES_PWD | quote }}
   POSTGRES_SEEDS: {{ .Values.env.POSTGRES_SEEDS | quote }}

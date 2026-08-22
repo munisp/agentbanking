@@ -359,8 +359,13 @@ async function notifyMiddleware(
     await fluvioProduce("financial-events", {
       value: JSON.stringify({ type: eventType, ...payload }),
     });
-  } catch {
-    // Non-critical: middleware failures should not block operations
+  } catch (err) {
+    // Non-critical: middleware failures should not block operations — but
+    // they must be visible (MB-15/16: no silent swallows).
+    console.error(
+      `[commissionEngine] failed to publish ${eventType} middleware event:`,
+      err instanceof Error ? err.message : err
+    );
   }
 }
 
@@ -374,8 +379,15 @@ async function checkPermission(userId: string, action: string) {
       permission: "execute",
     });
     return allowed;
-  } catch {
-    return true; // Permissive fallback
+  } catch (err) {
+    // MB-15/16: fail CLOSED on authorization-service errors. The previous
+    // permissive fallback granted financial execute permission whenever
+    // Permify was unreachable.
+    console.error(
+      "[commissionEngine] permission check failed — denying (fail closed):",
+      err instanceof Error ? err.message : err
+    );
+    return false;
   }
 }
 
@@ -384,11 +396,11 @@ async function recordLedgerTransfer(
   creditId: string,
   amount: number
 ) {
-  try {
-    await tbCreateTransfer({ debitId, creditId, amount } as any);
-  } catch {
-    // Log but don't block
-  }
+  // MB-15/16: fail loud. A commission ledger transfer that silently fails
+  // leaves the double-entry commission ledger inconsistent with the primary
+  // transaction. Throw so the caller's transaction rolls back (or the error
+  // surfaces) instead of drifting.
+  await tbCreateTransfer({ debitId, creditId, amount } as any);
 }
 
 // ── Transaction Safety ─────────────────────────────────────────────────────

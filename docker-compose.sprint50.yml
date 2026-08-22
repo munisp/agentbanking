@@ -6,10 +6,10 @@ version: "3.9"
 
 x-common-env: &common-env
   NODE_ENV: production
-  DATABASE_URL: ${DATABASE_URL:-postgresql://posadmin:posadmin123@postgres:5432/pos54link}
-  POSTGRES_URL: ${POSTGRES_URL:-postgresql://posadmin:posadmin123@postgres:5432/pos54link}
+  DATABASE_URL: ${DATABASE_URL:?must be set}
+  POSTGRES_URL: ${POSTGRES_URL:?must be set}
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-  JWT_SECRET: ${JWT_SECRET:-sprint50-jwt-secret-change-in-production}
+  JWT_SECRET: ${JWT_SECRET:?must be set}
   LOG_LEVEL: ${LOG_LEVEL:-info}
 
 x-healthcheck: &healthcheck

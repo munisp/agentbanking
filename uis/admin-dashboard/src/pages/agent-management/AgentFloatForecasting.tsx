@@ -63,8 +63,8 @@ export default function AgentFloatForecasting() {
   const [confirmStep, setConfirmStep] = useState(false);
   const [successAgent, setSuccessAgent] = useState<AgentForecast | null>(null);
 
-  const stats = {data: null, isLoading: false, refetch: () => {}};
-  const forecast = {data: null, isLoading: false, refetch: () => {}};
+  const stats = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const forecast = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
   const triggerReplenishment = {mutate: () => toast.error("This action is unavailable: the backend service is not connected."), isPending: false};
 
   const openReplenishDialog = (agent: AgentForecast) => {

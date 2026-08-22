@@ -383,46 +383,84 @@ export const remittanceRouter = router({
 
   // ── Sprint 28 domain procedures ──
   partners: protectedProcedure.query(async () => {
+    // Honest empty state: no remittance partner directory table exists in the
+    // schema. The previous implementation returned fabricated partners
+    // ("WorldRemit", "Lemfi"). When a partner directory is modeled, query it
+    // here.
+    return { partners: [] };
+  }),
+  history: protectedProcedure.query(async ({ ctx }) => {
+    // Real data only: the caller's own transaction ledger rows (admins
+    // unscoped), most recent first. The previous implementation returned a
+    // fabricated "RM-001" remittance.
+    const database = await getDb();
+    if (!database)
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Database unavailable",
+      });
+    const scopeAgentId = await resolveTransactionScope(ctx);
+    const where =
+      scopeAgentId !== null
+        ? eq(transactions.agentId, scopeAgentId)
+        : undefined;
+    const [rows, totalRows] = await Promise.all([
+      database
+        .select()
+        .from(transactions)
+        .where(where)
+        .orderBy(desc(transactions.id))
+        .limit(20),
+      database.select({ total: count() }).from(transactions).where(where),
+    ]);
     return {
-      partners: [
-        {
-          id: "RP-001",
-          name: "WorldRemit",
-          corridor: "UK-NG",
-          status: "active",
-        },
-        { id: "RP-002", name: "Lemfi", corridor: "CA-NG", status: "active" },
-      ],
+      transactions: rows.map(t => ({
+        id: t.ref,
+        partnerId: null, // no partner attribution column exists
+        amount: Number(t.amount),
+        currency: t.currency,
+        localAmount: Number(t.amount),
+        status: t.status,
+      })),
+      total: totalRows[0]?.total ?? 0,
     };
   }),
-  history: protectedProcedure.query(async () => {
+  analytics: protectedProcedure.query(async ({ ctx }) => {
+    // Real aggregates from the caller's transaction ledger (admins unscoped).
+    // Corridor/partner breakdowns are honest empty arrays: no corridor or
+    // partner attribution exists on transactions. The previous implementation
+    // returned fully fabricated volumes, fees, corridors, and partners.
+    const database = await getDb();
+    if (!database)
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Database unavailable",
+      });
+    const scopeAgentId = await resolveTransactionScope(ctx);
+    const where =
+      scopeAgentId !== null
+        ? eq(transactions.agentId, scopeAgentId)
+        : undefined;
+    const [agg] = await database
+      .select({
+        totalTransactions: count(),
+        totalVolume: sql<string>`COALESCE(SUM(${transactions.amount}::numeric), 0)`,
+        totalFees: sql<string>`COALESCE(SUM(${transactions.fee}::numeric), 0)`,
+        totalCommission: sql<string>`COALESCE(SUM(${transactions.commission}::numeric), 0)`,
+        avgAmount: sql<string>`COALESCE(AVG(${transactions.amount}::numeric), 0)`,
+      })
+      .from(transactions)
+      .where(where);
+    const totalTransactions = agg?.totalTransactions ?? 0;
     return {
-      transactions: [
-        {
-          id: "RM-001",
-          partnerId: "RP-001",
-          amount: 500,
-          currency: "GBP",
-          localAmount: 450000,
-          status: "completed",
-        },
-      ],
-      total: 1,
-    };
-  }),
-  analytics: protectedProcedure.query(async () => {
-    return {
-      totalTransactions: 2000,
-      totalRemittances: 2000,
-      totalVolume: 500000000,
-      totalFees: 5000000,
-      totalCommission: 2500000,
-      avgAmount: 250000,
-      topCorridors: [{ corridor: "UK-NG", volume: 200000000 }],
-      byPartner: [
-        { partner: "WorldRemit", volume: 300000000, count: 1200 },
-        { partner: "Flutterwave", volume: 200000000, count: 800 },
-      ],
+      totalTransactions,
+      totalRemittances: totalTransactions,
+      totalVolume: Number(agg?.totalVolume ?? 0),
+      totalFees: Number(agg?.totalFees ?? 0),
+      totalCommission: Number(agg?.totalCommission ?? 0),
+      avgAmount: Number(Number(agg?.avgAmount ?? 0).toFixed(2)),
+      topCorridors: [],
+      byPartner: [],
     };
   }),
 });

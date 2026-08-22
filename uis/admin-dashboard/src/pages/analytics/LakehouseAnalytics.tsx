@@ -879,7 +879,7 @@ function SnapshotStats() {
           Medallion Architecture
         </div>
         <div className="space-y-1">
-          {Object.entries(stats.layers).map(([layer, desc]) => (
+          {Object.entries(stats.layers).map(([layer, desc]: [string, any]) => (
             <div key={layer} className="flex items-start gap-2 text-xs">
               <Badge variant="outline" className="capitalize shrink-0">
                 {layer}

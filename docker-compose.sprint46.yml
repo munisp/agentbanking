@@ -18,7 +18,7 @@ services:
       - SMTP_HOST=mailhog
       - SMTP_PORT=1025
       - SMS_PROVIDER=africastalking
-      - SMS_API_KEY=${AFRICASTALKING_API_KEY:-sandbox_key}
+      - SMS_API_KEY=${AFRICASTALKING_API_KEY:?must be set}
       - PUSH_PROVIDER=firebase
     command: ["node", "scripts/notification-worker.mjs"]
     depends_on:
@@ -40,9 +40,9 @@ services:
       - .:/app
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/pos_shell}
-      - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY:-sk_test_xxx}
-      - FLUTTERWAVE_SECRET_KEY=${FLUTTERWAVE_SECRET_KEY:-FLWSECK_TEST-xxx}
+      - DATABASE_URL=${DATABASE_URL:?must be set}
+      - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY:?must be set}
+      - FLUTTERWAVE_SECRET_KEY=${FLUTTERWAVE_SECRET_KEY:?must be set}
     command: ["node", "scripts/reconciliation-worker.mjs"]
     depends_on:
       - postgres
@@ -57,7 +57,7 @@ services:
       - .:/app
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/pos_shell}
+      - DATABASE_URL=${DATABASE_URL:?must be set}
       - REDIS_URL=redis://redis:6379
       - KAFKA_BROKERS=kafka:9092
       - MAX_BATCH_SIZE=1000
@@ -78,7 +78,7 @@ services:
       - .:/app
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/pos_shell}
+      - DATABASE_URL=${DATABASE_URL:?must be set}
       - CBN_REPORTING_URL=${CBN_REPORTING_URL:-https://cbn-sandbox.ng/api/v1}
       - NDPR_ENDPOINT=${NDPR_ENDPOINT:-https://ndpr-sandbox.ng/api/v1}
     command: ["sh", "-c", "while true; do node scripts/compliance-report-generator.mjs; sleep 86400; done"]
@@ -95,7 +95,7 @@ services:
       - .:/app
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/pos_shell}
+      - DATABASE_URL=${DATABASE_URL:?must be set}
       - TEMPORAL_ADDRESS=temporal:7233
       - REDIS_URL=redis://redis:6379
       - SLA_HOURS=48
@@ -141,7 +141,7 @@ services:
       - MAX_RETRIES=5
       - RETRY_BACKOFF_MS=1000
       - WEBHOOK_TIMEOUT_MS=30000
-      - HMAC_SECRET=${WEBHOOK_HMAC_SECRET:-default-hmac-secret}
+      - HMAC_SECRET=${WEBHOOK_HMAC_SECRET:?must be set}
     command: ["node", "scripts/webhook-delivery-worker.mjs"]
     depends_on:
       - redis

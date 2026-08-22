@@ -13,7 +13,7 @@ services:
     command: serve
     environment:
       PERMIFY_DATABASE_ENGINE: postgres
-      PERMIFY_DATABASE_URI: "postgres://permify:${PERMIFY_DB_PASSWORD:-permify-secret}@postgres-primary:5432/permify?sslmode=disable"
+      PERMIFY_DATABASE_URI: "postgres://permify:${PERMIFY_DB_PASSWORD:?must be set}@postgres-primary:5432/permify?sslmode=disable"
       PERMIFY_DATABASE_MAX_OPEN_CONNECTIONS: 50
       PERMIFY_DATABASE_MAX_IDLE_CONNECTIONS: 10
       PERMIFY_DATABASE_MAX_CONNECTION_LIFETIME: 300s
@@ -22,7 +22,7 @@ services:
       PERMIFY_LOG_LEVEL: info
       PERMIFY_AUTHN_ENABLED: "true"
       PERMIFY_AUTHN_METHOD: preshared
-      PERMIFY_AUTHN_PRESHARED_KEYS: "${PERMIFY_API_KEY:-pos54-permify-key}"
+      PERMIFY_AUTHN_PRESHARED_KEYS: "${PERMIFY_API_KEY:?must be set}"
       PERMIFY_PROFILER_ENABLED: "true"
       PERMIFY_PROFILER_PORT: 6060
     networks: [pos54-net]
@@ -39,7 +39,7 @@ services:
     command: serve
     environment:
       PERMIFY_DATABASE_ENGINE: postgres
-      PERMIFY_DATABASE_URI: "postgres://permify:${PERMIFY_DB_PASSWORD:-permify-secret}@postgres-primary:5432/permify?sslmode=disable"
+      PERMIFY_DATABASE_URI: "postgres://permify:${PERMIFY_DB_PASSWORD:?must be set}@postgres-primary:5432/permify?sslmode=disable"
       PERMIFY_DATABASE_MAX_OPEN_CONNECTIONS: 50
       PERMIFY_DATABASE_MAX_IDLE_CONNECTIONS: 10
       PERMIFY_DATABASE_MAX_CONNECTION_LIFETIME: 300s
@@ -47,7 +47,7 @@ services:
       PERMIFY_LOG_LEVEL: info
       PERMIFY_AUTHN_ENABLED: "true"
       PERMIFY_AUTHN_METHOD: preshared
-      PERMIFY_AUTHN_PRESHARED_KEYS: "${PERMIFY_API_KEY:-pos54-permify-key}"
+      PERMIFY_AUTHN_PRESHARED_KEYS: "${PERMIFY_API_KEY:?must be set}"
     networks: [pos54-net]
     deploy:
       resources:

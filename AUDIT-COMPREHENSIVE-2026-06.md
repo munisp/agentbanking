@@ -2,8 +2,7 @@
 
 ## Executive Summary
 
-Audited all 477 tRPC routers, 85 Go services, 54 Rust services, 288+ Python services,
-457 PWA pages, 203 Flutter screens, and 69 React Native screens.
+Audited the platform codebase. **Counts re-verified 2026-08 against commit `505705ac`** (file counts from the git tree; rules stated inline): 418 tRPC router files directly under `server/routers/` (478 in the `services/api-server-ts/server/routers/` mirror), 192 Go modules (`go.mod` files), 93 Rust crates (`Cargo.toml` files), 466 service directories under `services/` (316 of them contain Python), 101 PWA page components (`client/src/pages/*.tsx`), 455 Flutter screen files (`mobile-flutter/lib/screens/*.dart` — but **no `pubspec.yaml` exists anywhere in the repo, so the Flutter app is not currently buildable**), and a 5-file React Native skeleton (`mobile-rn/`, 0 screen files). The original June figures (477 routers / 457 PWA pages / 203 Flutter screens / 69 RN screens) do not match the current tree.
 
 **Overall Production Readiness: 7.4/10** (honest, not inflated)
 
@@ -17,13 +16,13 @@ Audited all 477 tRPC routers, 85 Go services, 54 Rust services, 288+ Python serv
 | No math/rand in production code                              | ✅ PASS | 0 Go files use math/rand                                                            |
 | No TODO/FIXME in Go or TypeScript                            | ✅ PASS | 0 in Go, 0 in Rust, 1 in TS (test file), 1 in Python (gRPC server)                  |
 | No console.log in frontend                                   | ❌ FAIL | **5 files** with 11 console.log calls in hooks/pages                                |
-| No scaffolded/empty handler functions                        | ✅ PASS | All 477 routers have real getDb() + Drizzle queries                                 |
+| No scaffolded/empty handler functions                        | ⚠️ STALE | Original claim covered "477 routers"; 2026-08 re-count finds 418 router files under `server/routers/` (478 in the mirror). Per-file content not re-verified |
 | No cross-project contamination                               | ❌ FAIL | **9 files** in server/\_core/ reference "Manus" platform                            |
-| All PWA pages wired to router                                | ✅ PASS | All 457 pages have real API calls                                                   |
+| All PWA pages wired to router                                | ⚠️ STALE | `client/src/pages/` holds 101 `.tsx` page components at `505705ac` (not 457); wiring not re-verified |
 | All Go routes with auth middleware                           | ❌ FAIL | **59/85** Go services lack auth middleware                                          |
 | All Rust routes with auth middleware                         | ❌ FAIL | **31/54** Rust services lack auth middleware                                        |
 | All middleware have real SDK clients                         | ✅ PASS | SDK clients with embedded fallbacks present                                         |
-| Zero TypeScript errors                                       | ✅ PASS | tsc --noEmit = 0 errors                                                             |
+| Zero TypeScript errors                                       | ❌ FAIL (2026-08 re-check) | `tsc --noEmit` is not error-free across the repo (e.g. `uis/admin-dashboard`); remediation in progress |
 | All top-level services robust (>100 lines, DB, no hardcoded) | ❌ FAIL | See below                                                                           |
 
 ### Services Failing Robustness Check
@@ -64,6 +63,8 @@ Audited all 477 tRPC routers, 85 Go services, 54 Rust services, 288+ Python serv
 | Super App                   | 1            | 8.5/10 | Full implementation                     |
 | TigerBeetle                 | 8            | 8.5/10 | Fixed — native client, persistence      |
 
+_Note (2026-08): the per-domain router counts above reflect the original June audit's domain mapping and predate the 2026-08 re-count (418 router files under `server/routers/` at `505705ac`); they have not been re-derived._
+
 ---
 
 ## 3. KYC/KYB/Liveness Assessment (§2 deep-dive)
@@ -93,19 +94,19 @@ Audited all 477 tRPC routers, 85 Go services, 54 Rust services, 288+ Python serv
 
 ## 4. PWA vs Mobile Parity
 
-| Platform     | Screens/Pages | Coverage |
-| ------------ | ------------- | -------- |
-| PWA          | 457           | 100%     |
-| Flutter      | 203           | 44%      |
-| React Native | 69            | 15%      |
+| Platform     | Screens/Pages (2026-08 re-count @ `505705ac`) | Notes |
+| ------------ | ---------------------------------------------- | ----- |
+| PWA          | 101 (`client/src/pages/*.tsx`)                 | React PWA; original "457 pages / 100%" claim not reproducible |
+| Flutter      | 455 (`mobile-flutter/lib/screens/*.dart`)      | Source only — **no `pubspec.yaml` repo-wide, so not buildable as-is** |
+| React Native | 0                                              | `mobile-rn/` is a 5-file skeleton (no screen files) |
 
-**Gap: 254 PWA pages have no Flutter equivalent, 388 have no RN equivalent.**
+**Gap:** The original "254 PWA pages without Flutter equivalent / 388 without RN equivalent" arithmetic was based on the unreproducible 457-page figure and has been removed. A real parity audit against the 101 current PWA pages has not been performed.
 
 ---
 
 ## 5. Data Layer
 
-- **Schema tables**: 161 in drizzle/schema.ts (5,203 lines)
+- **Schema tables**: 161 `pgTable` definitions in `services/api-server-ts/drizzle/schema.ts` (5,519 lines; re-counted 2026-08). Note: there is **no root-level `drizzle/schema.ts`**; the root `drizzle/` directory holds 41 `pgTable` definitions across its `schema-*.ts` files
 - **Indexes**: 413 index references (good coverage)
 - **Seed scripts**: 15+ scattered scripts, no single unified entry point
 - **Missing**: Unified seed script with realistic Nigerian banking data

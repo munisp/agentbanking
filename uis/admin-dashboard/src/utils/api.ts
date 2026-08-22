@@ -361,7 +361,7 @@ export const api = {
           return u.access_level || u.user_role || u.role || "bank_admin";
         } catch { return "bank_admin"; }
       })();
-    return request<any[]>("/chart-of-accounts/api/v1/accounts?include_balance=true", {
+    return request<any>("/chart-of-accounts/api/v1/accounts?include_balance=true", {
       headers: { ...fullHeaders(), "X-User-Role": role },
     });
   },

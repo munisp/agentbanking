@@ -261,18 +261,17 @@ data:
   smtp-port: "587"
 
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: 54link-secrets
-  namespace: 54link
-type: Opaque
-stringData:
-  database-url: "postgresql://54link:CHANGE_ME@postgres.54link.svc:5432/pos54link?sslmode=require"
-  postgres-url: "postgresql://54link:CHANGE_ME@postgres.54link.svc:5432/pos54link?sslmode=require"
-  jwt-secret: "CHANGE_ME_TO_A_256_BIT_RANDOM_SECRET"
-  redis-url: "redis://redis.54link.svc:6379"
-  keycloak-client-secret: "CHANGE_ME"
+# The Secret "54link-secrets" (namespace: 54link) is intentionally NOT
+# committed (round-3: previous revision committed placeholder literals). Create it
+# externally before deploying, e.g.:
+#   kubectl create secret generic 54link-secrets -n 54link \
+#     --from-literal=database-url="$DATABASE_URL" \
+#     --from-literal=postgres-url="$POSTGRES_URL" \
+#     --from-literal=jwt-secret="$JWT_SECRET" \
+#     --from-literal=redis-url="$REDIS_URL" \
+#     --from-literal=keycloak-client-secret="$KEYCLOAK_CLIENT_SECRET"
+# Required keys: database-url, postgres-url, jwt-secret, redis-url,
+# keycloak-client-secret.
 
 ---
 apiVersion: v1

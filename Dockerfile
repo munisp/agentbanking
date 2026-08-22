@@ -1,26 +1,39 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Stage 1: Build
+# POS-54Link — application image
+#
+# The Node.js application lives in services/api-server-ts (it carries the only
+# package.json + pnpm-lock.yaml in this repo after the 2026-06-29 monorepo
+# restructure). The previous revision of this Dockerfile referenced a root
+# package.json / pnpm-lock.yaml that no longer exist, breaking every build.
+#
+# Multi-stage: install → build → minimal runtime.
 # ─────────────────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS builder
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@9 --activate
+# pnpm is provided by corepack; the exact version (10.4.1) is pinned by
+# services/api-server-ts/package.json#packageManager.
+RUN corepack enable
 
 WORKDIR /app
 
-# Copy manifests and patches for layer caching
-COPY package.json pnpm-lock.yaml ./
-COPY patches/ ./patches/
-RUN pnpm install --frozen-lockfile
+# Copy manifests first for layer caching
+COPY services/api-server-ts/package.json services/api-server-ts/pnpm-lock.yaml ./
+# Lockfile restore pending (staged artifact for maintainers) — no-frozen for now
+RUN pnpm install --no-frozen-lockfile
 
-# Copy source
-COPY . .
+# Copy the application source (.dockerignore strips node_modules/dist/tests)
+COPY services/api-server-ts/ ./
 
-# Build (Vite client + esbuild server bundle)
-ARG VITE_APP_ID=""
-ARG VITE_APP_TITLE="54Link POS Shell"
 ENV NODE_ENV=production
-RUN pnpm build
+# Full build = Vite client + esbuild server bundle. The client tree is not
+# currently part of services/api-server-ts (vite.config.ts expects ./client),
+# so fall back to the server-only bundle until the client is co-located.
+RUN if [ -d client ]; then \
+      pnpm build; \
+    else \
+      echo "client/ not present in services/api-server-ts — building server bundle only (pnpm build:server)"; \
+      pnpm build:server; \
+    fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 2: Runtime
@@ -32,16 +45,17 @@ RUN addgroup -S posshell && adduser -S posshell -G posshell
 
 WORKDIR /app
 
-# Copy build output + migrations
+# Copy build output + migrations + manifests
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-lock.yaml ./
-COPY --from=builder /app/patches ./patches
 
-# Install only production runtime dependencies
-RUN corepack enable && corepack prepare pnpm@9 --activate \
-    && pnpm install --prod --frozen-lockfile \
+# NOTE: full install (not --prod). The esbuild bundle keeps runtime-external
+# imports of dev-time packages (e.g. "vite" via server/_core/vite.ts), which
+# must resolve when dist/index.js starts. Lockfile restore pending — no-frozen.
+RUN corepack enable \
+    && pnpm install --no-frozen-lockfile \
     && pnpm store prune
 
 # Switch to non-root user

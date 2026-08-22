@@ -15,7 +15,7 @@ const statusColors: Record<string, string> = {
 
 export default function RegulatorySandboxPage() {
   const [search, setSearch] = useState("");
-  const { data, isLoading } = {data: null, isLoading: false, refetch: () => {}};
+  const { data, isLoading } = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
   const d = data as Record<string, unknown> | undefined;
   const listData = (d?.sandboxes ?? d?.recent ?? []) as Record<
     string,

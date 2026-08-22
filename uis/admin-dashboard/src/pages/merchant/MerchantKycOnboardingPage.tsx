@@ -31,11 +31,11 @@ export default function MerchantKycOnboardingPage() {
     doc_number: "",
     expiry_date: "",
   });
-  const docsQuery = {data: null, isLoading: false, refetch: () => {}};
-  const statsQuery = {data: null, isLoading: false, refetch: () => {}};
-  const uploadMutation = {mutate: () => {}, mutateAsync: async () => {}, isPending: false, isLoading: false};
-  const verifyMutation = {mutate: () => {}, mutateAsync: async () => {}, isPending: false, isLoading: false};
-  const rejectMutation = {mutate: () => {}, mutateAsync: async () => {}, isPending: false, isLoading: false};
+  const docsQuery = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const statsQuery = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const uploadMutation = {mutate: (_vars?: any) => {}, mutateAsync: async (_vars?: any) => {}, isPending: false, isLoading: false, data: null as any, error: null as any};
+  const verifyMutation = {mutate: (_vars?: any) => {}, mutateAsync: async (_vars?: any) => {}, isPending: false, isLoading: false, data: null as any, error: null as any};
+  const rejectMutation = {mutate: (_vars?: any) => {}, mutateAsync: async (_vars?: any) => {}, isPending: false, isLoading: false, data: null as any, error: null as any};
 
   const docs = (docsQuery.data ?? []).filter((d: any) => {
     if (
@@ -62,10 +62,7 @@ export default function MerchantKycOnboardingPage() {
           <div className="flex gap-2 mb-4">
             <button
               onClick={() => {
-                toast?.({
-                  title: "Add KYC Document",
-                  description: "Feature ready for integration",
-                });
+                toast("Add KYC Document", { description: "Feature ready for integration" });
               }}
               className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium"
             >
@@ -73,10 +70,7 @@ export default function MerchantKycOnboardingPage() {
             </button>
             <button
               onClick={() => {
-                toast?.({
-                  title: "Edit Document",
-                  description: "Select a kyc document to edit",
-                });
+                toast("Edit Document", { description: "Select a kyc document to edit" });
               }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
             >
@@ -84,10 +78,7 @@ export default function MerchantKycOnboardingPage() {
             </button>
             <button
               onClick={() => {
-                toast?.({
-                  title: "Delete Document",
-                  description: "Select a kyc document to delete",
-                });
+                toast("Delete Document", { description: "Select a kyc document to delete" });
               }}
               className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
             >

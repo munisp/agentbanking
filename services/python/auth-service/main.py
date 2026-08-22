@@ -172,9 +172,49 @@ def init_db():
 
 init_db()
 
-import hashlib, secrets, time
+import hashlib, hmac, secrets, time
 
 TOKEN_EXPIRY = 3600  # 1 hour
+
+# --- NF-SEC-8: salted password hashing (PBKDF2-HMAC-SHA256) ---
+# Migration note: users.password_hash previously stored UNSALTED
+# hashlib.sha256(password).hexdigest() (64 lowercase hex chars). Those rows are
+# cryptographically weak and are NOT accepted anymore: verification fails closed
+# for any value that is not in the PBKDF2 format below. Operators must force a
+# password reset (or re-hash on next provisioning run) for legacy users.
+# New format: pbkdf2_sha256$<iterations>$<salt_hex>$<derived_key_hex>
+_PBKDF2_ITERATIONS = 210_000  # >= 100k per policy; OWASP 2023 recommendation for sha256
+_PBKDF2_SALT_BYTES = 16
+_PBKDF2_PREFIX = "pbkdf2_sha256"
+
+
+def hash_password(password: str, salt: bytes | None = None, iterations: int = _PBKDF2_ITERATIONS) -> str:
+    """Hash a password with PBKDF2-HMAC-SHA256 and a per-user random salt."""
+    if salt is None:
+        salt = secrets.token_bytes(_PBKDF2_SALT_BYTES)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return f"{_PBKDF2_PREFIX}${iterations}${salt.hex()}${dk.hex()}"
+
+
+def verify_password(password: str, stored: str) -> bool:
+    """Verify a password against a stored PBKDF2 hash. Fails closed: any
+    malformed, legacy (unsalted SHA-256), or unparseable value returns False."""
+    try:
+        prefix, iterations_s, salt_hex, dk_hex = stored.split("$")
+        if prefix != _PBKDF2_PREFIX:
+            logging.warning("[auth] refusing non-PBKDF2 password hash format (legacy/insecure) — fail closed")
+            return False
+        iterations = int(iterations_s)
+        if iterations < 100_000:
+            logging.warning("[auth] refusing PBKDF2 hash with insufficient iterations — fail closed")
+            return False
+        salt = bytes.fromhex(salt_hex)
+        expected = bytes.fromhex(dk_hex)
+        candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+        return hmac.compare_digest(candidate, expected)
+    except Exception as e:
+        logging.warning(f"[auth] password verification error (fail closed): {type(e).__name__}")
+        return False
 
 @app.post("/api/v1/login")
 async def login(request: Request):
@@ -187,12 +227,13 @@ async def login(request: Request):
     password = body.get("password", "")
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password required")
-    password_hash = hashlib.sha256(password.encode()).hexdigest()
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, role FROM users WHERE username = %s AND password_hash = %s", (username, password_hash))
+    # Fetch the stored hash by username, then verify with PBKDF2 (NF-SEC-8).
+    # verify_password fails closed on legacy unsalted SHA-256 rows.
+    cursor.execute("SELECT id, role, password_hash FROM users WHERE username = %s", (username,))
     user = cursor.fetchone()
-    if not user:
+    if not user or not verify_password(password, user[2] or ""):
         conn.close()
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = secrets.token_urlsafe(32)

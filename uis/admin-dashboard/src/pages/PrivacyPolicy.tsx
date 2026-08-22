@@ -2,7 +2,7 @@
  * 54agent Agency Banking Platform — Privacy Policy & NDPR Compliance Page
  * Covers NDPR (Nigeria Data Protection Regulation) and GDPR-aligned disclosures.
  */
-// wouter not available - using react-router-dom;
+import { Link } from "wouter";
 
 const BG = "oklch(0.10 0.015 260)";
 const CARD = "oklch(0.14 0.015 260)";

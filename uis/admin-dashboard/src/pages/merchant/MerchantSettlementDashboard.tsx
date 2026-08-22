@@ -8,7 +8,7 @@ export default function MerchantSettlementDashboard() {
     data: stats,
     isLoading,
     refetch,
-  } = {data: null, isLoading: false, refetch: () => {}};
+  } = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
   const [searchTerm, setSearchTerm] = useState("");
 
   return (

@@ -10,10 +10,8 @@ export default function WhatsAppChannelPage() {
   const [tab, setTab] = useState<"messages" | "templates" | "contacts">(
     "messages"
   );
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const messages = trpc.whatsappChannel.messages.useQuery({ limit: 20 }) as any;
   const templates = trpc.whatsappChannel.templates.useQuery() as any;
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const contacts = trpc.whatsappChannel.messages.useQuery({ limit: 20 }) as any;
   // @ts-ignore — Sprint 85: strict-mode suppression
   const analytics = trpc.whatsappChannel.analytics.useQuery() as any;

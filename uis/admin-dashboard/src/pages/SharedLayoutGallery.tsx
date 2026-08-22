@@ -72,7 +72,6 @@ export default function SharedLayoutGallery() {
   const importMutation = trpc.sharedLayouts.import.useMutation({
     // @ts-ignore Sprint 85
     onSuccess: data => {
-      // @ts-expect-error Sprint 85 — type inference mismatch
       toast.success(`Imported "${data.name}" layout`);
       setImportDialog({ open: false, token: "" });
     },

@@ -1,5 +1,5 @@
-// SECURITY: SQL template literals in this file are for display/mock purposes only. All actual DB queries use parameterized Drizzle ORM.
 #!/usr/bin/env node
+// SECURITY: SQL template literals in this file are for display/mock purposes only. All actual DB queries use parameterized Drizzle ORM.
 /**
  * Sprint 10 Enhanced Seed Data — 54Link Agency Banking Platform
  * 
@@ -165,7 +165,11 @@ function seedWebhookConfigs() {
       id: uuid(),
       name: `Webhook ${i + 1} — ${randomChoice(["Payment Gateway", "CRM", "Analytics", "ERP", "Compliance", "Audit"])}`,
       url: `https://hooks.example.com/webhook/${uuid().slice(0, 8)}`,
-      secret: `whsec_${uuid().replace(/-/g, "").slice(0, 32)}`,
+      // NF-SEC-13: never emit realistic-looking webhook secrets into the generated
+      // artifact. Secrets must be injected via env at import/seed time; the default
+      // is an inert placeholder so a regenerated data/seed-sprint10.json stays
+      // secret-scanner clean.
+      secret: process.env.SEED_WEBHOOK_SECRET || "WHSEC_GENERATED_AT_SEED_TIME",
       events: JSON.stringify(selectedEvents),
       isActive: Math.random() > 0.2,
       retryPolicy: JSON.stringify({ maxRetries: randomChoice([3, 5, 10]), backoffMs: randomChoice([1000, 5000, 10000]) }),
@@ -371,7 +375,7 @@ async function main() {
   
   console.log(`\n═══════════════════════════════════════════════════════`);
   console.log(`  Total: ${totalRecords.toLocaleString()} seed records generated`);
-  console.log("[REDACTED sensitive data]").length}`);
+  console.log("  Sensitive fields: [REDACTED — secrets are env-generated at seed time]");
   console.log(`═══════════════════════════════════════════════════════`);
 
   // Write to JSON for import

@@ -14,9 +14,9 @@ import {
 export default function CustomerJourneyAnalyticsPage() {
   const [search, setSearch] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
-  const eventsQuery = {data: null, isLoading: false, refetch: () => {}};
-  const funnelQuery = {data: null, isLoading: false, refetch: () => {}};
-  const statsQuery = {data: null, isLoading: false, refetch: () => {}};
+  const eventsQuery = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const funnelQuery = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const statsQuery = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
   const stats = statsQuery.data;
 
   const events = (eventsQuery.data ?? []).filter((e: any) => {
@@ -43,10 +43,7 @@ export default function CustomerJourneyAnalyticsPage() {
           <div className="flex gap-2 mb-4">
             <button
               onClick={() => {
-                toast?.({
-                  title: "Add Journey Event",
-                  description: "Feature ready for integration",
-                });
+                toast("Add Journey Event", { description: "Feature ready for integration" });
               }}
               className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium"
             >
@@ -54,10 +51,7 @@ export default function CustomerJourneyAnalyticsPage() {
             </button>
             <button
               onClick={() => {
-                toast?.({
-                  title: "Edit Event",
-                  description: "Select a journey event to edit",
-                });
+                toast("Edit Event", { description: "Select a journey event to edit" });
               }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
             >
@@ -65,10 +59,7 @@ export default function CustomerJourneyAnalyticsPage() {
             </button>
             <button
               onClick={() => {
-                toast?.({
-                  title: "Delete Event",
-                  description: "Select a journey event to delete",
-                });
+                toast("Delete Event", { description: "Select a journey event to delete" });
               }}
               className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
             >

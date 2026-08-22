@@ -2,6 +2,7 @@
  * Payment Success Callback Page — 54agent POS Shell
  * Displays confirmation after successful Stripe checkout.
  */
+import { Link } from "wouter";
 import { useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";

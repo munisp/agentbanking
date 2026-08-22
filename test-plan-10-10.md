@@ -1,5 +1,7 @@
 # Test Plan: 10/10 Business Logic Production Readiness
 
+> ⚠️ **2026-08 correction (assurance re-verification @ `505705ac`):** the "477 router files" and "4,277+ tests" figures below are session-specific claims from the PR #37 session and are **not reproducible from the current tree**: `server/routers/` contains 418 `.ts` files (478 in the `services/api-server-ts` mirror), and `services/api-server-ts` contains 2 test files with 174 test cases. No 4,000+ test suite exists in the repository. Treat the numeric pass criteria below as historical.
+
 ## What Changed
 
 477 tRPC router files enhanced with business logic: data integrity checks, transaction safety wrappers, error handling guards, domain calculation helpers, audit trail metadata, and extended validation schemas. Score improved from 6.2/10 → 9.8/10.

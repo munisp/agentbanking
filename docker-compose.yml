@@ -344,7 +344,7 @@ services:
       - "3001:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-54link-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?must be set}
       GF_INSTALL_PLUGINS: grafana-piechart-panel
     volumes:
       - grafana-data:/var/lib/grafana
@@ -366,7 +366,7 @@ services:
     environment:
       POSTGRES_DB: pos54link
       POSTGRES_USER: ${PG_USER:-postgres}
-      POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?must be set}
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     volumes:
       - pg-data:/var/lib/postgresql/data
@@ -390,9 +390,9 @@ services:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/pos54link
       KC_DB_USERNAME: ${PG_USER:-postgres}
-      KC_DB_PASSWORD: ${PG_PASSWORD:-postgres}
+      KC_DB_PASSWORD: ${PG_PASSWORD:?must be set}
       KEYCLOAK_ADMIN: ${KC_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?must be set}
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
     volumes:
@@ -435,7 +435,7 @@ services:
       DB: postgresql
       DB_PORT: 5432
       POSTGRES_USER: ${PG_USER:-postgres}
-      POSTGRES_PWD: ${PG_PASSWORD:-postgres}
+      POSTGRES_PWD: ${PG_PASSWORD:?must be set}
       POSTGRES_SEEDS: postgres
     depends_on:
       postgres:
@@ -529,7 +529,7 @@ services:
       - "8180:8080"
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER:-postgres}:${PG_PASSWORD:-postgres}@postgres:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER:-postgres}:${PG_PASSWORD:?must be set}@postgres:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW_FERNET_KEY:?must be set}"
       AIRFLOW__WEBSERVER__SECRET_KEY: "${AIRFLOW_WEBSERVER_SECRET_KEY:?must be set}"
       _AIRFLOW_DB_MIGRATE: "true"
@@ -553,7 +553,7 @@ services:
     command: scheduler
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER:-postgres}:${PG_PASSWORD:-postgres}@postgres:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER:-postgres}:${PG_PASSWORD:?must be set}@postgres:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW_FERNET_KEY:?must be set}"
     volumes:
       - airflow-dags:/opt/airflow/dags
@@ -601,7 +601,7 @@ services:
       - "9080:9080"
       - "9443:9443"
     volumes:
-      - ./infrastructure/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./infra/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
     restart: unless-stopped
     networks:
       - 54link-network
@@ -614,7 +614,7 @@ services:
       - "${PGADMIN_PORT:-5050}:80"
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@54link.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?must be set}
     depends_on:
       - postgres
     profiles:
@@ -769,7 +769,15 @@ services:
       - 54link-network
 
   # ── KYC/KYB Enforcement & Compliance Services ──
+  # Round-3 topology fix: the services in this section reference infra hosts
+  # that have no service definition in this file (permify, liveness-detection,
+  # kyb-engine, kyb-risk-engine, deepface). Those are provisioned separately
+  # (infra/permify/ha overlay and k8s/charts). Gated behind the
+  # "external-integrations" profile so the default topology is self-consistent:
+  #   docker compose --profile external-integrations up -d
   goaml-integration:
+    profiles:
+      - external-integrations
     build:
       context: ./server/goaml-integration-go
       dockerfile: Dockerfile
@@ -793,6 +801,8 @@ services:
       - 54link-network
 
   kyc-enforcement:
+    profiles:
+      - external-integrations
     build:
       context: ./server/kyc-enforcement-go
       dockerfile: Dockerfile
@@ -820,6 +830,8 @@ services:
       - 54link-network
 
   aml-case-manager:
+    profiles:
+      - external-integrations
     build:
       context: ./server/aml-case-manager-go
       dockerfile: Dockerfile
@@ -844,6 +856,8 @@ services:
       - 54link-network
 
   cbn-tiered-kyc:
+    profiles:
+      - external-integrations
     build:
       context: ./services/rust/cbn-tiered-kyc
       dockerfile: Dockerfile
@@ -865,6 +879,8 @@ services:
       - 54link-network
 
   sanctions-batch-rescreener:
+    profiles:
+      - external-integrations
     build:
       context: ./services/rust/sanctions-batch-rescreener
       dockerfile: Dockerfile
@@ -887,6 +903,8 @@ services:
       - 54link-network
 
   kyc-workflow-orchestration:
+    profiles:
+      - external-integrations
     build:
       context: ./services/python/kyc-workflow-orchestration
       dockerfile: Dockerfile
@@ -912,6 +930,8 @@ services:
       - 54link-network
 
   kyc-event-consumer:
+    profiles:
+      - external-integrations
     build:
       context: ./services/python/kyc-event-consumer
       dockerfile: Dockerfile
@@ -935,9 +955,91 @@ services:
     networks:
       - 54link-network
 
+  # ── TigerBeetle (double-entry ledger) ─────────────────────────────────────
+  # Single-node replica for compose deployments. HA uses the 3-node cluster in
+  # infra/tigerbeetle/docker-compose.cluster.yml (k8s: k8s/charts/tigerbeetle).
+  # Image pinned to 0.16.43 to stay wire-compatible with the tigerbeetle-go
+  # v0.16.x clients in tb-sidecar / tb-commission-sidecar (the Helm chart's
+  # 0.15.3 tag is stale). First run: initialize the data file once with
+  #   docker compose --profile init run --rm tigerbeetle-format
+  tigerbeetle-format:
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.43
+    container_name: 54link-tigerbeetle-format
+    command: format --cluster=0 --replica=0 --replica-count=1 /data/0_0.tigerbeetle
+    volumes:
+      - tigerbeetle-data:/data
+    profiles:
+      - init
+    networks:
+      - 54link-network
+
+  tigerbeetle:
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.43
+    container_name: 54link-tigerbeetle
+    command: start --addresses=0.0.0.0:3001 --replica=0 --replica-count=1 --cluster=0 /data/0_0.tigerbeetle
+    ports:
+      - "3001:3001"
+    volumes:
+      - tigerbeetle-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 3001 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - 54link-network
+
+  # ── Fluvio (event streaming) ──────────────────────────────────────────────
+  # Minimal SC + 1 SPU derived from the repo's HA overlay
+  # (infra/fluvio/ha/docker-compose.fluvio-ha.yml, image infinyon/fluvio:0.11.11).
+  # Dependents connect to the SC public endpoint at fluvio:9003.
+  fluvio:
+    image: infinyon/fluvio:0.11.11
+    container_name: 54link-fluvio
+    hostname: fluvio
+    command: >
+      /fluvio-run sc start
+      --bind-public 0.0.0.0:9003
+      --bind-private 0.0.0.0:9004
+    ports:
+      - "9003:9003"
+    environment:
+      RUST_LOG: info
+    restart: unless-stopped
+    networks:
+      - 54link-network
+
+  fluvio-spu:
+    image: infinyon/fluvio:0.11.11
+    container_name: 54link-fluvio-spu
+    hostname: fluvio-spu
+    command: >
+      /fluvio-run spu start
+      --id 0
+      --sc-addr fluvio:9004
+      --bind-public 0.0.0.0:9010
+      --bind-private 0.0.0.0:9011
+    environment:
+      RUST_LOG: info
+    volumes:
+      - fluvio-spu-data:/var/lib/fluvio
+    depends_on:
+      - fluvio
+    restart: unless-stopped
+    networks:
+      - 54link-network
+
   # ── TigerBeetle Middleware Integration Services ──────────────────────────────
+  # Round-3 topology fix: these middleware services reference infra hosts with
+  # no service definition in this file (mojaloop-switch, opensearch, permify,
+  # lakehouse, openappsec). Gated behind the "external-integrations" profile;
+  # provision those stacks first (infra/*/ha overlays or k8s/charts).
+  #   docker compose --profile external-integrations up -d
 
   tigerbeetle-middleware-hub:
+    profiles:
+      - external-integrations
     build:
       context: ./services/go/tigerbeetle-middleware-hub
       dockerfile: Dockerfile
@@ -962,7 +1064,7 @@ services:
       LAKEHOUSE_ENDPOINT: http://lakehouse:8181
       OPENAPPSEC_ENDPOINT: http://openappsec:8090
       TB_CLUSTER_ID: "0"
-      TB_ADDRESSES: "3000"
+      TB_ADDRESSES: "tigerbeetle:3001"
     networks:
       - 54link-network
     restart: unless-stopped
@@ -973,6 +1075,8 @@ services:
       retries: 3
 
   tigerbeetle-middleware-bridge:
+    profiles:
+      - external-integrations
     build:
       context: ./services/rust/tigerbeetle-middleware-bridge
       dockerfile: Dockerfile
@@ -997,6 +1101,8 @@ services:
       retries: 3
 
   tigerbeetle-middleware-orchestrator:
+    profiles:
+      - external-integrations
     build:
       context: ./services/python/tigerbeetle-middleware-orchestrator
       dockerfile: Dockerfile
@@ -1057,4 +1163,8 @@ volumes:
   airflow-logs:
     driver: local
   ollama-data:
+    driver: local
+  tigerbeetle-data:
+    driver: local
+  fluvio-spu-data:
     driver: local

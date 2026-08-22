@@ -483,7 +483,6 @@ function TemporalTab() {
 
   const summary = trpc.temporal.summary.useQuery() as any;
   const types = trpc.temporal.workflowTypes.useQuery() as any;
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const workflows = trpc.temporal.list.useQuery({
     status: statusFilter !== "all" ? (statusFilter as any) : undefined,
     workflowType: typeFilter !== "all" ? typeFilter : undefined,
@@ -492,7 +491,6 @@ function TemporalTab() {
   const startWf = trpc.temporal.start.useMutation({
     onSuccess: d => {
       toast.success(
-        // @ts-expect-error Sprint 85 — type inference mismatch
         d.started ? `Started ${startInput.type}` : "Temporal unavailable"
       );
       workflows.refetch();
@@ -501,7 +499,6 @@ function TemporalTab() {
   const terminateWf = trpc.temporal.terminate.useMutation({
     onSuccess: d => {
       toast.success(
-        // @ts-expect-error Sprint 85 — type inference mismatch
         d.terminated ? "Workflow terminated" : "Temporal unavailable"
       );
       workflows.refetch();
@@ -698,7 +695,6 @@ function VaultTab() {
   const rotate = trpc.vault.rotateSecret.useMutation({
     onSuccess: d => {
       toast.success(
-        // @ts-expect-error Sprint 85 — type inference mismatch
         d.rotated ? `Rotated: ${d.path}` : `Rotation failed: ${d.error}`
       );
       paths.refetch();

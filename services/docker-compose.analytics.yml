@@ -9,7 +9,7 @@ services:
     container_name: 54link-opensearch
     environment:
       - discovery.type=single-node
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin@54Link2024
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:?must be set}
       - DISABLE_SECURITY_PLUGIN=true
       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
@@ -41,12 +41,29 @@ services:
     environment:
       - OPENSEARCH_URL=http://opensearch:9200
       - OPENSEARCH_USER=admin
-      - OPENSEARCH_PASS=Admin@54Link2024
+      - OPENSEARCH_PASS=${OPENSEARCH_ADMIN_PASSWORD:?must be set}
       - PORT=8092
     ports:
       - "8092:8092"
     depends_on:
       - opensearch
+    networks:
+      - analytics
+    restart: unless-stopped
+
+  # Minimal Fluvio SC (from infra/fluvio/ha/docker-compose.fluvio-ha.yml,
+  # infinyon/fluvio:0.11.11) so FLUVIO_ENDPOINT=fluvio:9003 resolves.
+  fluvio:
+    image: infinyon/fluvio:0.11.11
+    container_name: 54link-fluvio
+    command: >
+      /fluvio-run sc start
+      --bind-public 0.0.0.0:9003
+      --bind-private 0.0.0.0:9004
+    ports:
+      - "9003:9003"
+    environment:
+      - RUST_LOG=info
     networks:
       - analytics
     restart: unless-stopped

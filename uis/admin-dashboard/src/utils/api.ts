@@ -361,7 +361,7 @@ export const api = {
           return u.access_level || u.user_role || u.role || "bank_admin";
         } catch { return "bank_admin"; }
       })();
-    return request<any[]>("/chart-of-accounts/api/v1/accounts?include_balance=true", {
+    return request<any>("/chart-of-accounts/api/v1/accounts?include_balance=true", {
       headers: { ...fullHeaders(), "X-User-Role": role },
     });
   },
@@ -3494,7 +3494,7 @@ export interface MdmPendingCommand {
   model_id: string;
   command_type: string;
   params?: Record<string, unknown>;
-  priority: number;
+  priority?: number;
   issued_by: string;
   issued_at: string;
   expires_at?: string;

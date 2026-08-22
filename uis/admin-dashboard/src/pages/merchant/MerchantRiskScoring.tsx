@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 export default function MerchantRiskScoring() {
   const [tab, setTab] = useState("overview");
-  const { data: _liveData } = {data: null, isLoading: false, refetch: () => {}};
+  const { data: _liveData } = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
 
   return (
     <DashboardLayout>

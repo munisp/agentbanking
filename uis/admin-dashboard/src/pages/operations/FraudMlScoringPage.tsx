@@ -14,8 +14,8 @@ export default function FraudMlScoringPage() {
   const [search, setSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState("all");
   const [selectedScore, setSelectedScore] = useState<any>(null);
-  const scoresQuery = {data: null, isLoading: false, refetch: () => {}};
-  const statsQuery = {data: null, isLoading: false, refetch: () => {}};
+  const scoresQuery = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const statsQuery = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
   const stats = statsQuery.data;
   const scores = (scoresQuery.data ?? []).filter((s: any) => {
     if (
@@ -53,10 +53,7 @@ export default function FraudMlScoringPage() {
           <div className="flex gap-2 mb-4">
             <button
               onClick={() => {
-                toast?.({
-                  title: "Add Manual Score",
-                  description: "Feature ready for integration",
-                });
+                toast("Add Manual Score", { description: "Feature ready for integration" });
               }}
               className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium"
             >
@@ -64,10 +61,7 @@ export default function FraudMlScoringPage() {
             </button>
             <button
               onClick={() => {
-                toast?.({
-                  title: "Edit Score",
-                  description: "Select a score to edit",
-                });
+                toast("Edit Score", { description: "Select a score to edit" });
               }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
             >
@@ -75,10 +69,7 @@ export default function FraudMlScoringPage() {
             </button>
             <button
               onClick={() => {
-                toast?.({
-                  title: "Delete Score",
-                  description: "Select a score to delete",
-                });
+                toast("Delete Score", { description: "Select a score to delete" });
               }}
               className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
             >

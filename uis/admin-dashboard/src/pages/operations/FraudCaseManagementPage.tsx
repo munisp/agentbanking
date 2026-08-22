@@ -16,7 +16,7 @@ import { toast } from "sonner";
 export default function FraudCaseManagementPage() {
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
-  const statsQuery = {data: null, isLoading: false, refetch: () => {}};
+  const statsQuery = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
 
   return (
     <DashboardLayout>

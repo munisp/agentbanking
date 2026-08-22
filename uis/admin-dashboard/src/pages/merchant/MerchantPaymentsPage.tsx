@@ -10,13 +10,10 @@ export default function MerchantPaymentsPage() {
   const [tab, setTab] = useState<"transactions" | "merchants" | "qr">(
     "transactions"
   );
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const transactions = trpc.merchantPayments.list.useQuery({
     limit: 20,
   }) as any;
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const merchants = trpc.merchantPayments.list.useQuery({ limit: 20 }) as any;
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const qrCodes = trpc.merchantPayments.list.useQuery({ limit: 20 }) as any;
   const analytics = trpc.merchantPayments.analytics.useQuery() as any;
 

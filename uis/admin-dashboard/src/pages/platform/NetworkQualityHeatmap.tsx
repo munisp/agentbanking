@@ -110,7 +110,6 @@ export default function NetworkQualityHeatmap() {
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
 
   const { data: regionMetrics, isLoading: metricsLoading } =
-    // @ts-expect-error Sprint 85 — type inference mismatch
     trpc.networkQualityHeatmap.getRegionMetrics.useQuery({
       country: countryFilter === "all" ? undefined : countryFilter,
       sortBy,
@@ -119,7 +118,6 @@ export default function NetworkQualityHeatmap() {
   const { data: summary, isLoading: summaryLoading } =
     trpc.networkQualityHeatmap.getSummary.useQuery() as any;
 
-  // @ts-expect-error Sprint 85 — type inference mismatch
   const { data: events } = trpc.networkQualityHeatmap.getEvents.useQuery({
     limit: 20,
   }) as any;

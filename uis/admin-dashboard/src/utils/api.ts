@@ -3494,7 +3494,7 @@ export interface MdmPendingCommand {
   model_id: string;
   command_type: string;
   params?: Record<string, unknown>;
-  priority?: number;
+  priority: number;
   issued_by: string;
   issued_at: string;
   expires_at?: string;

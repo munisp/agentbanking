@@ -132,7 +132,7 @@ function PortalGate({
 function StatusCheck({ onBack }: { onBack: () => void }) {
   const [email, setEmail] = useState("");
   const [searched, setSearched] = useState(false);
-  const statusQ = {data: null, isLoading: false, refetch: () => {}};
+  const statusQ = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
   const STATUS_COLORS: Record<string, string> = {
     pending: GOLD,
     active: GREEN,
@@ -253,7 +253,7 @@ function OnboardingWizard({
     agreed: false,
   });
 
-  const registerMut = {mutate: () => {}, mutateAsync: async () => {}, isPending: false, isLoading: false};
+  const registerMut = {mutate: (_vars?: any) => {}, mutateAsync: async (_vars?: any) => {}, isPending: false, isLoading: false, data: null as any, error: null as any};
 
   const STEPS = [
     { n: 1, label: "Business Info" },
@@ -779,12 +779,12 @@ export default function MerchantPortal() {
   });
   const [submitting, setSubmitting] = useState(false);
 
-  const profileQ = {data: null, isLoading: false, refetch: () => {}};
-  const dashQ = {data: null, isLoading: false, refetch: () => {}};
-  const txQ = {data: null, isLoading: false, refetch: () => {}};
-  const settleQ = {data: null, isLoading: false, refetch: () => {}};
+  const profileQ = {data: null as any, isLoading: false, refetch: () => {}, error: null as any} as { data: any; isLoading: boolean; refetch: () => void; error: any };
+  const dashQ = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const txQ = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
+  const settleQ = {data: null as any, isLoading: false, refetch: () => {}} as { data: any; isLoading: boolean; refetch: () => void };
 
-  const raiseMut = {mutate: () => {}, mutateAsync: async () => {}, isPending: false, isLoading: false};
+  const raiseMut = {mutate: (_vars?: any) => {}, mutateAsync: async (_vars?: any) => {}, isPending: false, isLoading: false, data: null as any, error: null as any};
 
   // ── Gate ──────────────────────────────────────────────────────────────────
   if (mode === "gate") {

@@ -313,6 +313,21 @@ async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value>
     }))
 }
 
+/// Wave-4: Prometheus exposition endpoint.
+async fn handle_metrics() -> String {
+    otel_common::metrics_handle()
+}
+
+/// Wave-4: stamp tenant.id (from x-tenant-id header) on the current span.
+async fn tenant_middleware(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let tenant = otel_common::tenant_id_from_headers(request.headers());
+    otel_common::record_tenant_span_attr(&tenant);
+    next.run(request).await
+}
+
 async fn handle_create_account(
     State(state): State<AppState>,
     Json(req): Json<CreateAccountRequest>,
@@ -346,18 +361,26 @@ async fn handle_get_account(
 
 async fn handle_transfer(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<TransferRequest>,
 ) -> Result<Json<LedgerEntry>, (StatusCode, Json<serde_json::Value>)> {
+    let tenant = otel_common::tenant_id_from_headers(&headers);
     let mut ledger = state.ledger.write().await;
     match ledger.transfer(
         req.from_account_id, req.to_account_id, req.amount,
         &req.entry_type, &req.description, req.transaction_ref,
     ) {
         Ok(entry) => {
+            // Wave-4: canonical business metric
+            otel_common::record_funds_flow_operation("transfer", "ledger-bridge", &tenant, "success");
             info!(entry_id = %entry.id, amount = req.amount, "transfer completed");
             Ok(Json(entry))
         }
-        Err(e) => Err((StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error": e})))),
+        Err(e) => {
+            otel_common::record_funds_flow_operation("transfer", "ledger-bridge", &tenant, "failed");
+            otel_common::record_payment_failed("ledger-bridge", &tenant, "insufficient_balance");
+            Err((StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error": e}))))
+        }
     }
 }
 
@@ -584,12 +607,10 @@ fn verify_auth(headers: &hyper::HeaderMap) -> Result<String, (hyper::StatusCode,
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env()
-            .add_directive("ledger_bridge=info".parse()?)
-            .add_directive("axum=info".parse()?))
-        .json()
-        .init();
+    // Wave-4: shared OTel tracing (fmt + OTLP export when OTEL_EXPORTER_OTLP_ENDPOINT is set).
+    let _otel_guard = otel_common::init_tracing("ledger-bridge")
+        .map_err(|e| anyhow::anyhow!("otel init failed: {}", e))?;
+    otel_common::register_business_metrics();
 
     let config = Config::from_env();
     let port = config.port;
@@ -601,6 +622,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(handle_health))
+        .route("/metrics", get(handle_metrics))
         .route("/api/v1/ledger/accounts", post(handle_create_account))
         .route("/api/v1/ledger/accounts/:id", get(handle_get_account))
         .route("/api/v1/ledger/transfers", post(handle_transfer))
@@ -612,6 +634,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/ledger/agents/:id/entries", get(handle_get_agent_entries))
         .route("/api/v1/ledger/stats", get(handle_get_ledger_stats))
         .with_state(state)
+        .layer(axum::middleware::from_fn(tenant_middleware))
         .layer(tower_http::cors::CorsLayer::permissive())
         .layer(tower_http::trace::TraceLayer::new_for_http());
 

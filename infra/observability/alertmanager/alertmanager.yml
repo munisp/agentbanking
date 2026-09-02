@@ -1,0 +1,85 @@
+# =============================================================================
+# AgentBanking / POS54 — Canonical Alertmanager configuration
+#
+# NO real secrets or domains in this file. SMTP credentials and any tokens
+# are injected via environment variables at container start (or substituted
+# by the deploy pipeline). Placeholders use ${SMTP_*} / ${NTFY_*} syntax.
+#
+# To add Slack / PagerDuty later:
+#   1. Add a receiver with slack_configs: or pagerduty_configs: (keep secrets
+#      in env / file_sd, never inline).
+#   2. Reference it from route.routes with a severity/team matcher.
+#   3. Keep `continue: true` on the critical route so ntfy still fires.
+# =============================================================================
+
+global:
+  # Placeholders — substituted at deploy time; never commit real values.
+  smtp_from: '${SMTP_FROM:-alertmanager@example.invalid}'
+  smtp_smarthost: '${SMTP_SMARTHOST:-smtp.example.invalid:587}'
+  smtp_auth_username: '${SMTP_AUTH_USERNAME:-changeme}'
+  smtp_auth_password: '${SMTP_AUTH_PASSWORD:-changeme}'
+  resolve_timeout: 5m
+
+route:
+  receiver: ntfy-ops
+  group_by: [alertname, severity, tenant_id]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: ntfy-critical
+      continue: true # also fan out to ops-webhook below
+      routes:
+        - matchers:
+            - severity = "critical"
+          receiver: ops-webhook
+    - matchers:
+        - team = "funds-ops"
+      receiver: ntfy-funds
+      continue: true # funds alerts also reach the severity-based routes
+    - matchers:
+        - severity = "warning"
+      receiver: ntfy-ops
+
+receivers:
+  - name: ntfy-critical
+    webhook_configs:
+      - url: http://ntfy/ops-critical
+        http_config:
+          # Placeholder bearer token — inject real value via deploy-time
+          # substitution or an http_config bearer_token_file mount.
+          authorization:
+            type: Bearer
+            credentials: '${NTFY_TOKEN_CRITICAL:-changeme}'
+
+  - name: ntfy-funds
+    webhook_configs:
+      - url: http://ntfy/funds-ops
+        http_config:
+          authorization:
+            type: Bearer
+            credentials: '${NTFY_TOKEN_FUNDS:-changeme}'
+
+  - name: ntfy-ops
+    webhook_configs:
+      - url: http://ntfy/ops
+        http_config:
+          authorization:
+            type: Bearer
+            credentials: '${NTFY_TOKEN_OPS:-changeme}'
+
+  # Placeholder downstream automation webhook (e.g. runbook trigger service).
+  # Replace host/port with the real internal endpoint when it exists.
+  - name: ops-webhook
+    webhook_configs:
+      - url: http://ops-webhook:5000/alerts
+
+inhibit_rules:
+  # A critical alert silences warning alerts of the same name on the same target.
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal: [alertname, instance]

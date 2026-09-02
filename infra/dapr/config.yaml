@@ -6,8 +6,12 @@ metadata:
 spec:
   tracing:
     samplingRate: "1"
+    # OBSERVABILITY: Dapr 1.11 supports only the Zipkin exporter for tracing.
+    # Spans are sent to the canonical OTel collector's zipkin receiver (:9411),
+    # which bridges them to OTLP/Tempo. Replaces the dangling external
+    # jaeger.54link.io host.
     zipkin:
-      endpointAddress: "http://jaeger.54link.io:9411/api/v2/spans"
+      endpointAddress: "http://otel-collector:9411/api/v2/spans"
   metric:
     enabled: true
   logging:

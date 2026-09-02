@@ -1,0 +1,88 @@
+{
+  "uid": "tenant-overview",
+  "title": "Tenant Overview",
+  "tags": ["tenant", "otel", "pos54"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "schemaVersion": 39,
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "tenant",
+        "label": "Tenant",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "query": "label_values({__name__=~\"pos54_calls_total|calls_total\"}, tenant_id)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": {"selected": true, "text": ["All"], "value": ["$__all"]},
+        "regex": ""
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate by tenant (req/s)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "reqps", "min": 0}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (tenant_id) (rate({__name__=~\"pos54_calls_total|calls_total\", tenant_id=~\"$tenant\"}[5m]))",
+          "legendFormat": "{{tenant_id}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error rate by tenant",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (tenant_id) (rate({__name__=~\"pos54_calls_total|calls_total\", tenant_id=~\"$tenant\", status_code=\"STATUS_CODE_ERROR\"}[5m])) / sum by (tenant_id) (rate({__name__=~\"pos54_calls_total|calls_total\", tenant_id=~\"$tenant\"}[5m]))",
+          "legendFormat": "{{tenant_id}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "p95 latency by tenant (ms)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "fieldConfig": {"defaults": {"unit": "ms", "min": 0}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (tenant_id, le) (rate({__name__=~\"pos54_duration_milliseconds_bucket|duration_milliseconds_bucket\", tenant_id=~\"$tenant\"}[5m])))",
+          "legendFormat": "{{tenant_id}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Funds-flow operations by operation (rate 5m)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (operation, status) (rate({__name__=~\"pos54_funds_flow_operations_total|funds_flow_operations_total\", tenant=~\"$tenant\"}[5m]))",
+          "legendFormat": "{{operation}} / {{status}}"
+        }
+      ]
+    }
+  ]
+}

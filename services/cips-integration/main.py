@@ -11,6 +11,29 @@ from database import Base, engine
 from router import router
 from service import ServiceException
 
+# Observability: canonical OTel + Prometheus wiring (services/shared/observability.py).
+# Guarded so the service still starts when shared/ is not importable (the Docker
+# build context for this service is its own directory) — observability must never
+# break the service.
+try:
+    from shared.observability import init_observability
+except ImportError:
+    import os as _obs_os
+    import sys as _obs_sys
+
+    _obs_sys.path.insert(
+        0, _obs_os.path.dirname(_obs_os.path.dirname(_obs_os.path.abspath(__file__)))
+    )
+    try:
+        from shared.observability import init_observability
+    except ImportError:
+        def init_observability(app, service_name, service_version="0.0.0"):
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "shared.observability not importable; observability disabled"
+            )
+
 # --- Production: Graceful Shutdown ---
 import signal
 import sys
@@ -58,6 +81,9 @@ app = FastAPI(
     version="1.0.0",
     debug=settings.DEBUG,
 )
+
+# Canonical observability wiring (tenant baggage middleware, /metrics, OTel).
+init_observability(app, "cips-integration", service_version="1.0.0")
 
 # --- Middleware ---
 

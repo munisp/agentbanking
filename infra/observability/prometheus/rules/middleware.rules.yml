@@ -1,0 +1,276 @@
+# =============================================================================
+# Middleware alert rules — Wave-1 canonical stack
+#
+# Correspondence note: the `job` label values below map to scrape jobs /
+# receivers defined in infra/observability/otel/otel-collector-config.yaml.
+# Middleware metrics arrive at Prometheus via the collector's prometheus
+# exporter (port 8889, namespace `pos54`).
+#
+# VERIFY: the collector prometheus exporter prefixes metric names with the
+# namespace, so collector-scraped `up` may surface as `pos54_up`. If these
+# availability alerts never evaluate, switch the LHS from `up` to `pos54_up`.
+#
+# VERIFY: kafka, postgres and redis are collected via dedicated receivers
+# (kafkametrics / postgresql / redis), which do NOT emit per-target `up`
+# samples. For those, prefer process-level or receiver-error signals once the
+# deployed collector version's metric names are confirmed (see comments).
+# =============================================================================
+
+groups:
+  - name: middleware_availability
+    interval: 30s
+    rules:
+      # Kafka — collected via kafkametrics receiver (no `up` sample).
+      # VERIFY: consider alerting on absence of kafka_brokers or on
+      # otelcol_receiver_refused metric points for job=kafkametrics instead.
+      - alert: KafkaDown
+        expr: up{job="kafka"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "Kafka unreachable for 3m"
+          description: "Kafka (kafkametrics receiver, brokers kafka:9092) has reported no successful collection for 3m."
+
+      # Postgres — primary path is the postgresql receiver (no `up` sample);
+      # postgres-exporter scrape job (postgres-production:9090) DOES emit up.
+      # VERIFY: point this at job="postgres-exporter" if the receiver path is primary.
+      - alert: PostgresDown
+        expr: up{job="postgres"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "Postgres unreachable for 3m"
+          description: "Postgres (postgres:5432 via postgresql receiver / postgres-exporter job) is down."
+
+      # Redis — collected via redis receiver (no `up` sample).
+      # VERIFY: consider up{job="redis"} from a redis_exporter scrape or
+      # receiver-accepted-points drop instead.
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "Redis unreachable for 3m"
+          description: "Redis (redis:6379 via redis receiver) is down."
+
+      # Temporal — collector job `temporal` (temporal:9090/metrics).
+      # NOTE: temporal sdk/server latency metric names vary by server version;
+      # availability is covered here, latency SLOs belong to a later wave.
+      - alert: TemporalDown
+        expr: up{job="temporal"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "Temporal unreachable for 3m"
+          description: "Temporal server prometheus endpoint (temporal:9090) is down."
+
+      # Keycloak — covers both HA v26 (job keycloak-ha, mgmt port 9000) and
+      # root compose v24 (job keycloak, port 8080).
+      - alert: KeycloakDown
+        expr: up{job=~"keycloak(-ha)?"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "Keycloak unreachable for 3m (job {{ $labels.job }}, instance {{ $labels.instance }})"
+          description: "Keycloak metrics endpoint for job {{ $labels.job }} is down."
+
+      # Permify — collector job `permify` (permify:3476/metrics).
+      - alert: PermifyDown
+        expr: up{job="permify"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "Permify unreachable for 3m"
+          description: "Permify metrics endpoint (permify:3476) is down."
+
+      # APISIX — collector job `apisix` (apisix:9091/apisix/prometheus/metrics).
+      - alert: ApisixDown
+        expr: up{job="apisix"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "APISIX gateway unreachable for 3m"
+          description: "APISIX prometheus endpoint (apisix:9091) is down."
+
+      # OpenSearch — collector job `opensearch` (opensearch-node-1:9200/_prometheus/metrics).
+      - alert: OpenSearchDown
+        expr: up{job="opensearch"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "OpenSearch unreachable for 3m"
+          description: "OpenSearch _prometheus/metrics endpoint (opensearch-node-1:9200) is down."
+
+      # MinIO — collector job `minio` (minio-1:9000/minio/v2/metrics/cluster).
+      - alert: MinioDown
+        expr: up{job="minio"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "MinIO unreachable for 3m"
+          description: "MinIO cluster metrics endpoint (minio-1:9000) is down."
+
+      # Fluvio SC — collector job `fluvio` (fluvio:9003/metrics).
+      - alert: FluvioDown
+        expr: up{job="fluvio"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "Fluvio SC unreachable for 3m"
+          description: "Fluvio SC metrics endpoint (fluvio:9003) is down."
+
+      # Mojaloop ml-api-adapter — collector job `mojaloop-ml-api` (ml-api-adapter:3000/metrics).
+      - alert: MojaloopMlApiDown
+        expr: up{job="mojaloop-ml-api"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "Mojaloop ml-api-adapter unreachable for 3m"
+          description: "ml-api-adapter metrics endpoint (ml-api-adapter:3000) is down."
+
+      # Mojaloop central-ledger — collector job `mojaloop-central-ledger` (central-ledger-1:3001/metrics).
+      - alert: MojaloopCentralLedgerDown
+        expr: up{job="mojaloop-central-ledger"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "Mojaloop central-ledger unreachable for 3m"
+          description: "central-ledger metrics endpoint (central-ledger-1:3001) is down."
+
+      # Spark master — collector job `spark` (spark-master:4040/metrics).
+      - alert: SparkDown
+        expr: up{job="spark"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "Spark master unreachable for 3m"
+          description: "Spark PrometheusServlet endpoint (spark-master:4040) is down."
+
+      # TigerBeetle — 0.16.43 has NO metrics endpoint (documented gap).
+      # This alert only becomes live once a tigerbeetle-sidecar (heartbeat or
+      # log-based exporter) publishes an `up` sample for job
+      # `tigerbeetle-sidecar`. Until then it is intentionally silent.
+      - alert: TigerBeetleSidecarDown
+        expr: up{job="tigerbeetle-sidecar"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "TigerBeetle sidecar unreachable for 3m"
+          description: "TigerBeetle itself exposes no metrics (0.16.43); this alert watches the sidecar/heartbeat exporter job `tigerbeetle-sidecar`."
+
+  - name: middleware_saturation
+    interval: 30s
+    rules:
+      - alert: KafkaConsumerLag
+        # Metric name per kafkametrics receiver (kafka.consumer_group.lag in
+        # newer collector versions; older emit kafka_consumer_group_lag).
+        # VERIFY against the deployed collector version (0.129.0) before rollout.
+        expr: kafka_consumer_group_lag > 1000
+        for: 10m
+        labels:
+          severity: warning
+          team: platform-ops
+        annotations:
+          summary: "Kafka consumer lag above 1000 (group {{ $labels.group }}, topic {{ $labels.topic }})"
+          description: "Consumer group {{ $labels.group }} on topic {{ $labels.topic }} is lagging by {{ $value }} messages for 10m."
+
+      - alert: RedisMemoryHigh
+        # VERIFY: metric names depend on redis receiver version
+        # (redis_memory_used_bytes / redis_memory_max_bytes in 0.129.0).
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          team: platform-ops
+        annotations:
+          summary: "Redis memory usage above 85%"
+          description: "Redis is using {{ $value | humanizePercentage }} of maxmemory for 5m."
+
+      - alert: PostgresConnectionsHigh
+        # VERIFY: pg_stat_activity_count is emitted by the postgresql receiver;
+        # max connections requires a max_connections setting metric — if the
+        # receiver does not export it, substitute a static threshold (e.g. >160).
+        expr: pg_stat_activity_count / on(datname) group_left() pg_settings_max_connections > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          team: platform-ops
+        annotations:
+          summary: "Postgres connections above 80% of max"
+          description: "Database {{ $labels.datname }} is at {{ $value | humanizePercentage }} of max_connections for 10m."
+
+      - alert: PostgresDeadlocks
+        # VERIFY: pg_stat_database_deadlocks emitted by postgresql receiver.
+        expr: increase(pg_stat_database_deadlocks[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform-ops
+        annotations:
+          summary: "Postgres deadlocks above 5 in 5m (db {{ $labels.datname }})"
+          description: "Database {{ $labels.datname }} recorded {{ $value }} deadlocks in the last 5m."
+
+      - alert: ApisixUpstream5xx
+        # VERIFY: apisix_http_status{code=~"5.."} per apisix prometheus plugin.
+        expr: rate(apisix_http_status{code=~"5.."}[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "APISIX upstream 5xx rate above 0.5/s"
+          description: "APISIX is returning upstream 5xx at {{ $value }}/s over 5m."
+
+      - alert: OpenSearchClusterRed
+        # VERIFY: via _prometheus/metrics plugin; cluster status metric name
+        # varies by plugin version (opensearch_cluster_status, 0=green 1=yellow
+        # 2=red). Confirm against the deployed plugin before rollout.
+        expr: opensearch_cluster_status == 2
+        for: 3m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "OpenSearch cluster status RED"
+          description: "OpenSearch cluster has been RED for 3m (status metric value {{ $value }})."
+
+      - alert: MinioDiskLow
+        # VERIFY: minio_cluster_disk_free_total / minio_cluster_disk_total
+        # per /minio/v2/metrics/cluster.
+        expr: |
+          minio_cluster_disk_free_total / minio_cluster_disk_total < 0.15
+        for: 10m
+        labels:
+          severity: warning
+          team: platform-ops
+        annotations:
+          summary: "MinIO disk free below 15%"
+          description: "MinIO cluster free disk ratio is {{ $value | humanizePercentage }} for 10m."

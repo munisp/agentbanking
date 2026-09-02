@@ -13,3 +13,5 @@ chrono = { version = "0.4", features = ["serde"] }
 warp = "0.3"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+# Observability (Wave-4 shared OTel wiring)
+otel-common = { path = "../otel-common" }

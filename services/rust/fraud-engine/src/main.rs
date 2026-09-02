@@ -554,11 +554,28 @@ async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value>
     }))
 }
 
+/// Wave-4: Prometheus exposition endpoint.
+async fn handle_metrics() -> String {
+    otel_common::metrics_handle()
+}
+
+/// Wave-4: stamp tenant.id (from x-tenant-id header) on the current span.
+async fn tenant_middleware(
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> axum::response::Response {
+    let tenant = otel_common::tenant_id_from_headers(request.headers());
+    otel_common::record_tenant_span_attr(&tenant);
+    next.run(request).await
+}
+
 async fn handle_score_transaction(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Json(ctx): Json<TransactionContext>,
 ) -> Result<Json<FraudScore>, (StatusCode, Json<serde_json::Value>)> {
     let start = Instant::now();
+    let tenant = otel_common::tenant_id_from_headers(&headers);
 
     // Record velocity
     {
@@ -616,6 +633,18 @@ async fn handle_score_transaction(
         timestamp: Utc::now(),
         model_version: "14.0.0-rules-v1".to_string(),
     };
+
+    // Wave-4: canonical business metric
+    otel_common::record_funds_flow_operation(
+        "fraud_score",
+        "fraud-engine",
+        &tenant,
+        match &fraud_score.decision {
+            FraudDecision::Allow => "allow",
+            FraudDecision::Review => "review",
+            FraudDecision::Block => "block",
+        },
+    );
 
     info!(
         transaction_id = %ctx.transaction_id,
@@ -786,14 +815,11 @@ fn verify_auth(headers: &hyper::HeaderMap) -> Result<String, (hyper::StatusCode,
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("fraud_engine=info".parse()?)
-                .add_directive("axum=info".parse()?),
-        )
-        .json()
-        .init();
+    // Wave-4: shared OTel tracing (fmt + OTLP export when OTEL_EXPORTER_OTLP_ENDPOINT is set).
+    // Guard must stay alive until process exit to flush spans on shutdown.
+    let _otel_guard = otel_common::init_tracing("fraud-engine")
+        .map_err(|e| anyhow::anyhow!("otel init failed: {}", e))?;
+    otel_common::register_business_metrics();
 
     let config = Config::from_env();
     let port = config.port;
@@ -811,6 +837,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(handle_health))
+        .route("/metrics", get(handle_metrics))
         .route("/api/v1/fraud/score", post(handle_score_transaction))
         .route("/api/v1/fraud/score/batch", post(handle_batch_score))
         .route("/api/v1/fraud/cases", get(handle_get_cases))
@@ -819,6 +846,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/fraud/rules", get(handle_get_rules))
         .route("/api/v1/fraud/stats", get(handle_get_stats))
         .with_state(state)
+        .layer(middleware::from_fn(tenant_middleware))
         .layer(
             tower_http::cors::CorsLayer::permissive()
         )

@@ -1,0 +1,60 @@
+# =============================================================================
+# AgentBanking / POS54 — Tempo configuration (single-binary, local backend)
+# Wave-1 observability stack. Traces arrive from the otel-collector via OTLP.
+# =============================================================================
+
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+    # Backup path: accept Zipkin spans directly (e.g. Dapr 1.11) in case the
+    # collector zipkin receiver path is unavailable.
+    zipkin:
+      endpoint: 0.0.0.0:9411
+
+ingester:
+  lifecycler:
+    ring:
+      replication_factor: 1
+      kvstore:
+        store: inmemory
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    compaction_window: 1h
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/traces
+
+# Retention: there is no global retention key in Tempo; retention/compaction
+# policies are enforced via per-tenant overrides.
+# Per-tenant override example (mount the file and uncomment):
+# overrides:
+#   defaults: {}
+#   per_tenant_override_config: /etc/tempo/overrides.yaml
+#   # /etc/tempo/overrides.yaml example:
+#   # overrides:
+#   #   tenant-a:
+#   #     ingestion:
+#   #       rate_limit_bytes: 5000000
+#   #     global:
+#   #       max_bytes_per_trace: 10000000
+overrides:
+  defaults: {}
+
+usage_report:
+  reporting_enabled: false

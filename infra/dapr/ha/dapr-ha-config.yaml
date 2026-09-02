@@ -14,10 +14,12 @@ spec:
     allowedClockSkew: "15m"
 
   # ── Tracing ─────────────────────────────────────────────────────────────────
+  # OBSERVABILITY: Dapr 1.11 zipkin exporter -> canonical OTel collector
+  # zipkin receiver (:9411), bridged to OTLP/Tempo.
   tracing:
     samplingRate: "0.1"
     zipkin:
-      endpointAddress: "http://zipkin:9411/api/v2/spans"
+      endpointAddress: "http://otel-collector:9411/api/v2/spans"
 
   # ── Metrics ─────────────────────────────────────────────────────────────────
   metric:

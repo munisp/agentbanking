@@ -13,6 +13,10 @@
  *  - Daily/weekly settlement crons
  */
 
+// OpenTelemetry MUST be the first import so auto-instrumentation hooks are
+// installed before express / pg / etc. are loaded. telemetry.ts self-gates on
+// OTEL_EXPORTER_OTLP_ENDPOINT (no-op when unset).
+import "./telemetry";
 import "dotenv/config";
 import crypto from "crypto";
 import express from "express";
@@ -48,13 +52,9 @@ import { enforceEnvironment } from "../lib/envValidation";
 // ── Environment validation (must run before any service initialization) ────────
 enforceEnvironment();
 
-// ── OpenTelemetry (must be imported before any instrumented modules) ───────────
-// Tracing is enabled when OTEL_EXPORTER_OTLP_ENDPOINT is set.
-if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
-  import("./telemetry").catch(err =>
-    console.warn("[OTel] Failed to initialise tracing:", err)
-  );
-}
+// ── OpenTelemetry ──────────────────────────────────────────────────────────────
+// Initialised via the static `import "./telemetry"` at the top of this file;
+// telemetry.ts self-gates on OTEL_EXPORTER_OTLP_ENDPOINT.
 
 // ── Port helpers ──────────────────────────────────────────────────────────────
 

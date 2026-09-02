@@ -1,7 +1,14 @@
-##
-## 54Link POS Shell — OpenTelemetry Collector Configuration
-## Full distributed tracing pipeline for billing microservices
-##
+# =============================================================================
+# AgentBanking / POS54 — Canonical OpenTelemetry Collector configuration
+# Wave-1 observability stack (infra/observability/)
+#
+# This file REPLACES the legacy config that exported to an undeployed Jaeger
+# endpoint. All middleware scraping, span processing, tenant attribution and
+# spanmetrics aggregation happen here; Prometheus scrapes only :8889.
+#
+# Override any target via environment variables (external infra deployments).
+# No secrets in this file: credentials come from env at container start.
+# =============================================================================
 
 receivers:
   otlp:
@@ -11,241 +18,245 @@ receivers:
       http:
         endpoint: 0.0.0.0:4318
 
-  # Prometheus metrics scraping
+  # Dapr (1.11) uses the Zipkin exporter; dapr config is repointed here.
+  zipkin:
+    endpoint: 0.0.0.0:9411
+
+  # Scrape every middleware Prometheus endpoint. Job names below are referenced
+  # by alert rules in prometheus/rules/middleware.rules.yml — keep in sync.
   prometheus:
     config:
       scrape_configs:
-        - job_name: 'billing-trpc-backend'
+        - job_name: apisix
           scrape_interval: 15s
           static_configs:
-            - targets: ['trpc-backend:9090']
-              labels:
-                service: trpc-backend
-                tier: backend
-
-        - job_name: 'billing-aggregation-engine'
+            - targets: ["${env:APISIX_METRICS_TARGET:-apisix:9091}"]
+          metrics_path: /apisix/prometheus/metrics
+        - job_name: keycloak-ha
+          # Keycloak 26 HA: metrics on the management port
           scrape_interval: 15s
           static_configs:
-            - targets: ['billing-aggregation-engine:9090']
-              labels:
-                service: billing-aggregation-engine
-                language: go
-
-        - job_name: 'ledger-integrity-validator'
+            - targets: ["${env:KEYCLOAK_HA_METRICS_TARGET:-keycloak-1:9000}"]
+          metrics_path: /metrics
+        - job_name: keycloak
+          # Root compose Keycloak 24
           scrape_interval: 15s
           static_configs:
-            - targets: ['ledger-integrity-validator:9090']
-              labels:
-                service: ledger-integrity-validator
-                language: rust
-
-        - job_name: 'settlement-gateway'
+            - targets: ["${env:KEYCLOAK_METRICS_TARGET:-keycloak:8080}"]
+          metrics_path: /metrics
+        - job_name: permify
           scrape_interval: 15s
           static_configs:
-            - targets: ['settlement-gateway:9090']
-              labels:
-                service: settlement-gateway
-                language: go
-
-        - job_name: 'billing-event-processor'
+            - targets: ["${env:PERMIFY_METRICS_TARGET:-permify:3476}"]
+          metrics_path: /metrics
+        - job_name: temporal
+          # Temporal server prometheus endpoint is :9090, NOT the gRPC :7233
           scrape_interval: 15s
           static_configs:
-            - targets: ['billing-event-processor:9090']
-              labels:
-                service: billing-event-processor
-                language: rust
-
-        - job_name: 'sla-monitor'
+            - targets: ["${env:TEMPORAL_METRICS_TARGET:-temporal:9090}"]
+          metrics_path: /metrics
+        - job_name: minio
+          # MINIO_PROMETHEUS_AUTH_TYPE=public → no bearer token needed
           scrape_interval: 15s
           static_configs:
-            - targets: ['sla-monitor:9090']
-              labels:
-                service: sla-monitor
-                language: python
-
-        - job_name: 'webhook-dispatcher'
+            - targets: ["${env:MINIO_METRICS_TARGET:-minio-1:9000}"]
+          metrics_path: /minio/v2/metrics/cluster
+        - job_name: opensearch
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["${env:OPENSEARCH_METRICS_TARGET:-opensearch-node-1:9200}"]
+          metrics_path: /_prometheus/metrics
+        - job_name: fluvio
           scrape_interval: 15s
           static_configs:
-            - targets: ['webhook-dispatcher:9090']
-              labels:
-                service: webhook-dispatcher
-                language: python
+            - targets: ["${env:FLUVIO_METRICS_TARGET:-fluvio:9003}"]
+          metrics_path: /metrics
+        - job_name: mojaloop-ml-api
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:MOJALOOP_ML_API_METRICS_TARGET:-ml-api-adapter:3000}"]
+          metrics_path: /metrics
+        - job_name: mojaloop-account-lookup
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:MOJALOOP_ACCOUNT_LOOKUP_METRICS_TARGET:-account-lookup:4002}"]
+          metrics_path: /metrics
+        - job_name: mojaloop-central-ledger
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:MOJALOOP_CENTRAL_LEDGER_METRICS_TARGET:-central-ledger-1:3001}"]
+          metrics_path: /metrics
+        - job_name: mojaloop-central-settlement
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:MOJALOOP_CENTRAL_SETTLEMENT_METRICS_TARGET:-central-settlement:3007}"]
+          metrics_path: /metrics
+        - job_name: spark
+          # PrometheusServlet on the master UI port
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:SPARK_METRICS_TARGET:-spark-master:4040}"]
+          metrics_path: /metrics
+        - job_name: pos-shell-app
+          # TS api-server (prom-client)
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:POS_SHELL_METRICS_TARGET:-app:3000}"]
+          metrics_path: /api/metrics
+        - job_name: health-checker
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:HEALTH_CHECKER_METRICS_TARGET:-health-checker:8090}"]
+          metrics_path: /metrics
+        - job_name: circuit-breaker
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:CIRCUIT_BREAKER_METRICS_TARGET:-circuit-breaker:8091}"]
+          metrics_path: /metrics
+        - job_name: rate-limiter
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:RATE_LIMITER_METRICS_TARGET:-rate-limiter:8092}"]
+          metrics_path: /metrics
+        - job_name: metrics-collector
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:METRICS_COLLECTOR_METRICS_TARGET:-metrics-collector:8093}"]
+          metrics_path: /metrics
+        - job_name: postgres-exporter
+          # python exporter for postgres-production (distinct from the
+          # postgresql receiver below, which reads pg stats directly)
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["${env:POSTGRES_EXPORTER_METRICS_TARGET:-postgres-production:9090}"]
+          metrics_path: /metrics
+        - job_name: papss
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:PAPSS_METRICS_TARGET:-papss:8081}"]
+          metrics_path: /metrics
+        # NOTE: TigerBeetle 0.16.43 exposes NO metrics endpoint — documented gap.
+        # Availability is covered by the tigerbeetle-sidecar up{} alert once a
+        # sidecar/heartbeat exporter exists; do not invent a scrape here.
 
-  # Kafka metrics
-  kafka:
-    protocol_version: 3.0.0
-    brokers:
-      - kafka-0:9092
-      - kafka-1:9092
-      - kafka-2:9092
-    topic: billing.otel.traces
-    encoding: otlp_proto
+  # Kafka is KRaft with no JMX exporter → use the kafkametrics receiver.
+  kafkametrics:
+    brokers: ["${env:KAFKA_BROKERS:-kafka:9092}"]
+    protocol_version: 2.0.0
+    scrapers:
+      - brokers
+      - topics
+      - consumers
 
-  # Host metrics
+  postgresql:
+    endpoint: "${env:POSTGRES_ENDPOINT:-postgres:5432}"
+    transport: tcp
+    username: "${env:POSTGRES_USER:-postgres}"
+    password: "${env:POSTGRES_PASSWORD}"
+    databases:
+      - postgres
+    tls:
+      insecure: true
+    collection_interval: 30s
+
+  redis:
+    endpoint: "${env:REDIS_ENDPOINT:-redis:6379}"
+    collection_interval: 30s
+
   hostmetrics:
     collection_interval: 30s
     scrapers:
-      cpu: {}
-      disk: {}
-      memory: {}
-      network: {}
-      load: {}
+      cpu:
+      memory:
+      disk:
+      load:
+      network:
 
 processors:
-  # Batch processing for efficiency
-  batch:
-    send_batch_size: 1024
-    send_batch_max_size: 2048
-    timeout: 5s
-
-  # Memory limiter to prevent OOM
   memory_limiter:
-    check_interval: 5s
+    check_interval: 1s
     limit_mib: 512
     spike_limit_mib: 128
 
-  # Resource detection
-  resourcedetection:
-    detectors: [env, system, docker]
+  batch:
     timeout: 5s
+    send_batch_size: 1024
 
-  # Attribute processing
-  attributes:
+  resourcedetection:
+    detectors: [env, system]
+    timeout: 5s
+    override: false
+
+  # Copy span attribute tenant.id onto the resource so downstream
+  # (Tempo index, spanmetrics dimensions) can group by tenant.
+  # Defaults to 'unknown' when the span carries no tenant.id.
+  transform/tenant:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          - set(resource.attributes["tenant.id"], attributes["tenant.id"]) where attributes["tenant.id"] != nil
+          - set(resource.attributes["tenant.id"], "unknown") where attributes["tenant.id"] == nil
+
+  # Redact sensitive attributes before anything leaves the collector.
+  attributes/redact:
     actions:
-      - key: environment
-        value: production
-        action: upsert
-      - key: platform
-        value: 54link-billing
-        action: upsert
-      - key: region
-        value: af-west-1
-        action: upsert
+      - key: authorization
+        action: delete
+      - key: password
+        action: delete
+      - key: secret
+        action: delete
+      - key: token
+        action: delete
 
-  # Tail-based sampling for cost control
-  tail_sampling:
-    decision_wait: 10s
-    num_traces: 100000
-    expected_new_traces_per_sec: 500
-    policies:
-      # Always sample errors
-      - name: errors
-        type: status_code
-        status_code:
-          status_codes: [ERROR]
-
-      # Always sample slow requests (>1s)
-      - name: slow-requests
-        type: latency
-        latency:
-          threshold_ms: 1000
-
-      # Sample billing ledger operations at 100%
-      - name: billing-ledger
-        type: string_attribute
-        string_attribute:
-          key: rpc.method
-          values: [billingLedger.postEntry, billingLedger.getEntries]
-
-      # Sample invoice operations at 100%
-      - name: billing-invoice
-        type: string_attribute
-        string_attribute:
-          key: rpc.method
-          values: [billingInvoice.createInvoice, billingInvoice.listInvoices]
-
-      # Sample reconciliation at 100%
-      - name: reconciliation
-        type: string_attribute
-        string_attribute:
-          key: rpc.method
-          values: [revenueReconciliation.runReconciliation]
-
-      # Sample everything else at 10%
-      - name: default-sampling
-        type: probabilistic
-        probabilistic:
-          sampling_percentage: 10
-
-  # Span metrics connector
+connectors:
+  # Aggregate RED metrics from spans. Explicit (non-exponential) histogram
+  # buckets chosen for payments-domain latency SLOs.
+  # NOTE: dimension names containing dots are sanitized to underscores in the
+  # Prometheus export: `tenant.id` becomes the label `tenant_id`,
+  # `http.status_code` becomes `http_status_code`. `service_name` is emitted
+  # automatically by the connector.
   spanmetrics:
     histogram:
       explicit:
-        buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]
+        buckets: [2ms, 10ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]
     dimensions:
-      - name: http.method
+      - name: tenant.id
       - name: http.status_code
-      - name: rpc.method
-      - name: service.name
-    exemplars:
-      enabled: true
 
 exporters:
-  # Jaeger for trace visualization
-  otlp/jaeger:
-    endpoint: jaeger-collector:4317
+  # Aggregated middleware + spanmetrics feed scraped by Prometheus.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: pos54
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  otlp/tempo:
+    endpoint: "${env:TEMPO_ENDPOINT:-tempo:4317}"
     tls:
       insecure: true
 
-  # Prometheus for metrics
-  prometheus:
-    endpoint: 0.0.0.0:8889
-    namespace: billing
-    const_labels:
-      platform: 54link
-
-  # Loki for logs
   loki:
-    endpoint: http://loki:3100/loki/api/v1/push
-    labels:
-      resource:
-        service.name: "service_name"
-        service.namespace: "service_namespace"
+    endpoint: "${env:LOKI_ENDPOINT:-http://loki:3100/loki/api/v1/push}"
 
-  # Debug exporter (development only)
   debug:
     verbosity: basic
-
-  # S3 for long-term trace storage
-  awss3:
-    s3uploader:
-      region: af-south-1
-      s3_bucket: 54link-billing-traces
-      s3_prefix: otel-traces
-      s3_partition: minute
-      file_prefix: billing-trace
-
-extensions:
-  health_check:
-    endpoint: 0.0.0.0:13133
-
-  pprof:
-    endpoint: 0.0.0.0:1888
-
-  zpages:
-    endpoint: 0.0.0.0:55679
+    sampling_initial: 2
+    sampling_thereafter: 50
 
 service:
-  extensions: [health_check, pprof, zpages]
-
   pipelines:
     traces:
-      receivers: [otlp, kafka]
-      processors: [memory_limiter, resourcedetection, attributes, tail_sampling, batch]
-      exporters: [otlp/jaeger, awss3]
-
+      receivers: [otlp, zipkin]
+      processors: [memory_limiter, resourcedetection, transform/tenant, attributes/redact, batch]
+      exporters: [otlp/tempo, spanmetrics, debug]
     metrics:
-      receivers: [otlp, prometheus, hostmetrics]
-      processors: [memory_limiter, resourcedetection, attributes, batch]
-      exporters: [prometheus]
-
+      receivers: [otlp, prometheus, kafkametrics, postgresql, redis, hostmetrics, spanmetrics]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, debug]
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, resourcedetection, attributes, batch]
-      exporters: [loki]
-
-  telemetry:
-    logs:
-      level: info
-    metrics:
-      address: 0.0.0.0:8888
+      processors: [memory_limiter, batch]
+      exporters: [loki, debug]

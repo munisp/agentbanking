@@ -1,0 +1,85 @@
+# =============================================================================
+# Platform-level alert rules — Wave-1 canonical stack
+#
+# spanmetrics note: the spanmetrics connector emits `calls_total` and
+# `duration_milliseconds_bucket` (explicit histogram). Through the collector
+# prometheus exporter they are namespaced — VERIFY: if the `pos54` namespace
+# prefix is applied, use `pos54_calls_total` / `pos54_duration_milliseconds_bucket`.
+# Same namespace caveat applies to `up` samples coming from collector jobs.
+# =============================================================================
+
+groups:
+  - name: platform_availability
+    interval: 30s
+    rules:
+      # App-layer jobs: pos-shell-app (also scraped directly by Prometheus),
+      # Go middleware services, python exporters — scraped via the collector.
+      - alert: PlatformAvailability
+        expr: |
+          up{job=~"pos-shell-app|health-checker|circuit-breaker|rate-limiter|metrics-collector|postgres-exporter|papss"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "Platform component down: job {{ $labels.job }} (instance {{ $labels.instance }})"
+          description: "Job {{ $labels.job }} instance {{ $labels.instance }} has been unreachable for 5m."
+
+  - name: platform_red
+    interval: 30s
+    rules:
+      - alert: HighHttp5xxRate
+        # spanmetrics: calls_total{status_code="STATUS_CODE_ERROR"} per service.
+        # VERIFY namespace prefix (pos54_calls_total) after deploy.
+        expr: |
+          sum by (service_name) (rate(calls_total{status_code="STATUS_CODE_ERROR"}[5m]))
+            /
+          sum by (service_name) (rate(calls_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "High 5xx/error rate on {{ $labels.service_name }}"
+          description: "Service {{ $labels.service_name }} has an error ratio of {{ $value | humanizePercentage }} over 5m (threshold 5%)."
+
+      - alert: HighP95Latency
+        # spanmetrics: duration_milliseconds_bucket explicit histogram.
+        # VERIFY namespace prefix (pos54_duration_milliseconds_bucket) after deploy.
+        expr: |
+          histogram_quantile(0.95,
+            sum by (service_name, le) (rate(duration_milliseconds_bucket[5m]))
+          ) > 1000
+        for: 10m
+        labels:
+          severity: warning
+          team: platform-ops
+        annotations:
+          summary: "High p95 latency on {{ $labels.service_name }}"
+          description: "Service {{ $labels.service_name }} p95 latency is {{ $value }}ms over 10m (threshold 1000ms)."
+
+  - name: collector_health
+    interval: 30s
+    rules:
+      - alert: CollectorDroppingSpans
+        # otelcol internal telemetry, scraped from collector :8889 (job otel-collector).
+        expr: rate(otelcol_receiver_refused_spans_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: platform-ops
+        annotations:
+          summary: "OTel collector is refusing spans (memory limiter pressure)"
+          description: "Collector instance {{ $labels.instance }} refused {{ $value }} spans/s over 5m — check memory_limiter and pipeline saturation."
+
+      - alert: CollectorQueueFull
+        # VERIFY: otelcol_exporter_queue_size / otelcol_exporter_queue_capacity
+        # require the collector sending-queue telemetry (enabled by default).
+        expr: otelcol_exporter_queue_size / otelcol_exporter_queue_capacity > 0.9
+        for: 10m
+        labels:
+          severity: warning
+          team: platform-ops
+        annotations:
+          summary: "OTel collector exporter queue above 90% (exporter {{ $labels.exporter }})"
+          description: "Exporter queue for {{ $labels.exporter }} on {{ $labels.instance }} is at {{ $value | humanizePercentage }} capacity for 10m."

@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -39,14 +40,18 @@ func main() {
 		_ = shutdownTracer(ctx)
 	}()
     fmt.Println("gateway-service starting...")
-    
+
     http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
         w.WriteHeader(http.StatusOK)
         w.Write([]byte(`{"status": "healthy", "service": "gateway-service"}`))
     })
-    
+
+    // Prometheus metrics endpoint (canonical cross-language contract).
+    http.Handle("/metrics", promhttp.Handler())
+
     log.Println("gateway-service listening on :8080")
-    log.Fatal(http.ListenAndServe(":8080", nil))
+    // Wire OTel tracing middleware around the whole handler chain.
+    log.Fatal(http.ListenAndServe(":8080", otelMiddleware(svcName, http.DefaultServeMux)))
 }
 
 // initTracer initialises the OTLP trace exporter.
@@ -54,10 +59,11 @@ func main() {
 func initTracer(serviceName, serviceVersion string) func(context.Context) error {
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
+		slog.Warn("OTEL_EXPORTER_OTLP_ENDPOINT not set — tracing disabled")
 		return func(context.Context) error { return nil }
 	}
 	ctx := context.Background()
-	exp, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint))
+	exp, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint), otlptracehttp.WithInsecure())
 	if err != nil {
 		slog.Warn("OTel exporter init failed", "err", err)
 		return func(context.Context) error { return nil }

@@ -67,3 +67,14 @@ system.archivalStatus:
 system.enableEagerNamespaceRefresher:
   - value: true
     constraints: {}
+
+# ── Metrics ───────────────────────────────────────────────────────────────────
+# OBSERVABILITY: temporalio/server 1.25 Prometheus metrics endpoint. The
+# canonical OTel collector scrapes temporal:9090 (see
+# k8s/observability/otel-collector.yaml).
+global.metrics.prometheus.timerType:
+  - value: histogram
+    constraints: {}
+global.metrics.prometheus.listenAddress:
+  - value: 0.0.0.0:9090
+    constraints: {}

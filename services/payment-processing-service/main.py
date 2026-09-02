@@ -15,6 +15,29 @@ from utils import get_config
 from utils.coa_client import CoAClient
 from middlewares import RequiredHeadersMiddleware
 
+# Observability: canonical OTel + Prometheus wiring (services/shared/observability.py).
+# Guarded so the service still starts when shared/ is not importable (the Docker
+# build context for this service is its own directory) — observability must never
+# break the service.
+try:
+    from shared.observability import init_observability
+except ImportError:
+    import os as _obs_os
+    import sys as _obs_sys
+
+    _obs_sys.path.insert(
+        0, _obs_os.path.dirname(_obs_os.path.dirname(_obs_os.path.abspath(__file__)))
+    )
+    try:
+        from shared.observability import init_observability
+    except ImportError:
+        def init_observability(app, service_name, service_version="0.0.0"):
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "shared.observability not importable; observability disabled"
+            )
+
 # Setup config
 config = get_config()
 
@@ -27,6 +50,9 @@ app = FastAPI(
     version="0.0.0",
 )
 
+# Canonical observability wiring (tenant baggage middleware, /metrics, OTel).
+init_observability(app, "payment-processing-service")
+
 app.add_middleware(
     RequiredHeadersMiddleware,
     # NF-FF-21: x-ledger-id / x-mint-account-id are no longer accepted from
@@ -37,7 +63,7 @@ app.add_middleware(
         "x-tenant-id",
         "x-keycloak-id",
     ],
-    exclude_prefixes=["/health", "/dapr", "/charges", "/transfers", "/api/v1/transactions"],
+    exclude_prefixes=["/health", "/dapr", "/charges", "/transfers", "/api/v1/transactions", "/metrics"],
 )
 
 Base.metadata.create_all(bind=engine)

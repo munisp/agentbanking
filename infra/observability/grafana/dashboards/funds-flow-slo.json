@@ -1,0 +1,83 @@
+{
+  "uid": "funds-flow-slo",
+  "title": "Funds Flow SLO",
+  "tags": ["funds", "slo", "pos54"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Transfer success ratio (CIPS / PAPSS / POS)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1 - (sum(rate({__name__=~\"pos54_cips_transfers_total|cips_transfers_total\", status=\"failed\"}[5m])) / sum(rate({__name__=~\"pos54_cips_transfers_total|cips_transfers_total\"}[5m])))",
+          "legendFormat": "cips"
+        },
+        {
+          "refId": "B",
+          "expr": "1 - (sum(rate({__name__=~\"pos54_papss_payments_total|papss_payments_total\", status=\"failed\"}[5m])) / sum(rate({__name__=~\"pos54_papss_payments_total|papss_payments_total\"}[5m])))",
+          "legendFormat": "papss"
+        },
+        {
+          "refId": "C",
+          "expr": "1 - (sum(rate({__name__=~\"pos54_pos_transaction_errors_total|pos_transaction_errors_total\"}[5m])) / sum(rate({__name__=~\"pos54_pos_transactions_total|pos_transactions_total\"}[5m])))",
+          "legendFormat": "pos"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Ledger imbalance detections (cumulative, 1h increase)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"colorMode": "background", "graphMode": "area", "textMode": "value_and_name"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (ledger, tenant) (increase({__name__=~\"pos54_ledger_imbalance_detected_total|ledger_imbalance_detected_total\"}[1h]))",
+          "legendFormat": "{{ledger}} / {{tenant}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Settlement lag p95 (s)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "s", "min": 0}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (tenant, le) (rate({__name__=~\"pos54_settlement_lag_seconds_bucket|settlement_lag_seconds_bucket\"}[10m])))",
+          "legendFormat": "{{tenant}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Payment failures by reason (rate 5m)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (rate({__name__=~\"pos54_payments_failed_total|payments_failed_total\"}[5m]))",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    }
+  ]
+}

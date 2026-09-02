@@ -1,0 +1,114 @@
+# =============================================================================
+# Funds-flow alert rules — Wave-1 canonical stack
+# Metric sources:
+#   existing app metrics:  pos_transactions_total, pos_transaction_errors_total,
+#                          pos_fraud_alerts_total, pos_float_locks_total,
+#                          pos_platform_calls_total{status},
+#                          cips_transfers_total, papss_payments_total
+#   NEW canonical business metrics (emitted by api-server + python services,
+#   added by other agents; names are contractual):
+#     funds_flow_operations_total{operation,service,tenant,status}
+#     ledger_imbalance_detected_total{ledger,tenant}
+#     settlement_lag_seconds{tenant}              (histogram)
+#     payments_failed_total{service,tenant,reason}
+# =============================================================================
+
+groups:
+  - name: funds_flow
+    interval: 30s
+    rules:
+      - alert: HighTransactionErrorRate
+        expr: |
+          sum(rate(pos_transaction_errors_total[5m]))
+            /
+          sum(rate(pos_transactions_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: funds-ops
+        annotations:
+          summary: "Transaction error rate above 5% for 5m"
+          description: "Error rate is {{ $value | humanizePercentage }} of pos transactions over the last 5m (threshold 5%)."
+
+      - alert: FundsFlowOperationErrors
+        # Per-tenant error ratio on the canonical funds-flow metric.
+        expr: |
+          sum by (tenant) (rate(funds_flow_operations_total{status="error"}[5m]))
+            /
+          sum by (tenant) (rate(funds_flow_operations_total[5m])) > 0.03
+        for: 5m
+        labels:
+          severity: critical
+          team: funds-ops
+        annotations:
+          summary: "Funds-flow operation errors above 3% for tenant {{ $labels.tenant }}"
+          description: "Tenant {{ $labels.tenant }}: {{ $value | humanizePercentage }} of funds-flow operations are erroring over 5m (threshold 3%)."
+
+      - alert: LedgerImbalanceDetected
+        # PAGE IMMEDIATELY: any detected ledger imbalance.
+        expr: increase(ledger_imbalance_detected_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: funds-ops
+        annotations:
+          summary: "Ledger imbalance detected (ledger {{ $labels.ledger }}, tenant {{ $labels.tenant }})"
+          description: "Ledger {{ $labels.ledger }} for tenant {{ $labels.tenant }} reported {{ $value }} imbalance(s) in the last 10m. Investigate immediately."
+
+      - alert: SettlementLagHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum by (tenant, le) (rate(settlement_lag_seconds_bucket[10m]))
+          ) > 900
+        for: 10m
+        labels:
+          severity: warning
+          team: funds-ops
+        annotations:
+          summary: "Settlement lag p95 above 15m for tenant {{ $labels.tenant }}"
+          description: "Tenant {{ $labels.tenant }}: p95 settlement lag is {{ $value | humanizeDuration }} over 10m (threshold 900s)."
+
+      - alert: FraudAlertSpike
+        expr: rate(pos_fraud_alerts_total[5m]) * 60 > 10
+        for: 5m
+        labels:
+          severity: critical
+          team: funds-ops
+        annotations:
+          summary: "Fraud alert spike: more than 10 alerts/min"
+          description: "Fraud alerts are firing at {{ $value }}/min over the last 5m (threshold 10/min)."
+
+      - alert: PaymentFailuresSpike
+        expr: |
+          sum by (tenant, reason) (increase(payments_failed_total[5m])) > 20
+        for: 5m
+        labels:
+          severity: warning
+          team: funds-ops
+        annotations:
+          summary: "Payment failures spike for tenant {{ $labels.tenant }} (reason={{ $labels.reason }})"
+          description: "Tenant {{ $labels.tenant }}: {{ $value }} payment failures with reason '{{ $labels.reason }}' in the last 5m (threshold 20/5m)."
+
+      - alert: FloatLockContention
+        expr: rate(pos_float_locks_total[5m]) * 60 > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: funds-ops
+        annotations:
+          summary: "Float lock contention above 5 locks/min"
+          description: "Float locks are being taken at {{ $value }}/min over 5m; possible agent float contention."
+
+      - alert: CIPSTransferFailureRatio
+        # status label on cips_transfers_total marks the outcome
+        expr: |
+          sum(rate(cips_transfers_total{status="failed"}[5m]))
+            /
+          sum(rate(cips_transfers_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: funds-ops
+        annotations:
+          summary: "CIPS transfer failure ratio above 5%"
+          description: "{{ $value | humanizePercentage }} of CIPS transfers are failing over 5m (threshold 5%)."

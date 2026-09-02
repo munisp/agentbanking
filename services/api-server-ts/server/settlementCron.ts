@@ -31,6 +31,8 @@ import { sendSms } from "./termii";
 import { cacheIncr, cacheDel } from "./redisClient";
 import { settlementPlatform } from "./_core/platformClient.js";
 import { ENV } from "./_core/env";
+import { settlementLagSeconds, recordFundsFlowOperation } from "./metrics";
+import { getTenantIdFromContext } from "./middleware/tenantTelemetry";
 
 interface AgentSettlement {
   agentId: number;
@@ -74,9 +76,13 @@ const SETTLEMENT_FLOAT_LOCK_TTL = 1800; // seconds — matches SETTLEMENT_LOCK_T
 
 async function runDailySettlement(): Promise<SettlementResult> {
   console.log("[settlement] Starting daily settlement run...");
+  // Observability: cycle start for settlement_lag_seconds + tenant context.
+  const cycleStart = Date.now();
+  const tenant = getTenantIdFromContext();
   const db = await getDb();
   if (!db) {
     console.error("[settlement] DB unavailable — skipping settlement run");
+    recordFundsFlowOperation("settlement_cycle", tenant, "error");
     return {
       agentCount: 0,
       smsSent: 0,
@@ -283,6 +289,14 @@ async function runDailySettlement(): Promise<SettlementResult> {
 
   console.log(
     `[settlement] Daily settlement complete — ${successCount} agents processed, ${errors.length} errors`
+  );
+  // Observability: no per-settlement age exists in this code — observe the
+  // cycle duration as the settlement lag, and record the cycle outcome.
+  settlementLagSeconds.labels(tenant).observe((Date.now() - cycleStart) / 1000);
+  recordFundsFlowOperation(
+    "settlement_cycle",
+    tenant,
+    errors.length === 0 ? "success" : "error"
   );
   return { agentCount: successCount, smsSent, errors, runAt: new Date() };
 }

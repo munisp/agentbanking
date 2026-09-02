@@ -1,5 +1,6 @@
 # OpenTelemetry Collector for 54Link POS Shell
-# Collects traces, metrics, and logs from all services
+# Canonical collector: OTLP 4317/4318 + zipkin 9411 receivers, Tempo export.
+# Middleware (dapr/apisix/keycloak/permify/temporal/spark) wires into this.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -14,104 +15,114 @@ data:
             endpoint: 0.0.0.0:4317
           http:
             endpoint: 0.0.0.0:4318
+      # Zipkin receiver: bridges Dapr 1.11 (zipkin exporter only) and any
+      # legacy zipkin instrumented sidecars into OTLP -> Tempo.
+      zipkin:
+        endpoint: 0.0.0.0:9411
+      # Prometheus scrapes of in-cluster service endpoints. NOTE: these
+      # targets must exist in-cluster (k8s service DNS); dead targets only
+      # produce scrape errors, not collector failures.
       prometheus:
         config:
           scrape_configs:
-          - job_name: billing-services
+          - job_name: pos-shell-api
             scrape_interval: 15s
-            kubernetes_sd_configs:
-            - role: pod
-              namespaces:
-                names: [pos-shell]
-            relabel_configs:
-            - source_labels: [__meta_kubernetes_pod_label_domain]
-              regex: billing
-              action: keep
-          - job_name: middleware-services
+            static_configs:
+            - targets: [pos-shell.pos-shell.svc:3000]
+              metrics_path: /api/metrics
+          - job_name: apisix
+            scrape_interval: 15s
+            static_configs:
+            - targets: [apisix:9091]
+              metrics_path: /apisix/prometheus/metrics
+          - job_name: keycloak
             scrape_interval: 30s
             static_configs:
-            - targets:
-              - kafka:9092
-              - redis:6379
-              - postgresql:5432
-              - temporal:7233
-              - tigerbeetle:3001
-      hostmetrics:
+            - targets: [keycloak:9000]
+              metrics_path: /metrics
+          - job_name: permify
+            scrape_interval: 30s
+            static_configs:
+            - targets: [permify:3476]
+          - job_name: temporal
+            scrape_interval: 30s
+            static_configs:
+            - targets: [temporal:9090]
+      # Broker-level JMX/Kafka metrics (separate from prometheus scraping).
+      kafkametrics:
+        brokers: [kafka:9092]
+        protocol_version: 2.0.0
+        scrapers: [brokers, topics, consumers]
         collection_interval: 30s
-        scrapers:
-          cpu: {}
-          memory: {}
-          disk: {}
-          network: {}
+      postgresql:
+        endpoint: postgresql:5432
+        transport: tcp
+        username: ${env:POSTGRES_MONITOR_USER}
+        password: ${env:POSTGRES_MONITOR_PASSWORD}  # secret via env only
+        databases: []
+        collection_interval: 30s
+        tls:
+          insecure: true
+      redis:
+        endpoint: redis:6379
+        collection_interval: 30s
     processors:
-      batch:
-        timeout: 5s
-        send_batch_size: 1024
       memory_limiter:
         check_interval: 1s
         limit_mib: 512
         spike_limit_mib: 128
-      attributes:
-        actions:
-        - key: service.namespace
-          value: pos-shell
-          action: upsert
-        - key: deployment.environment
-          value: production
-          action: upsert
-      tail_sampling:
-        decision_wait: 10s
-        num_traces: 100000
-        policies:
-        - name: error-traces
-          type: status_code
-          status_code: {status_codes: [ERROR]}
-        - name: slow-traces
-          type: latency
-          latency: {threshold_ms: 2000}
-        - name: billing-traces
-          type: string_attribute
-          string_attribute: {key: service.name, values: [billing-*]}
-        - name: probabilistic-sampling
-          type: probabilistic
-          probabilistic: {sampling_percentage: 10}
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+      resourcedetection:
+        detectors: [env, system]
+        timeout: 5s
+        override: false
+      # Copy tenant.id span attribute onto the resource so spanmetrics and
+      # downstream backends can group by tenant.
+      transform/tenant:
+        error_mode: ignore
+        trace_statements:
+        - context: span
+          statements:
+          - set(resource.attributes["tenant.id"], attributes["tenant.id"]) where attributes["tenant.id"] != nil
+    connectors:
+      # RED metrics derived from spans; dimensioned by tenant.id.
+      spanmetrics:
+        dimensions:
+        - name: tenant.id
+        dimensions_cache_size: 1000
+        aggregation_temporality: AGGREGATION_TEMPORALITY_CUMULATIVE
+        metrics_flush_interval: 15s
     exporters:
-      otlp/jaeger:
-        endpoint: jaeger-collector.pos-shell.svc:4317
-        tls:
-          insecure: true
       prometheus:
         endpoint: 0.0.0.0:8889
-        namespace: pos_shell
         resource_to_telemetry_conversion:
           enabled: true
-      opensearch:
-        http:
-          endpoint: https://opensearch.pos-shell.svc:9200
-          tls:
-            insecure_skip_verify: true
-        logs_index: pos-shell-logs
-        traces_index: pos-shell-traces
+      otlp/tempo:
+        endpoint: tempo.pos-shell.svc:4317
+        tls:
+          insecure: true
+      debug:
+        verbosity: basic
     extensions:
       health_check:
         endpoint: 0.0.0.0:13133
-      zpages:
-        endpoint: 0.0.0.0:55679
     service:
-      extensions: [health_check, zpages]
+      extensions: [health_check]
       pipelines:
         traces:
-          receivers: [otlp]
-          processors: [memory_limiter, tail_sampling, batch, attributes]
-          exporters: [otlp/jaeger, opensearch]
+          receivers: [otlp, zipkin]
+          processors: [memory_limiter, resourcedetection, transform/tenant, batch]
+          exporters: [otlp/tempo, spanmetrics, debug]
         metrics:
-          receivers: [otlp, prometheus, hostmetrics]
-          processors: [memory_limiter, batch]
-          exporters: [prometheus]
+          receivers: [otlp, prometheus, kafkametrics, postgresql, redis, spanmetrics]
+          processors: [memory_limiter, resourcedetection, batch]
+          exporters: [prometheus, debug]
         logs:
           receivers: [otlp]
-          processors: [memory_limiter, batch, attributes]
-          exporters: [opensearch]
+          processors: [memory_limiter, batch]
+          exporters: [debug]
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -133,13 +144,28 @@ spec:
       serviceAccountName: otel-collector
       containers:
       - name: otel-collector
-        image: otel/opentelemetry-collector-contrib:0.96.0
+        image: otel/opentelemetry-collector-contrib:0.129.0
         args: ["--config=/etc/otel/config.yaml"]
+        env:
+        - name: POSTGRES_MONITOR_USER
+          valueFrom:
+            secretKeyRef:
+              name: otel-collector-secrets
+              key: postgres-monitor-user
+              optional: true
+        - name: POSTGRES_MONITOR_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: otel-collector-secrets
+              key: postgres-monitor-password
+              optional: true
         ports:
         - containerPort: 4317
           name: otlp-grpc
         - containerPort: 4318
           name: otlp-http
+        - containerPort: 9411
+          name: zipkin
         - containerPort: 8889
           name: prometheus
         - containerPort: 13133
@@ -184,6 +210,12 @@ spec:
   - name: otlp-http
     port: 4318
     targetPort: 4318
+  - name: zipkin
+    port: 9411
+    targetPort: 9411
   - name: prometheus
     port: 8889
     targetPort: 8889
+  - name: health
+    port: 13133
+    targetPort: 13133

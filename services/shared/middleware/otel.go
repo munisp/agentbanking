@@ -1,5 +1,6 @@
 // Package middleware provides shared production middleware for all 54agent Go services.
-// Includes: OpenTelemetry tracing, rate limiting, mTLS, and graceful shutdown helpers.
+// Includes: OpenTelemetry tracing + metrics, tenant context propagation,
+// rate limiting, mTLS, and graceful shutdown helpers.
 package middleware
 
 import (
@@ -16,8 +17,11 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
@@ -27,13 +31,33 @@ import (
 
 // ─── OpenTelemetry ────────────────────────────────────────────────────────────
 
+const defaultOTLPEndpoint = "http://otel-collector:4318"
+
+// otelEndpoint returns OTEL_EXPORTER_OTLP_ENDPOINT or the in-cluster default.
+func otelEndpoint() string {
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
+		endpoint = defaultOTLPEndpoint
+	}
+	return endpoint
+}
+
+// otelResource builds the shared OTel resource (service name/version +
+// deployment environment) used by both the trace and meter providers.
+func otelResource(serviceName, serviceVersion string) (*resource.Resource, error) {
+	return resource.New(context.Background(),
+		resource.WithAttributes(
+			semconv.ServiceName(serviceName),
+			semconv.ServiceVersion(serviceVersion),
+			attribute.String("deployment.environment", os.Getenv("ENVIRONMENT")),
+		),
+	)
+}
+
 // InitTracer initialises the OpenTelemetry SDK and returns a shutdown function.
 // OTEL_EXPORTER_OTLP_ENDPOINT defaults to http://otel-collector:4318.
 func InitTracer(serviceName, serviceVersion string) (func(context.Context) error, error) {
-	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	if endpoint == "" {
-		endpoint = "http://otel-collector:4318"
-	}
+	endpoint := otelEndpoint()
 
 	exporter, err := otlptracehttp.New(
 		context.Background(),
@@ -44,13 +68,7 @@ func InitTracer(serviceName, serviceVersion string) (func(context.Context) error
 		return nil, fmt.Errorf("create OTLP exporter: %w", err)
 	}
 
-	res, err := resource.New(context.Background(),
-		resource.WithAttributes(
-			semconv.ServiceName(serviceName),
-			semconv.ServiceVersion(serviceVersion),
-			attribute.String("deployment.environment", os.Getenv("ENVIRONMENT")),
-		),
-	)
+	res, err := otelResource(serviceName, serviceVersion)
 	if err != nil {
 		return nil, fmt.Errorf("create OTel resource: %w", err)
 	}
@@ -69,12 +87,100 @@ func InitTracer(serviceName, serviceVersion string) (func(context.Context) error
 	return tp.Shutdown, nil
 }
 
+// InitTelemetry initialises BOTH the trace provider (identical to InitTracer)
+// and a metric MeterProvider exporting via OTLP/HTTP to the same endpoint
+// (OTEL_EXPORTER_OTLP_ENDPOINT, default http://otel-collector:4318, insecure),
+// with a 30-second PeriodicReader. Resource attributes match the traces.
+// The returned shutdown function shuts down both providers.
+func InitTelemetry(serviceName, serviceVersion string) (func(context.Context) error, error) {
+	shutdownTraces, err := InitTracer(serviceName, serviceVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	metricExporter, err := otlpmetrichttp.New(
+		context.Background(),
+		otlpmetrichttp.WithEndpoint(otelEndpoint()),
+		otlpmetrichttp.WithInsecure(),
+	)
+	if err != nil {
+		return shutdownTraces, fmt.Errorf("create OTLP metric exporter: %w", err)
+	}
+
+	res, err := otelResource(serviceName, serviceVersion)
+	if err != nil {
+		return shutdownTraces, fmt.Errorf("create OTel resource: %w", err)
+	}
+
+	mp := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
+			metricExporter,
+			sdkmetric.WithInterval(30*time.Second),
+		)),
+		sdkmetric.WithResource(res),
+	)
+	otel.SetMeterProvider(mp)
+
+	return func(ctx context.Context) error {
+		traceErr := shutdownTraces(ctx)
+		metricErr := mp.Shutdown(ctx)
+		if traceErr != nil {
+			return traceErr
+		}
+		return metricErr
+	}, nil
+}
+
 // Tracer returns a named tracer from the global provider.
 func Tracer(name string) trace.Tracer {
 	return otel.Tracer(name)
 }
 
+// ─── Tenant context ───────────────────────────────────────────────────────────
+
+// tenantIDBaggageKey is the W3C baggage key carrying the tenant id across
+// service boundaries (shared contract with the TypeScript api-server).
+const tenantIDBaggageKey = "tenant.id"
+
+// TenantIDUnknown is used when no tenant id is present on the request/context.
+const TenantIDUnknown = "unknown"
+
+// TenantIDFromRequest extracts the tenant id from the X-Tenant-ID header,
+// defaulting to "unknown" when absent.
+func TenantIDFromRequest(r *http.Request) string {
+	if tenantID := r.Header.Get("X-Tenant-ID"); tenantID != "" {
+		return tenantID
+	}
+	return TenantIDUnknown
+}
+
+// ContextWithTenant returns a context carrying tenant.id as OTel baggage.
+// On baggage encoding failure the original context is returned unchanged.
+func ContextWithTenant(ctx context.Context, tenantID string) context.Context {
+	member, err := baggage.NewMember(tenantIDBaggageKey, tenantID)
+	if err != nil {
+		return ctx
+	}
+	bag, err := baggage.New(member)
+	if err != nil {
+		return ctx
+	}
+	return baggage.ContextWithBaggage(ctx, bag)
+}
+
+// TenantIDFromContext returns the tenant.id baggage value on the context,
+// or "unknown" when absent.
+func TenantIDFromContext(ctx context.Context) string {
+	if member := baggage.FromContext(ctx).Member(tenantIDBaggageKey); member.Value() != "" {
+		return member.Value()
+	}
+	return TenantIDUnknown
+}
+
 // OTelHTTPMiddleware injects trace context into every incoming HTTP request.
+// It also propagates tenant context: the X-Tenant-ID header is stamped as a
+// tenant.id span attribute and stored as tenant.id baggage on the request
+// context (default "unknown").
 func OTelHTTPMiddleware(serviceName string) func(http.Handler) http.Handler {
 	tracer := otel.Tracer(serviceName)
 	propagator := otel.GetTextMapPropagator()
@@ -82,11 +188,14 @@ func OTelHTTPMiddleware(serviceName string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+			tenantID := TenantIDFromRequest(r)
+			ctx = ContextWithTenant(ctx, tenantID)
 			ctx, span := tracer.Start(ctx, r.Method+" "+r.URL.Path,
 				trace.WithAttributes(
 					semconv.HTTPRequestMethodKey.String(r.Method),
 					semconv.URLPath(r.URL.Path),
 					semconv.ServerAddress(r.Host),
+					attribute.String(tenantIDBaggageKey, tenantID),
 				),
 			)
 			defer span.End()

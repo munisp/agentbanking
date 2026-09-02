@@ -3,6 +3,7 @@ members = [
     "tx-validator",
     "ledger-bridge",
     "fraud-engine",
+    "otel-common",
     "pos-printer",
     "i18n-currency",
     "fluvio-smartmodule",

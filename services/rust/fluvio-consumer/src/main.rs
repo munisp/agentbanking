@@ -174,14 +174,13 @@ async fn health_handler() -> impl warp::Reply {
     }))
 }
 
-/// Metrics endpoint
+/// Metrics endpoint (Wave-4: Prometheus text exposition of the default registry)
 async fn metrics_handler() -> impl warp::Reply {
-    warp::reply::json(&serde_json::json!({
-        "events_consumed": 0,
-        "events_indexed": 0,
-        "errors": 0,
-        "uptime_seconds": 0,
-    }))
+    warp::reply::with_header(
+        otel_common::metrics_handle(),
+        "Content-Type",
+        "text/plain; version=0.0.4",
+    )
 }
 
 
@@ -252,6 +251,17 @@ fn log_audit(action: &str, entity_id: &str) {
 }
 
 fn main() {
+    // Wave-4: shared OTel tracing (fmt + OTLP export when OTEL_EXPORTER_OTLP_ENDPOINT is set).
+    // Non-fatal: fall back to the existing println/eprintln logging on init failure.
+    let _otel_guard = match otel_common::init_tracing("fluvio-consumer") {
+        Ok(guard) => Some(guard),
+        Err(e) => {
+            eprintln!("[FluvioConsumer] OTel init failed (continuing without OTLP): {}", e);
+            None
+        }
+    };
+    otel_common::register_business_metrics();
+
     println!("╔══════════════════════════════════════════════════════╗");
     println!("║  54Link Fluvio Consumer v1.0.0                      ║");
     println!("║  Streaming transaction events to OpenSearch          ║");
@@ -294,6 +304,8 @@ fn main() {
         if buffer.should_flush() && !buffer.events.is_empty() {
             let batch = buffer.drain();
             if let Err(e) = forward_to_indexer(&batch, &indexer_url).await {
+                // Wave-4: canonical business metric for downstream indexing failure
+                otel_common::record_payment_failed("fluvio-consumer", "unknown", "indexer_forward_error");
                 eprintln!("[FluvioConsumer] Batch forward error: {}", e);
             }
         }

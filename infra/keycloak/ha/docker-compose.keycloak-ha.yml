@@ -46,6 +46,14 @@ services:
       KC_HEALTH_ENABLED: "true"
       KC_LOG_LEVEL: INFO
       KC_FEATURES: "token-exchange,admin-fine-grained-authz,client-policies"
+      # ── OpenTelemetry (Keycloak 26) — OTLP/gRPC to canonical collector ──
+      KC_TELEMETRY_ENABLED: "true"
+      KC_TELEMETRY_ENDPOINT: "http://otel-collector:4317"
+      KC_TELEMETRY_PROTOCOL: "grpc"
+      KC_TELEMETRY_SERVICE_NAME: "keycloak"
+      KC_TELEMETRY_TRACING_ENABLED: "true"
+      KC_TELEMETRY_METRICS_ENABLED: "true"
+      KC_TELEMETRY_RESOURCE_ATTRIBUTES: "deployment.environment=${ENVIRONMENT:-production}"
 
   keycloak-2:
     <<: *keycloak-common
@@ -72,6 +80,14 @@ services:
       KC_HEALTH_ENABLED: "true"
       KC_LOG_LEVEL: INFO
       KC_FEATURES: "token-exchange,admin-fine-grained-authz,client-policies"
+      # ── OpenTelemetry (Keycloak 26) — OTLP/gRPC to canonical collector ──
+      KC_TELEMETRY_ENABLED: "true"
+      KC_TELEMETRY_ENDPOINT: "http://otel-collector:4317"
+      KC_TELEMETRY_PROTOCOL: "grpc"
+      KC_TELEMETRY_SERVICE_NAME: "keycloak"
+      KC_TELEMETRY_TRACING_ENABLED: "true"
+      KC_TELEMETRY_METRICS_ENABLED: "true"
+      KC_TELEMETRY_RESOURCE_ATTRIBUTES: "deployment.environment=${ENVIRONMENT:-production}"
 
 networks:
   pos54-net:

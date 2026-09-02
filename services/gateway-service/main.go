@@ -126,3 +126,4 @@ func gracefulShutdown(serviceName string, srv *http.Server, cleanup func(context
 	}
 	slog.Info("Server stopped gracefully", "service", serviceName)
 }
+

@@ -298,11 +298,49 @@ async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value>
     }))
 }
 
+/// Wave-4: Prometheus exposition endpoint.
+async fn handle_metrics() -> String {
+    otel_common::metrics_handle()
+}
+
+/// Wave-4: stamp tenant.id (from x-tenant-id header) on the current span.
+async fn tenant_middleware(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let tenant = otel_common::tenant_id_from_headers(request.headers());
+    otel_common::record_tenant_span_attr(&tenant);
+    next.run(request).await
+}
+
 async fn handle_validate(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<ValidationRequest>,
 ) -> Json<ValidationResult> {
+    let tenant = otel_common::tenant_id_from_headers(&headers);
     let result = state.validator.validate(&req);
+
+    // Wave-4: canonical business metrics
+    otel_common::record_funds_flow_operation(
+        "validate",
+        "tx-validator",
+        &tenant,
+        match &result.status {
+            ValidationStatus::Approved => "approved",
+            ValidationStatus::Rejected => "rejected",
+            ValidationStatus::RequiresReview => "requires_review",
+        },
+    );
+    if result.status == ValidationStatus::Rejected {
+        let reason = result
+            .errors
+            .first()
+            .map(|e| e.code.as_str())
+            .unwrap_or("validation_error");
+        otel_common::record_payment_failed("tx-validator", &tenant, reason);
+    }
+
     info!(
         transaction_id = %req.transaction_id,
         status = ?result.status,
@@ -399,12 +437,10 @@ fn verify_auth(headers: &hyper::HeaderMap) -> Result<String, (hyper::StatusCode,
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env()
-            .add_directive("tx_validator=info".parse()?)
-            .add_directive("axum=info".parse()?))
-        .json()
-        .init();
+    // Wave-4: shared OTel tracing (fmt + OTLP export when OTEL_EXPORTER_OTLP_ENDPOINT is set).
+    let _otel_guard = otel_common::init_tracing("tx-validator")
+        .map_err(|e| anyhow::anyhow!("otel init failed: {}", e))?;
+    otel_common::register_business_metrics();
 
     let config = Config::from_env();
     let port = config.port;
@@ -416,10 +452,12 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(handle_health))
+        .route("/metrics", get(handle_metrics))
         .route("/api/v1/validate", post(handle_validate))
         .route("/api/v1/validate/batch", post(handle_validate_batch))
         .route("/api/v1/validate/rules", get(handle_get_rules))
         .with_state(state)
+        .layer(axum::middleware::from_fn(tenant_middleware))
         .layer(tower_http::cors::CorsLayer::permissive())
         .layer(tower_http::trace::TraceLayer::new_for_http());
 

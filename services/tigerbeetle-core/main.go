@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	tb "github.com/tigerbeetle/tigerbeetle-go"
 	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 	"go.opentelemetry.io/otel"
@@ -161,10 +162,20 @@ func main() {
 
 	router := mux.NewRouter()
 
+	// Wire OTel tracing middleware around every route.
+	router.Use(func(next http.Handler) http.Handler {
+		return otelMiddleware(svcName, next)
+	})
+
 	router.HandleFunc("/health", service.healthHandler).Methods("GET")
 	router.HandleFunc("/", service.rootHandler).Methods("GET")
 	router.HandleFunc("/api/v1/status", service.statusHandler).Methods("GET")
+	// DEPRECATED: /api/v1/metrics is a hand-rolled JSON summary kept for
+	// backward compatibility — scrape the canonical Prometheus /metrics
+	// endpoint instead.
 	router.HandleFunc("/api/v1/metrics", service.metricsHandler).Methods("GET")
+	// Prometheus metrics endpoint (canonical cross-language contract).
+	router.Handle("/metrics", promhttp.Handler()).Methods("GET")
 
 	router.HandleFunc("/api/v1/accounts", service.createAccountHandler).Methods("POST")
 	router.HandleFunc("/api/v1/accounts/{id}", service.getAccountHandler).Methods("GET")
@@ -440,10 +451,11 @@ func (s *Service) getTransferHandler(w http.ResponseWriter, r *http.Request) {
 func initTracer(serviceName, serviceVersion string) func(context.Context) error {
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
+		slog.Warn("OTEL_EXPORTER_OTLP_ENDPOINT not set — tracing disabled")
 		return func(context.Context) error { return nil }
 	}
 	ctx := context.Background()
-	exp, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint))
+	exp, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(endpoint), otlptracehttp.WithInsecure())
 	if err != nil {
 		slog.Warn("OTel exporter init failed", "err", err)
 		return func(context.Context) error { return nil }

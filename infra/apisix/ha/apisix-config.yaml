@@ -34,6 +34,9 @@ deployment:
     timeout: 30
 
 # ── Plugins ───────────────────────────────────────────────────────────────────
+# OBSERVABILITY: zipkin was REMOVED to avoid double-export of gateway spans;
+# opentelemetry (OTLP/HTTP -> canonical collector :4318 -> Tempo) is the single
+# tracing path now.
 plugins:
   - real-ip
   - cors
@@ -42,7 +45,7 @@ plugins:
   - limit-conn
   - api-breaker
   - prometheus
-  - zipkin
+  - opentelemetry
   - ip-restriction
   - ua-restriction
   - key-auth
@@ -64,6 +67,21 @@ plugin_attr:
     export_addr:
       ip: "0.0.0.0"
       port: 9091
+  # APISIX 3.9 opentelemetry plugin attributes — OTLP/HTTP export to the
+  # canonical OTel collector (:4318), which forwards spans to Tempo.
+  opentelemetry:
+    trace_id_source: x-request-id
+    resource:
+      service.name: APISIX
+    collector:
+      address: http://otel-collector:4318
+      request_timeout: 3
+    batch_span_processor:
+      drop_on_queue_full: true
+      max_queue_size: 1024
+      batch_timeout: 2
+      inactive_timeout: 1
+      max_export_batch_size: 16
   limit-req:
     # Global default: 200 req/s burst 300
     rate: 200

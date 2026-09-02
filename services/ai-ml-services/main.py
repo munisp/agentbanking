@@ -15,6 +15,29 @@ import os
 import json
 import redis
 
+# Observability: canonical OTel + Prometheus wiring (services/shared/observability.py).
+# Guarded so the service still starts when shared/ is not importable (the Docker
+# build context for this service is its own directory) — observability must never
+# break the service.
+try:
+    from shared.observability import init_observability
+except ImportError:
+    import os as _obs_os
+    import sys as _obs_sys
+
+    _obs_sys.path.insert(
+        0, _obs_os.path.dirname(_obs_os.path.dirname(_obs_os.path.abspath(__file__)))
+    )
+    try:
+        from shared.observability import init_observability
+    except ImportError:
+        def init_observability(app, service_name, service_version="0.0.0"):
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "shared.observability not importable; observability disabled"
+            )
+
 _redis_client = None
 
 def get_redis_client():
@@ -74,6 +97,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Canonical observability wiring (tenant baggage middleware, /metrics, OTel).
+init_observability(app, "ai-ml-services", service_version="1.0.0")
+
 _origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
@@ -125,7 +151,9 @@ class RedisStorage:
 
     def get(self, key, default=None):
         value = storage_get(key)
-        return value if value is not None else default
+        if value is None:
+            return value if value is not None else default
+        return value
 
     def values(self):
         keys = storage_keys("item_*")

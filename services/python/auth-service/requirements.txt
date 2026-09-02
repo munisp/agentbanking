@@ -1,0 +1,9 @@
+# Observability (OpenTelemetry + Prometheus) — added in round 4.
+# This service previously had no requirements file of its own.
+opentelemetry-sdk>=1.33.1
+opentelemetry-exporter-otlp-proto-http>=1.33.1
+opentelemetry-instrumentation-fastapi>=0.54b1
+opentelemetry-instrumentation-requests>=0.54b1
+opentelemetry-instrumentation-sqlalchemy>=0.54b1
+opentelemetry-instrumentation-redis>=0.54b1
+prometheus-client>=0.22.1

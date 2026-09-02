@@ -1,0 +1,55 @@
+###############################################################################
+# Permify Service Configuration — POS-54Link
+# Permify v1.2.x config-file schema (mounted into permify containers, e.g.
+# `command: serve --config=/etc/permify/config.yaml`). Values can be
+# overridden by PERMIFY_* env vars; env placeholders below must be supplied
+# by the deployment environment — NO real credentials in this file.
+###############################################################################
+
+server:
+  http:
+    enabled: true
+    port: 3476            # REST gateway — matches compose port mapping 3476:3476
+  grpc:
+    port: 3478            # gRPC API — matches compose port mapping 3478:3478
+
+database:
+  engine: postgres
+  # Env-based placeholder; Permify resolves ${VAR} at startup. Compose already
+  # injects PERMIFY_DATABASE_URI — keep them consistent when migrating to the
+  # config file.
+  uri: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB}?sslmode=disable"
+  max_open_connections: 50
+  max_idle_connections: 10
+  max_connection_lifetime: 300s
+  max_connection_idle_time: 60s
+
+# ── OpenTelemetry tracing ─────────────────────────────────────────────────────
+tracer:
+  enabled: true
+  exporter: otlp
+  endpoint: otel-collector:4317   # canonical OTel collector OTLP/gRPC receiver
+  insecure: true
+  urlpath: ""                     # required by schema for otlp exporter; unused for gRPC
+
+# ── OpenTelemetry metrics ─────────────────────────────────────────────────────
+meter:
+  enabled: true
+  exporter: otlp
+  endpoint: otel-collector:4317
+  insecure: true
+
+logger:
+  log_level: info
+
+service:
+  circuit_breaker: false          # compose sets PERMIFY_SERVICE_CIRCUIT_BREAKER=true; env wins
+  watch:
+    enabled: false
+
+# ── Authentication ────────────────────────────────────────────────────────────
+# DISABLED here for local/dev bootstrap. PRODUCTION: enable preshared-key authn
+# (compose already does via PERMIFY_AUTHN_*=enabled/preshared) and provide
+# PERMIFY_API_KEY from the secrets manager.
+authn:
+  enabled: false

@@ -151,9 +151,7 @@ class RedisStorage:
 
     def get(self, key, default=None):
         value = storage_get(key)
-        if value is None:
-            return value if value is not None else default
-        return value
+        return value if value is not None else default
 
     def values(self):
         keys = storage_keys("item_*")

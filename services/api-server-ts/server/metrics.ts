@@ -220,3 +220,49 @@ export const httpRequestDurationMs = new Histogram({
   buckets: [5, 10, 25, 50, 100, 250, 500, 1000, 2500],
   registers: [registry],
 });
+
+// ── Canonical cross-language observability contract ───────────────────────────
+// These metric names + label sets are the fixed platform-wide contract shared
+// with the Go services (gateway-service, tigerbeetle-core, shared middleware).
+// Do NOT rename or relabel without a coordinated platform-wide change.
+
+export const fundsFlowOperationsTotal = new Counter({
+  name: "funds_flow_operations_total",
+  help: "Total funds-flow operations across platform services",
+  labelNames: ["operation", "service", "tenant", "status"] as const,
+  registers: [registry],
+});
+
+export const ledgerImbalanceDetectedTotal = new Counter({
+  name: "ledger_imbalance_detected_total",
+  help: "Ledger imbalances detected during reconciliation",
+  labelNames: ["ledger", "tenant"] as const,
+  registers: [registry],
+});
+
+export const settlementLagSeconds = new Histogram({
+  name: "settlement_lag_seconds",
+  help: "Settlement lag in seconds (cycle completion time from cycle start)",
+  labelNames: ["tenant"] as const,
+  buckets: [1, 5, 15, 60, 300, 900, 3600],
+  registers: [registry],
+});
+
+export const paymentsFailedTotal = new Counter({
+  name: "payments_failed_total",
+  help: "Failed payments across platform services",
+  labelNames: ["service", "tenant", "reason"] as const,
+  registers: [registry],
+});
+
+/**
+ * recordFundsFlowOperation increments funds_flow_operations_total for this
+ * service (service label is pinned to "pos-shell").
+ */
+export function recordFundsFlowOperation(
+  operation: string,
+  tenant: string,
+  status: "success" | "error"
+): void {
+  fundsFlowOperationsTotal.labels(operation, "pos-shell", tenant, status).inc();
+}

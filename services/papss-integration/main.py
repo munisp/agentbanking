@@ -9,6 +9,29 @@ from .database import init_db
 from .router import router
 from .service import TransactionNotFoundError, TransactionAlreadyExistsError, InvalidTransactionStateError
 
+# Observability: canonical OTel + Prometheus wiring (services/shared/observability.py).
+# This module is run as a package (relative imports above), so `shared` is resolved
+# via a sys.path fallback to the services/ directory; fully guarded so
+# observability never breaks the service.
+try:
+    from shared.observability import init_observability
+except ImportError:
+    import os as _obs_os
+    import sys as _obs_sys
+
+    _obs_sys.path.insert(
+        0, _obs_os.path.dirname(_obs_os.path.dirname(_obs_os.path.abspath(__file__)))
+    )
+    try:
+        from shared.observability import init_observability
+    except ImportError:
+        def init_observability(app, service_name, service_version="0.0.0"):
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "shared.observability not importable; observability disabled"
+            )
+
 # --- Production: Graceful Shutdown ---
 import signal
 import sys
@@ -50,6 +73,9 @@ app = FastAPI(
     version="1.0.0",
     description="API service for integrating and tracking PAPSS (Pan-African Payment and Settlement System) transactions."
 )
+
+# Canonical observability wiring (tenant baggage middleware, /metrics, OTel).
+init_observability(app, "papss-integration", service_version="1.0.0")
 
 # --- Middleware ---
 

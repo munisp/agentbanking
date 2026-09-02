@@ -11,6 +11,26 @@ import json
 import os
 import uuid
 
+# Canonical funds-flow business metric (services/shared/observability.py).
+# Guarded: metrics must never break money-movement endpoints.
+try:
+    from shared.observability import record_funds_flow_operation
+except ImportError:
+    try:
+        import os as _obs_os
+        import sys as _obs_sys
+
+        _obs_sys.path.insert(
+            0,
+            _obs_os.path.join(
+                _obs_os.path.dirname(_obs_os.path.abspath(__file__)), "..", ".."
+            ),
+        )
+        from shared.observability import record_funds_flow_operation
+    except ImportError:
+        def record_funds_flow_operation(operation, tenant, status, service=None):
+            return None
+
 transfers_router = APIRouter()
 
 logger = create_logger(__name__)
@@ -63,6 +83,7 @@ def withdraw(
     body: dict = Body(...),
     tenant_id: str = Header("system", alias="x-tenant-id"),
 ):
+    effective_tenant = tenant_id  # fallback tenant label for failure metrics
     try:
         logger.info(f"Process withdrawal tenant_id={tenant_id} body={json.dumps(body)}")
 
@@ -129,6 +150,7 @@ def withdraw(
 
         logger.info(f"Withdrawal processed for tenant {effective_tenant}, reference: {reference}")
 
+        record_funds_flow_operation("withdraw", effective_tenant, "success")
         return responses.JSONResponse(
             content={
                 "success": True,
@@ -143,6 +165,7 @@ def withdraw(
         raise
     except Exception as e:
         logger.error(f"Unexpected error during withdraw: {str(e)}")
+        record_funds_flow_operation("withdraw", effective_tenant, "failed")
         raise HTTPException(status_code=500, detail=str(e) or "Withdrawal failed.")
 
 
@@ -151,6 +174,7 @@ def deposit(
     body: dict = Body(...),
     tenant_id: str = Header("system", alias="x-tenant-id"),
 ):
+    effective_tenant = tenant_id  # fallback tenant label for failure metrics
     try:
         logger.info(f"Process deposit tenant_id={tenant_id} body={json.dumps(body)}")
 
@@ -182,6 +206,7 @@ def deposit(
 
         reference = PaymentService().process_external_credit(payload, context)
 
+        record_funds_flow_operation("deposit", effective_tenant, "success")
         return responses.JSONResponse(
             content={
                 "success": True,
@@ -196,6 +221,7 @@ def deposit(
         raise
     except Exception as e:
         logger.error(f"Unexpected error during deposit: {str(e)}")
+        record_funds_flow_operation("deposit", effective_tenant, "failed")
         raise HTTPException(status_code=500, detail=str(e) or "Deposit failed.")
 
 
@@ -252,6 +278,7 @@ def settlement_payout(
 
         reference = PaymentService().process_external_credit(payload, context)
 
+        record_funds_flow_operation("settlement_payout", tenant_id, "success")
         return responses.JSONResponse(
             content={
                 "success": True,
@@ -266,4 +293,5 @@ def settlement_payout(
         raise
     except Exception as e:
         logger.error(f"Settlement payout failed: {str(e)}")
+        record_funds_flow_operation("settlement_payout", tenant_id, "failed")
         raise HTTPException(status_code=500, detail=str(e) or "Settlement payout failed.")

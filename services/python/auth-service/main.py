@@ -2,10 +2,26 @@
 Authentication and authorization service
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, status
 import sys as _sys2, os as _os2
 _sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
+# Also expose services/ so `shared` resolves to the platform-level services/shared
+# package (services/python/shared has no middleware/observability modules).
+_sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), "..", ".."))
 from shared.middleware import apply_middleware, ErrorResponse
+
+# Observability: canonical OTel + Prometheus wiring (services/shared/observability.py).
+# Guarded so the service still starts when shared/ is not importable —
+# observability must never break the service.
+try:
+    from shared.observability import init_observability
+except ImportError:
+    def init_observability(app, service_name, service_version="0.0.0"):
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "shared.observability not importable; observability disabled"
+        )
 
 # --- PostgreSQL Persistence ---
 import asyncpg
@@ -53,11 +69,6 @@ async def pg_set(key: str, value, service: str):
         )
 # --- End PostgreSQL Persistence ---
 
-
-@router.get("/health")
-async def health_check():
-    return {"status": "ok", "service": "auth-service", "timestamp": datetime.utcnow().isoformat()}
-
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
@@ -90,6 +101,12 @@ signal.signal(signal.SIGINT, _graceful_shutdown)
 atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 router = APIRouter(prefix="/authservice", tags=["auth-service"])
+
+
+@router.get("/health")
+async def health_check():
+    return {"status": "ok", "service": "auth-service", "timestamp": datetime.utcnow().isoformat()}
+
 
 # Pydantic models
 class AuthserviceBase(BaseModel):
@@ -171,6 +188,15 @@ def init_db():
     conn.close()
 
 init_db()
+
+# FastAPI application. The @app endpoints below previously referenced an
+# undefined `app`; it is created here, wired with the platform middleware
+# stack (apply_middleware was imported but never called) and the canonical
+# observability helper.
+app = FastAPI(title="auth-service", version="0.0.0")
+apply_middleware(app)
+init_observability(app, "auth-service")
+app.include_router(router)
 
 import hashlib, hmac, secrets, time
 

@@ -21,13 +21,59 @@ import {
   calculateLatePenalty,
 } from "../lib/domainCalculations";
 
+// F21: lifecycle actually used by this router (approved/completed) plus the
+// originally declared settled state. Enforced by transitionPayout below.
 const STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ["processing", "cancelled"],
-  processing: ["settled", "failed"],
+  pending: ["approved", "processing", "cancelled"],
+  approved: ["processing", "failed", "cancelled"],
+  processing: ["completed", "settled", "failed"],
   settled: [],
+  completed: [],
   failed: ["pending"],
   cancelled: [],
 };
+
+async function transitionPayout(
+  db: any,
+  payoutId: number,
+  toStatus: string,
+  extraUpdates: Record<string, unknown> = {}
+) {
+  // Fetch current status, validate against the state machine, then apply a
+  // conditional UPDATE so a concurrent transition cannot slip through (TOCTOU).
+  const [current] = await db
+    .select({ status: merchantPayouts.status })
+    .from(merchantPayouts)
+    .where(eq(merchantPayouts.id, payoutId))
+    .limit(1);
+  if (!current) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Payout not found" });
+  }
+  const allowed = STATUS_TRANSITIONS[current.status] ?? [];
+  if (!allowed.includes(toStatus)) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: `Invalid payout status transition: ${current.status} -> ${toStatus}`,
+    });
+  }
+  const [updated] = await db
+    .update(merchantPayouts)
+    .set({ status: toStatus, ...extraUpdates })
+    .where(
+      and(
+        eq(merchantPayouts.id, payoutId),
+        eq(merchantPayouts.status, current.status)
+      )
+    )
+    .returning({ id: merchantPayouts.id });
+  if (!updated) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: "Payout status changed concurrently; retry",
+    });
+  }
+  return updated;
+}
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -207,12 +253,10 @@ export const merchantPayoutSettlementRouter = router({
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        await db
-          .update(merchantPayouts)
-          .set({
-            status: "approved",
-          })
-          .where(eq(merchantPayouts.id, input.payoutId));
+        await transitionPayout(db, input.payoutId, "approved", {
+          approvedBy: ctx.user?.id,
+          approvedAt: new Date(),
+        } as any);
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -230,13 +274,10 @@ export const merchantPayoutSettlementRouter = router({
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        await db
-          .update(merchantPayouts)
-          .set({
-            status: "processing",
-            processedAt: new Date(),
-          })
-          .where(eq(merchantPayouts.id, input.payoutId));
+        await transitionPayout(db, input.payoutId, "processing", {
+          processedAt: new Date(),
+          transferRef: input.transferRef,
+        } as any);
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -254,12 +295,9 @@ export const merchantPayoutSettlementRouter = router({
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        await db
-          .update(merchantPayouts)
-          .set({
-            status: "completed",
-          })
-          .where(eq(merchantPayouts.id, input.payoutId));
+        await transitionPayout(db, input.payoutId, "completed", {
+          completedAt: new Date(),
+        } as any);
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

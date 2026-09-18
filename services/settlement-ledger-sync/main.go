@@ -474,6 +474,25 @@ func (lse *LedgerSyncEngine) StartScheduler(ctx context.Context) {
 // HTTP API
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// handleReady is the readiness probe — distinct from /health: it fails with
+// 503 unless the PostgreSQL pool answers a ping within 2 seconds.
+func (lse *LedgerSyncEngine) handleReady(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if lse.pgPool == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{"status": "not_ready", "database": "pool not initialized"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := lse.pgPool.Ping(ctx); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{"status": "not_ready", "database": err.Error()})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ready", "service": "settlement-ledger-sync"})
+}
+
 func (lse *LedgerSyncEngine) handleHealth(w http.ResponseWriter, r *http.Request) {
 	lse.mu.RLock()
 	defer lse.mu.RUnlock()
@@ -558,6 +577,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", engine.handleHealth)
+	mux.HandleFunc("/ready", engine.handleReady)
 	mux.HandleFunc("/api/v1/ledger/sync", engine.handleTriggerSync)
 	mux.HandleFunc("/api/v1/ledger/batches", engine.handleGetBatches)
 	mux.HandleFunc("/api/v1/ledger/settle", engine.handleSettleBatch)

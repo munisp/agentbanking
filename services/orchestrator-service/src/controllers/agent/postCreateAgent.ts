@@ -1,6 +1,6 @@
-import { uuid4 } from "@temporalio/workflow";
 import httpStatus from "http-status";
 import { asyncHandler } from "../../middlewares/async";
+import { deterministicWorkflowId } from "../../utils/deterministicWorkflowId";
 import { ApiError } from "../../middlewares/error";
 import { tenantService } from "../../services/tenantService";
 import { workflowRunner } from "../../utils/workflowRunner";
@@ -20,7 +20,14 @@ export const postCreateAgent = asyncHandler(async (req, res) => {
 
   const verification = await workflowRunner(createAgentWorkflow, {
     args: { ...payload, tenantId, keycloakRealm, keycloakPublicKey },
-    workflowId: `54agent_create_agent_${tenantId}_${uuid4()}`,
+    // Deterministic workflowId — retries resume the same workflow instead of
+    // duplicating agent creation.
+    workflowId: deterministicWorkflowId(
+      "54agent_create_agent",
+      tenantId,
+      "agent",
+      payload.email,
+    ),
     defaultErrorMessage: "Agent creation failed.",
     withTimeOut: 40000,
     timeOutFn: () => {

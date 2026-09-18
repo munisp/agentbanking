@@ -466,9 +466,10 @@ export const biometricAuthRouter = router({
         }
 
         return {
-          isReal: result.is_real ?? true,
+          // FAIL-CLOSED: a missing/undecidable provider verdict is NOT real.
+          isReal: result.is_real === true,
           confidence: result.confidence ?? 0,
-          deepfakeProbability: result.deepfake_probability ?? 0,
+          deepfakeProbability: result.deepfake_probability ?? 1,
           deepfakeType: result.deepfake_type ?? "unknown",
           analysis: result.analysis ?? {},
         };

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { disputes, transactions } from "../../drizzle/schema";
+import { disputes, transactions, refunds, auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import {
   validateAmount,
@@ -446,5 +446,161 @@ export const disputesRouter = router({
         code: "NOT_IMPLEMENTED",
         message: "disputes.addMessage is not available in this deployment",
       });
+    }),
+
+  // Status-count aggregates over the disputes table
+  stats: protectedProcedure
+    .input(z.object({}).optional())
+    .query(async () => {
+      const db = await getDb();
+      const zero = { raised: 0, open: 0, reviewing: 0, resolved: 0, rejected: 0 };
+      if (!db) return zero;
+      const rows = await db
+        .select({ status: disputes.status, cnt: count() })
+        .from(disputes)
+        .groupBy(disputes.status);
+      const byStatus: Record<string, number> = {};
+      rows.forEach(r => {
+        byStatus[String(r.status)] = Number(r.cnt);
+      });
+      const raised = (byStatus["open"] ?? 0) + (byStatus["reopened"] ?? 0);
+      const reviewing =
+        (byStatus["investigating"] ?? 0) + (byStatus["escalated"] ?? 0);
+      const resolved = byStatus["resolved"] ?? 0;
+      const rejected = byStatus["rejected"] ?? 0;
+      return { raised, open: raised + reviewing, reviewing, resolved, rejected };
+    }),
+
+  // Disputes whose SLA deadline has passed and are not yet closed
+  overdueList: protectedProcedure
+    .input(z.object({ limit: z.number().default(50) }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { disputes: [], items: [], count: 0 };
+      const rows = await db
+        .select()
+        .from(disputes)
+        .where(
+          and(
+            sql`${disputes.slaDeadlineAt} IS NOT NULL`,
+            lte(disputes.slaDeadlineAt, new Date()),
+            sql`${disputes.status} NOT IN ('resolved', 'rejected')`
+          )
+        )
+        .orderBy(desc(disputes.slaDeadlineAt))
+        .limit(input?.limit ?? 50);
+      return { disputes: rows, items: rows, count: rows.length };
+    }),
+
+  // Issue a provisional credit for a dispute (persisted as a refunds row)
+  issueProvisionalCredit: protectedProcedure
+    .input(
+      z.object({
+        disputeRef: z.string(),
+        amount: z.number().positive(),
+        reason: z.string(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — provisional credit not issued",
+        });
+      const [dispute] = await db
+        .select()
+        .from(disputes)
+        .where(eq(disputes.ref, input.disputeRef))
+        .limit(1);
+      if (!dispute)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Dispute ${input.disputeRef} not found`,
+        });
+      const creditRef = `PC-${Date.now()}`.slice(0, 32);
+      const [credit] = await db
+        .insert(refunds)
+        .values({
+          ref: creditRef,
+          disputeId: dispute.id,
+          transactionId: dispute.transactionId,
+          transactionRef: dispute.transactionRef,
+          agentId: dispute.agentId,
+          originalAmount: Math.round(Number(dispute.amount ?? 0) * 100),
+          refundAmount: Math.round(input.amount * 100),
+          reason: input.reason,
+          category: "provisional_credit",
+          status: "processed",
+          processedAt: new Date(),
+        })
+        .returning();
+      await db.insert(auditLog).values({
+        agentId: ctx.user?.id ?? null,
+        action: "provisional_credit_issued",
+        resource: "disputes",
+        resourceId: input.disputeRef,
+        status: "success",
+        metadata: { creditRef, amount: input.amount, reason: input.reason },
+      });
+      return { success: true, creditRef, refund: credit };
+    }),
+
+  // Initiate a chargeback for a dispute (mirrors chargebackManagement.createChargeback)
+  initiateChargeback: protectedProcedure
+    .input(
+      z.object({
+        disputeRef: z.string(),
+        amount: z.number().min(0).default(0),
+        reason: z.string(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — chargeback not initiated",
+        });
+      const [dispute] = await db
+        .select()
+        .from(disputes)
+        .where(eq(disputes.ref, input.disputeRef))
+        .limit(1);
+      if (!dispute)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Dispute ${input.disputeRef} not found`,
+        });
+      const chargebackRef = `CB-${Date.now()}`.slice(0, 32);
+      const [chargeback] = await db
+        .insert(disputes)
+        .values({
+          ref: chargebackRef,
+          transactionId: dispute.transactionId,
+          transactionRef: dispute.transactionRef,
+          agentId: dispute.agentId,
+          type: "chargeback",
+          reason: input.reason,
+          amount: String(input.amount || Number(dispute.amount ?? 0)),
+          status: "open",
+          priority: dispute.priority,
+          description: `Chargeback for dispute ${input.disputeRef}: ${input.reason}`,
+          createdBy: ctx.user?.name ?? "system",
+        })
+        .returning();
+      await db.insert(auditLog).values({
+        agentId: ctx.user?.id ?? null,
+        action: "chargeback_created",
+        resource: "disputes",
+        resourceId: String(chargeback.id),
+        status: "success",
+        metadata: {
+          disputeRef: input.disputeRef,
+          chargebackRef,
+          amount: input.amount,
+        },
+      });
+      return { success: true, chargebackRef, chargeback };
     }),
 });

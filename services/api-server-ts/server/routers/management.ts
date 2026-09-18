@@ -122,24 +122,34 @@ const _txPatterns = {
 export const managementRouter = router({
   // ── Dashboard ──────────────────────────────────────────────────────────────
   dashboard: router({
-    stats: mgmtProcedure.query(async () => {
+    stats: mgmtProcedure.query(async ({ ctx }) => {
       const db = (await getDb())!;
       if (!db) return { agents: 0, terminals: 0, transactions: 0, volume: "0" };
+      // Tenant scoping: non-platform callers only see their own tenant's
+      // numbers. Admins with no tenantId keep the platform-wide view.
+      const tenantId = ctx.user.tenantId ?? null;
+      const agentWhere = tenantId != null ? eq(agents.tenantId, tenantId) : undefined;
+      const terminalWhere = tenantId != null ? eq(posTerminals.tenantId, tenantId) : undefined;
+      const txWhere = tenantId != null ? eq(transactions.tenantId, tenantId) : undefined;
       const [agentCount] = await db
         .select({ c: count() })
         .from(agents)
+        .where(agentWhere)
         .limit(100);
       const [terminalCount] = await db
         .select({ c: count() })
         .from(posTerminals)
+        .where(terminalWhere)
         .limit(100);
       const [txCount] = await db
         .select({ c: count() })
         .from(transactions)
+        .where(txWhere)
         .limit(100);
       const [vol] = await db
         .select({ v: sql<string>`COALESCE(SUM(amount::numeric),0)` })
         .from(transactions)
+        .where(txWhere)
         .limit(100);
       return {
         agents: agentCount.c,
@@ -193,12 +203,16 @@ export const managementRouter = router({
           isActive: z.boolean().optional(),
         })
       )
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         try {
           const db = (await getDb())!;
           if (!db) return { items: [], total: 0 };
           const offset = (input.page - 1) * input.limit;
           const conditions = [];
+          // Tenant scoping: callers mapped to a tenant only see their own
+          // agents; platform admins (no tenantId) keep the full view.
+          const tenantId = ctx.user.tenantId ?? null;
+          if (tenantId != null) conditions.push(eq(agents.tenantId, tenantId));
           if (input.search)
             conditions.push(like(agents.name, `%${input.search}%`));
           if (input.isActive !== undefined)

@@ -356,6 +356,7 @@ const _constraints = {
 // db.transaction() is the underlying mechanism used by withTransaction.
 export const mfaManagerRouter = router({
   getMfaStatus,
+  list: getMfaStatus, // alias of getMfaStatus (broken-call fix)
   enableTotp,
   verifyTotp,
   enableSms2fa,

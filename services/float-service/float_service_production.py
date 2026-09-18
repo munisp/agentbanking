@@ -1018,28 +1018,55 @@ class FloatService:
                 payment_status = payment_result.get("status", "pending")
             except Exception as e:
                 logger.error(f"Payment gateway failed: {e}")
-                payment_status = "pending"
-                payment_result = {"error": str(e)}
-            
+                # Rail failure: record the failed settlement for audit/retry but
+                # DO NOT move balances — no funds actually settled. Previously
+                # this fell through with payment_status="pending" and still
+                # debited utilized / credited available.
+                now = datetime.now(timezone.utc)
+                settlement_id = str(uuid4())
+                async with pool.acquire() as conn:
+                    await conn.execute("""
+                        INSERT INTO float_settlements (
+                            id, facility_id, agent_id, amount, currency, payment_method,
+                            payment_reference, status, settled_by, idempotency_key, created_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    """,
+                        settlement_id, row["id"], agent_id, settle_amount, row["currency"],
+                        request.payment_method, settlement_ref, "failed",
+                        settled_by, idempotency_key, now
+                    )
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Settlement rail failure — balances unchanged, settlement {settlement_id} marked failed: {e}"
+                )
+
             now = datetime.now(timezone.utc)
             settlement_id = str(uuid4())
-            
+            # Only a CONFIRMED rail success moves balances; an unconfirmed
+            # ("pending") rail response records the settlement for later
+            # reconciliation without touching utilized/available.
+            rail_confirmed = payment_status == "completed"
+
             async with pool.acquire() as conn:
                 async with conn.transaction():
-                    # Calculate new balances
-                    new_utilized = row["utilized_balance"] - settle_amount
-                    new_available = row["available_balance"] + settle_amount
-                    new_version = row["version"] + 1
-                    
-                    # Update balances
-                    await conn.execute("""
-                        UPDATE float_facilities 
-                        SET utilized_balance = $1, available_balance = $2,
-                            version = $3, updated_at = $4,
-                            last_settlement_at = $5
-                        WHERE agent_id = $6
-                    """, new_utilized, new_available, new_version, now, now, agent_id)
-                    
+                    if rail_confirmed:
+                        # Calculate new balances
+                        new_utilized = row["utilized_balance"] - settle_amount
+                        new_available = row["available_balance"] + settle_amount
+                        new_version = row["version"] + 1
+
+                        # Update balances
+                        await conn.execute("""
+                            UPDATE float_facilities
+                            SET utilized_balance = $1, available_balance = $2,
+                                version = $3, updated_at = $4,
+                                last_settlement_at = $5
+                            WHERE agent_id = $6
+                        """, new_utilized, new_available, new_version, now, now, agent_id)
+                    else:
+                        new_utilized = row["utilized_balance"]
+                        new_available = row["available_balance"]
+
                     # Create settlement record
                     await conn.execute("""
                         INSERT INTO float_settlements (
@@ -1051,19 +1078,20 @@ class FloatService:
                         request.payment_method, settlement_ref, payment_status,
                         settled_by, idempotency_key, now
                     )
-                    
-                    # Create transaction record
-                    await conn.execute("""
-                        INSERT INTO float_transactions (
-                            id, facility_id, agent_id, transaction_type, amount, currency,
-                            balance_before, balance_after, reference, idempotency_key, created_at
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                    """,
-                        str(uuid4()), row["id"], agent_id, TransactionType.DEBIT.value,
-                        settle_amount, row["currency"], row["utilized_balance"], new_utilized,
-                        f"Settlement {settlement_ref}", idempotency_key, now
-                    )
-            
+
+                    if rail_confirmed:
+                        # Create transaction record
+                        await conn.execute("""
+                            INSERT INTO float_transactions (
+                                id, facility_id, agent_id, transaction_type, amount, currency,
+                                balance_before, balance_after, reference, idempotency_key, created_at
+                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                        """,
+                            str(uuid4()), row["id"], agent_id, TransactionType.DEBIT.value,
+                            settle_amount, row["currency"], row["utilized_balance"], new_utilized,
+                            f"Settlement {settlement_ref}", idempotency_key, now
+                        )
+
             result = {
                 "settlement_id": settlement_id,
                 "agent_id": agent_id,
@@ -1072,7 +1100,7 @@ class FloatService:
                 "payment_status": payment_status,
                 "utilized_balance": str(new_utilized),
                 "available_balance": str(new_available),
-                "status": "completed" if payment_status == "completed" else "pending"
+                "status": "completed" if rail_confirmed else "pending"
             }
             
             await self._store_idempotency(idempotency_key, result)
@@ -1260,12 +1288,56 @@ app.add_middleware(
 float_service = FloatService()
 
 
+async def reservation_expiry_sweeper():
+    """Background task: every 60s release expired reservations.
+
+    Reservations are created with expires_at = now + 30min, but previously
+    nothing ever released expired ones — the reserved float stayed locked
+    forever. Each sweep is ONE guarded statement (single query with CTEs):
+    expire all overdue 'pending' reservations and, in the same statement,
+    restore each facility's available_balance / reserved_balance exactly like
+    release_float does (available += amount, reserved -= amount).
+    """
+    while True:
+        try:
+            await asyncio.sleep(60)
+            pool = await DatabasePool.get_pool()
+            async with pool.acquire() as conn:
+                result = await conn.execute("""
+                    WITH expired AS (
+                        UPDATE float_reservations
+                        SET status = 'expired'
+                        WHERE status = 'pending' AND expires_at < NOW()
+                        RETURNING facility_id, amount
+                    ),
+                    agg AS (
+                        SELECT facility_id, SUM(amount) AS amt
+                        FROM expired
+                        GROUP BY facility_id
+                    )
+                    UPDATE float_facilities f
+                    SET available_balance = f.available_balance + agg.amt,
+                        reserved_balance = f.reserved_balance - agg.amt,
+                        version = f.version + 1,
+                        updated_at = NOW()
+                    FROM agg
+                    WHERE f.id = agg.facility_id
+                """)
+            if result != "UPDATE 0":
+                logger.info(f"Reservation expiry sweep released expired reservations: {result}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Reservation expiry sweep failed: {e}")
+
+
 @app.on_event("startup")
 async def startup():
     """Initialize database schema on startup"""
     pool = await DatabasePool.get_pool()
     async with pool.acquire() as conn:
         await conn.execute(SCHEMA_SQL)
+    asyncio.create_task(reservation_expiry_sweeper())
     logger.info("Float service started with PostgreSQL persistence")
 
 

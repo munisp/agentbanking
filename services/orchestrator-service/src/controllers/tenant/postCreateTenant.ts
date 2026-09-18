@@ -1,5 +1,5 @@
-import { uuid4 } from "@temporalio/workflow";
 import { asyncHandler } from "../../middlewares/async";
+import { deterministicWorkflowId } from "../../utils/deterministicWorkflowId";
 import { workflowRunner } from "../../utils/workflowRunner";
 import { validateRequest } from "../../validations";
 import { createTenantWorkflow } from "../../workflows/createTenantWorkflow";
@@ -16,7 +16,14 @@ export const postCreateTenant = asyncHandler(async (req, res) => {
 
   const tenant = await workflowRunner(createTenantWorkflow, {
     args: { ...payload, tenantId, ledgerId },
-    workflowId: `54agent_create_tenant_${tenantId}_${uuid4()}`,
+    // Deterministic workflowId — retries resume the same workflow instead of
+    // duplicating tenant provisioning.
+    workflowId: deterministicWorkflowId(
+      "54agent_create_tenant",
+      tenantId,
+      "tenant",
+      tenantId,
+    ),
     defaultErrorMessage: "Tenant creation failed.",
     withTimeOut: 40000,
     timeOutFn: () => {

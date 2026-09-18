@@ -35,7 +35,7 @@ export default function ComplianceFilingPage() {
   });
 
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const filingsQuery = trpc.complianceFiling.listFilings.useQuery({
+  const filingsQuery = trpc.complianceFiling.list.useQuery({
     limit: 100,
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
@@ -56,7 +56,7 @@ export default function ComplianceFilingPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const filings = (filingsQuery.data ?? []).filter((f: any) => {
+  const filings = (filingsQuery.data?.items ?? []).filter((f: any) => {
     if (
       search &&
       !f.filing_type?.toLowerCase().includes(search.toLowerCase()) &&

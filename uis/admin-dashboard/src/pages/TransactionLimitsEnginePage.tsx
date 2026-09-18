@@ -18,9 +18,9 @@ export default function TransactionLimitsEnginePage() {
     monthlyLimit: "500000",
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } = trpc.transactionLimitsEngine.list.useQuery();
+  const { data, isLoading } = trpc.transactionLimitsEngine.listLimits.useQuery();
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const addMut = trpc.transactionLimitsEngine.create.useMutation({
+  const addMut = trpc.transactionLimitsEngine.setLimit.useMutation({
     onSuccess: () => {
       toast.success("Limit rule added");
       setShowAdd(false);
@@ -94,6 +94,7 @@ export default function TransactionLimitsEnginePage() {
             <Button
               onClick={() =>
                 addMut.mutate({
+                  transactionType: form.txnType,
                   ...form,
                   minAmount: +form.minAmount,
                   maxAmount: +form.maxAmount,

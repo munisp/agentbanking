@@ -3,6 +3,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count, sum } from "drizzle-orm";
 import {
+  agents,
   disputes,
   transactions,
   refunds,
@@ -230,10 +231,117 @@ export const chargebackManagementRouter = router({
     .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
-        await db
-          .update(disputes)
-          .set({ status: "resolved", resolution: input.resolution })
-          .where(eq(disputes.id, input.id));
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database connection unavailable",
+          });
+
+        // ── Chargeback re-credit (audit fix) ────────────────────────────────
+        // On outcome accepted/partial the origin agent's float is re-credited
+        // in ONE guarded transaction: conditional disputes status flip (0 rows
+        // → already resolved → CONFLICT), exact-numeric float credit (same
+        // guarded pattern as updateAgentFloat / transactions.reverse), and an
+        // audit row — all-or-nothing.
+        const [dispute] = await db
+          .select()
+          .from(disputes)
+          .where(eq(disputes.id, input.id))
+          .limit(1);
+        if (!dispute)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Chargeback not found",
+          });
+
+        let creditAmount = 0;
+        if (input.resolution === "accepted" || input.resolution === "partial") {
+          const originalAmount = Number(dispute.amount ?? 0);
+          if (input.resolution === "partial" && input.refundAmount == null)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "refundAmount is required for a partial chargeback resolution",
+            });
+          creditAmount = input.refundAmount ?? originalAmount;
+          if (!Number.isFinite(creditAmount) || creditAmount <= 0)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Re-credit amount must be positive",
+            });
+          if (originalAmount > 0 && creditAmount > originalAmount)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `refundAmount (${creditAmount}) exceeds the original transaction amount (${originalAmount})`,
+            });
+        }
+        const creditStr = creditAmount.toFixed(2);
+
+        await withTransaction(async dbTx => {
+          // Conditional status flip: only an unresolved dispute can be resolved;
+          // a concurrent resolution affects 0 rows → 409 CONFLICT.
+          const flipped = await dbTx
+            .update(disputes)
+            .set({
+              status: "resolved",
+              resolution: input.resolution,
+              resolvedAt: new Date(),
+              updatedAt: new Date(),
+            } as any)
+            .where(
+              and(
+                eq(disputes.id, input.id),
+                sql`${disputes.status} <> 'resolved'`
+              )
+            )
+            .returning({ id: disputes.id });
+          if (flipped.length === 0) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message:
+                "Chargeback is already resolved — a concurrent resolution may have completed",
+            });
+          }
+
+          if (creditAmount > 0) {
+            // Guarded float re-credit to the origin agent — exact PG numeric
+            // math, never JS float (mirrors updateAgentFloat).
+            const credited = await dbTx
+              .update(agents)
+              .set({
+                floatBalance: sql`"floatBalance" + ${creditStr}::numeric`,
+                updatedAt: new Date(),
+              } as any)
+              .where(
+                and(
+                  eq(agents.id, dispute.agentId),
+                  sql`"floatBalance" + ${creditStr}::numeric >= 0`
+                )
+              )
+              .returning({ id: agents.id });
+            if (credited.length === 0) {
+              throw new TRPCError({
+                code: "CONFLICT",
+                message:
+                  "Agent float re-credit rejected — origin agent not found; resolution rolled back",
+              });
+            }
+            // Audit row in the SAME transaction as the flip + credit.
+            await dbTx.insert(auditLog).values({
+              action: "chargeback_float_recredit",
+              resource: "agents",
+              resourceId: String(dispute.agentId),
+              status: "success",
+              metadata: {
+                disputeId: input.id,
+                transactionId: dispute.transactionId,
+                resolution: input.resolution,
+                creditAmount: creditStr,
+              },
+            } as any);
+          }
+        }, "chargebackManagement.resolveChargeback");
+
         await db.insert(auditLog).values({
           action: "chargeback_resolved",
           resource: "disputes",
@@ -244,7 +352,37 @@ export const chargebackManagementRouter = router({
             refundAmount: input.refundAmount,
           },
         });
-        return { success: true, id: input.id, resolution: input.resolution };
+
+        // Ledger note row: the float re-credit happened on the Postgres side;
+        // the TigerBeetle contra-entry (if any) is left to the settlement /
+        // reconciliation pipeline — recorded here so it is never silently
+        // skipped (same convention as LEDGER_RECONCILIATION_PENDING in
+        // transactions.reverse).
+        if (creditAmount > 0) {
+          await db.insert(auditLog).values({
+            action: "ledger_note",
+            resource: "disputes",
+            resourceId: String(input.id),
+            status: "success",
+            metadata: {
+              note: `Chargeback ${input.id} resolved (${input.resolution}): agent ${dispute.agentId} float re-credited ₦${creditStr}`,
+              disputeId: input.id,
+              agentId: dispute.agentId,
+              transactionId: dispute.transactionId,
+              creditAmount: creditStr,
+              resolution: input.resolution,
+            },
+          } as any);
+        }
+
+        return {
+          success: true,
+          id: input.id,
+          resolution: input.resolution,
+          ...(creditAmount > 0
+            ? { reCredited: creditStr, agentId: dispute.agentId }
+            : {}),
+        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

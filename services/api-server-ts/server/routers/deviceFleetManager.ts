@@ -368,7 +368,7 @@ const _txPatterns = {
     typeof withTransaction === "function"
       ? (withTransaction as Function)(...args)
       : Promise.resolve(args),
-  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+  atomicBatch: async <T,>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
       for (const op of ops) results.push(await op());
@@ -379,6 +379,7 @@ const _txPatterns = {
 
 export const deviceFleetManagerRouter = router({
   listDevices,
+  list: listDevices, // alias of listDevices (broken-call fix)
   getDevice,
   registerDevice,
   getFleetStats,

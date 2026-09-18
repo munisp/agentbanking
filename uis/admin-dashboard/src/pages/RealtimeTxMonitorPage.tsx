@@ -27,13 +27,13 @@ export default function RealtimeTxMonitorPage() {
   const [selectedAlert, setSelectedAlert] = useState<any>(null);
 
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const alertsQuery = trpc.realtimeTxMonitor.listAlerts.useQuery({
+  const alertsQuery = trpc.realtimeTxMonitor.velocityAlerts.useQuery({
     limit: 100,
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const statsQuery = trpc.realtimeTxMonitor.getStats.useQuery();
+  const statsQuery = trpc.realtimeTxMonitor.dashboardKpis.useQuery();
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const ackMutation = trpc.realtimeTxMonitor.acknowledgeAlert.useMutation({
+  const ackMutation = trpc.realtimeTxMonitor.resolveAlert.useMutation({
     onSuccess: () => {
       alertsQuery.refetch();
       toast.success("Alert acknowledged");
@@ -49,7 +49,7 @@ export default function RealtimeTxMonitorPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const alerts = (alertsQuery.data ?? []).filter((a: any) => {
+  const alerts = (alertsQuery.data?.items ?? []).filter((a: any) => {
     if (
       search &&
       !a.alert_type?.toLowerCase().includes(search.toLowerCase()) &&
@@ -292,7 +292,7 @@ export default function RealtimeTxMonitorPage() {
                           <>
                             <button
                               onClick={() =>
-                                ackMutation.mutate({ id: alert.id })
+                                ackMutation.mutate({ alertId: alert.id })
                               }
                               className="p-1.5 hover:bg-emerald-700/30 rounded-lg"
                               title="Acknowledge"

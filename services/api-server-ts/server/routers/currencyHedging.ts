@@ -221,8 +221,7 @@ const _currencyHedging_db = {
 // withTransaction wraps DB operations in a single ACID transaction.
 // On failure, withTransaction automatically rolls back all changes.
 // db.transaction() is the underlying mechanism used by withTransaction.
-export const currencyHedgingRouter = router({
-  list: protectedProcedure
+const currencyHedgingListProc = protectedProcedure
     .input(
       z.object({
         limit: z.number().min(1).max(100).default(20),
@@ -269,8 +268,11 @@ export const currencyHedgingRouter = router({
           offset: input.offset,
         };
       }
-    }),
+    });
 
+export const currencyHedgingRouter = router({
+  list: currencyHedgingListProc,
+  listPositions: currencyHedgingListProc, // alias of list (broken-call fix)
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {

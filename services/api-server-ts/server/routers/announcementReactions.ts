@@ -381,4 +381,46 @@ export const announcementReactionsRouter = router({
         message: "announcementReactions.react is not available in this deployment",
       });
     }),
+
+  // Delete an announcement comment (stored in chatMessages)
+  deleteComment: protectedProcedure
+    .input(z.object({ commentId: z.string(), userId: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      try {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+        const commentId = Number(input.commentId);
+        if (!Number.isFinite(commentId))
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Invalid commentId",
+          });
+        const [existing] = await db
+          .select()
+          .from(chatMessages)
+          .where(eq(chatMessages.id, commentId))
+          .limit(1);
+        if (!existing)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `Comment ${input.commentId} not found`,
+          });
+        await db.delete(chatMessages).where(eq(chatMessages.id, commentId));
+        await db.insert(auditLog).values({
+          action: "announcement_comment_deleted",
+          resource: "chat_messages",
+          resourceId: String(commentId),
+          status: "success",
+          metadata: { commentId, userId: input.userId ?? null },
+        });
+        return { success: true, commentId: input.commentId };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
 });

@@ -520,6 +520,9 @@ export const auditLog = pgTable(
     userAgent: varchar("userAgent", { length: 256 }),
     status: auditStatusEnum("status").default("success"),
     metadata: jsonb("metadata"),
+    // Tamper-evident hash chain (see migration 0056)
+    prevHash: varchar("prevHash", { length: 64 }),
+    entryHash: varchar("entryHash", { length: 64 }),
     // P0-B: Tenant isolation
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -530,6 +533,7 @@ export const auditLog = pgTable(
       t.createdAt
     ),
     actionIdx: index("audit_action_idx").on(t.action),
+    entryHashIdx: index("audit_log_entryHash_idx").on(t.entryHash),
     tenantIdIdx: index("audit_tenantId_idx").on(t.tenantId),
   })
 );
@@ -825,6 +829,8 @@ export const velocityLimits = pgTable(
   "velocity_limits",
   {
     id: serial("id").primaryKey(),
+    // Tenant isolation (tenancy audit fix)
+    tenantId: integer("tenantId"),
     tier: agentTierEnum("tier").notNull().unique(),
     // Legacy aliases kept for router compatibility
     maxTxPerHour: integer("maxTxPerHour").default(20).notNull(),
@@ -982,8 +988,11 @@ export const kycSessions = pgTable(
       .default(sql`gen_random_uuid()`),
     type: varchar("type", { length: 32 }).default("agent_onboarding").notNull(),
     status: varchar("status", { length: 32 }).default("pending").notNull(),
-    bvn: varchar("bvn", { length: 11 }),
-    nin: varchar("nin", { length: 11 }),
+    // AES-256-GCM encrypted at rest (see migration 0057); widened to text
+    bvn: text("bvn"),
+    nin: text("nin"),
+    bvnHash: varchar("bvnHash", { length: 64 }),
+    ninHash: varchar("ninHash", { length: 64 }),
     selfieUrl: text("selfieUrl"),
     idDocUrl: text("idDocUrl"),
     idDocType: varchar("idDocType", { length: 32 }),
@@ -999,7 +1008,8 @@ export const kycSessions = pgTable(
     docType: varchar("docType", { length: 32 }),
     docExtractedName: varchar("docExtractedName", { length: 256 }),
     docExtractedDob: varchar("docExtractedDob", { length: 32 }),
-    docExtractedIdNumber: varchar("docExtractedIdNumber", { length: 64 }),
+    // Encrypted at rest for NIN/BVN_CARD documents (see migration 0057)
+    docExtractedIdNumber: text("docExtractedIdNumber"),
     docConfidence: numeric("docConfidence", { precision: 5, scale: 4 }),
     docFraudIndicators: jsonb("docFraudIndicators").$type<string[]>(),
     complianceRecordId: varchar("complianceRecordId", { length: 64 }),
@@ -1305,8 +1315,12 @@ export const customers = pgTable(
     lastName: varchar("lastName", { length: 64 }).notNull(),
     email: varchar("email", { length: 320 }),
     phone: varchar("phone", { length: 20 }).notNull().unique(),
-    bvn: varchar("bvn", { length: 11 }),
-    nin: varchar("nin", { length: 11 }),
+    // AES-256-GCM encrypted at rest (see migration 0057); widened to text
+    bvn: text("bvn"),
+    nin: text("nin"),
+    // Blind indexes for duplicate detection / verify-by-hash (sha256+salt)
+    bvnHash: varchar("bvnHash", { length: 64 }),
+    ninHash: varchar("ninHash", { length: 64 }),
     dateOfBirth: varchar("dateOfBirth", { length: 10 }),
     address: text("address"),
     status: customerStatusEnum("status").default("pending_kyc").notNull(),
@@ -2315,6 +2329,8 @@ export const commissionPayouts = pgTable(
   "commission_payouts",
   {
     id: serial("id").primaryKey(),
+    // Tenant isolation (tenancy audit fix)
+    tenantId: integer("tenantId"),
     agentId: integer("agent_id")
       .notNull()
       .references(() => agents.id),
@@ -3041,6 +3057,8 @@ export const transactionLimits = pgTable(
   "transaction_limits",
   {
     id: serial("id").primaryKey(),
+    // Tenant isolation (tenancy audit fix)
+    tenantId: integer("tenantId"),
     agentTier: text("agent_tier").notNull(), // bronze, silver, gold, platinum, diamond
     txType: text("tx_type").notNull(), // cash_in, cash_out, transfer, bills, airtime
     dailyLimit: numeric("daily_limit", { precision: 15, scale: 2 }).notNull(),
@@ -3194,6 +3212,8 @@ export const agentLoans = pgTable(
   "agent_loans",
   {
     id: serial("id").primaryKey(),
+    // Tenant isolation (tenancy audit fix)
+    tenantId: integer("tenantId"),
     agentId: integer("agent_id").notNull(),
     loanType: text("loan_type").notNull(),
     principalAmount: numeric("principal_amount", {
@@ -3234,6 +3254,8 @@ export const feeRules = pgTable(
   "fee_rules",
   {
     id: serial("id").primaryKey(),
+    // Tenant isolation (tenancy audit fix)
+    tenantId: integer("tenantId"),
     name: text("name").notNull(),
     txType: text("tx_type").notNull(),
     agentTier: text("agent_tier"),
@@ -3305,6 +3327,8 @@ export const merchantPayouts = pgTable(
   "merchant_payouts",
   {
     id: serial("id").primaryKey(),
+    // Tenant isolation (tenancy audit fix)
+    tenantId: integer("tenantId"),
     merchantId: integer("merchant_id").notNull(),
     amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
     currency: text("currency").notNull().default("NGN"),

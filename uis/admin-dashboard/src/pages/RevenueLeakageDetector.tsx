@@ -9,9 +9,9 @@ export default function RevenueLeakageDetector() {
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: liveData, isLoading, error, refetch } =
     // @ts-ignore Sprint 85
-    trpc.revenueLeakageDetector.list.useQuery(undefined, { retry: 1 });
+    trpc.revenueLeakageDetector.getLeakageReport.useQuery(undefined, { retry: 1 });
   // Render only real backend data — no fabricated fallback rows.
-  const mockData = liveData ?? [];
+  const mockData = liveData?.items ?? [];
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<
     "overview" | "details" | "history" | "settings"

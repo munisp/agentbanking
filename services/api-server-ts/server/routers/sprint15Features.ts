@@ -8,6 +8,7 @@ import {
   tenants,
   auditLog,
   webhookEndpoints,
+  rateLimitRules,
 } from "../../drizzle/schema";
 import { eq, desc, count, and, gte, lte, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -203,7 +204,7 @@ const _txPatterns = {
     typeof withTransaction === "function"
       ? (withTransaction as Function)(...args)
       : Promise.resolve(args),
-  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+  atomicBatch: async <T,>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
       for (const op of ops) results.push(await op());
@@ -395,6 +396,49 @@ export const rateLimitDashboardRouter = router({
       message: "sprint15Features.updateLimit is not available in this deployment",
     });
   }),
+  overview: protectedProcedure.query(async () => {
+    try {
+      const db = (await getDb())!;
+      if (!db)
+        return {
+          totalRules: 0,
+          activeRules: 0,
+          inactiveRules: 0,
+          avgMaxRequests: 0,
+          byScope: [] as Array<{ scope: string; count: number }>,
+        };
+      const [totals] = await db
+        .select({
+          totalRules: count(),
+          activeRules: sql<number>`COALESCE(SUM(CASE WHEN ${rateLimitRules.isActive} THEN 1 ELSE 0 END), 0)`,
+          avgMaxRequests: sql<string>`COALESCE(AVG(${rateLimitRules.maxRequests}), 0)`,
+        })
+        .from(rateLimitRules);
+      const byScope = await db
+        .select({
+          scope: rateLimitRules.scope,
+          count: count(),
+        })
+        .from(rateLimitRules)
+        .groupBy(rateLimitRules.scope);
+      const totalRules = Number(totals?.totalRules ?? 0);
+      const activeRules = Number(totals?.activeRules ?? 0);
+      return {
+        totalRules,
+        activeRules,
+        inactiveRules: totalRules - activeRules,
+        avgMaxRequests: Math.round(parseFloat(totals?.avgMaxRequests ?? "0")),
+        byScope,
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }),
 });
 
 // System Config Router
@@ -418,10 +462,13 @@ export const sysConfigRouter = router({
 });
 
 // Session Management Router
-export const sessionMgmtRouter = router({
-  listActive: protectedProcedure.query(async () => {
+const listActiveSessionsProc = protectedProcedure.query(async () => {
     return { sessions: [], total: 0 };
-  }),
+  });
+
+export const sessionMgmtRouter = router({
+  listActive: listActiveSessionsProc,
+  list: listActiveSessionsProc, // alias of listActive (broken-call fix)
   revoke: protectedProcedure
     .input(z.object({ sessionId: z.string() }))
     .mutation(async ({ input }) => {
@@ -753,6 +800,33 @@ export const userQuietHoursRouter = router({
         code: "NOT_IMPLEMENTED",
         message: "sprint15Features.update is not available in this deployment",
       });
+    }),
+  checkStatus: protectedProcedure
+    .input(z.object({ agentId: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      // _quietHoursStore / isInQuietHours are defined later in this module
+      // (Sprint 15 test-data section); referenced lazily at request time.
+      const configs = _quietHoursStore as Array<Record<string, unknown>>;
+      const config =
+        (input?.agentId !== undefined
+          ? configs.find(c => c.agentId === input.agentId)
+          : configs[0]) ?? null;
+      if (!config) {
+        return {
+          found: false,
+          enabled: false,
+          inQuietHours: false,
+          config: null,
+          checkedAt: new Date().toISOString(),
+        };
+      }
+      return {
+        found: true,
+        enabled: Boolean(config.enabled),
+        inQuietHours: isInQuietHours(config),
+        config,
+        checkedAt: new Date().toISOString(),
+      };
     }),
 });
 

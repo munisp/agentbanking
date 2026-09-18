@@ -535,4 +535,55 @@ export const liveBillingDashboardRouter = router({
         },
       };
     }),
+
+  getMetrics: protectedProcedure.query(async () => {
+    const emptyByType: Array<{
+      transactionType: string;
+      count: number;
+      grossVolume: string;
+    }> = [];
+    try {
+      const db = await tryDb();
+      if (db) {
+        const [totals] = await db
+          .select({
+            totalTransactions: count(),
+            grossVolume: sql<string>`COALESCE(SUM(CAST(${platformBillingLedger.grossAmount} AS NUMERIC)), 0)`,
+            totalFees: sql<string>`COALESCE(SUM(CAST(${platformBillingLedger.grossFee} AS NUMERIC)), 0)`,
+            platformRevenue: sql<string>`COALESCE(SUM(CAST(${platformBillingLedger.platformRevenue} AS NUMERIC)), 0)`,
+            agentCommissions: sql<string>`COALESCE(SUM(CAST(${platformBillingLedger.agentCommission} AS NUMERIC)), 0)`,
+            avgFee: sql<string>`COALESCE(AVG(CAST(${platformBillingLedger.grossFee} AS NUMERIC)), 0)`,
+          })
+          .from(platformBillingLedger);
+        const byTypeRows = await db
+          .select({
+            transactionType: platformBillingLedger.transactionType,
+            count: count(),
+            grossVolume: sql<string>`COALESCE(SUM(CAST(${platformBillingLedger.grossAmount} AS NUMERIC)), 0)`,
+          })
+          .from(platformBillingLedger)
+          .groupBy(platformBillingLedger.transactionType);
+        return {
+          totalTransactions: totals?.totalTransactions ?? 0,
+          grossVolume: totals?.grossVolume ?? "0",
+          totalFees: totals?.totalFees ?? "0",
+          platformRevenue: totals?.platformRevenue ?? "0",
+          agentCommissions: totals?.agentCommissions ?? "0",
+          avgFee: parseFloat(totals?.avgFee ?? "0"),
+          byType: byTypeRows,
+        };
+      }
+    } catch {
+      // Fail open
+    }
+    return {
+      totalTransactions: 0,
+      grossVolume: "0",
+      totalFees: "0",
+      platformRevenue: "0",
+      agentCommissions: "0",
+      avgFee: 0,
+      byType: emptyByType,
+    };
+  }),
 });

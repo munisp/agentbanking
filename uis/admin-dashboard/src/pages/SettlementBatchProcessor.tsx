@@ -139,7 +139,7 @@ export default function SettlementBatchProcessor() {
   // @ts-ignore Sprint 85
   const statsQuery = trpc.settlementBatchProcessor.getStats.useQuery();
   // @ts-ignore Sprint 85
-  const batchesQuery = trpc.settlementBatchProcessor.listBatches.useQuery({
+  const batchesQuery = trpc.financialReconciliationDash.listBatches.useQuery({
     status: statusFilter as any,
     limit: 50,
     offset: 0,

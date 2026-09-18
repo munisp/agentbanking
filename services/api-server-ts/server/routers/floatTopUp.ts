@@ -35,6 +35,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -174,6 +175,9 @@ export const floatTopUpRouter = router({
       z.object({
         amount: z.number().positive().max(10_000_000),
         notes: z.string().max(256).optional(),
+        // Optional client-supplied idempotency key: retries with the same key
+        // replay the stored result instead of creating a duplicate request.
+        idempotencyKey: z.string().min(8).max(128).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -207,99 +211,117 @@ export const floatTopUpRouter = router({
             message: "Database connection unavailable",
           });
 
-        // Fail-closed duplicate guard: check for existing pending request.
-        // NOTE: application-level check only — a UNIQUE partial index on
-        // float_topup_requests(agentId) WHERE status = 'pending' is required
-        // to make this guard race-safe under concurrent submissions.
-        const existing = await db
-          .select()
-          .from(floatTopUpRequests)
-          .where(eq(floatTopUpRequests.agentId, session.id))
-          .orderBy(desc(floatTopUpRequests.createdAt))
-          .limit(1);
-        if (existing[0] && existing[0].status === "pending") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              "You already have a pending top-up request. Please wait for approval.",
-          });
-        }
-
-        // Phase 48: determine if supervisor approval is required
-        const requiresSupervisor =
-          input.amount > SUPERVISOR_APPROVAL_THRESHOLD;
-
-        // Funds-flow hardening: the top-up request row and its double-entry
-        // GL journal entry are written atomically in a single transaction —
-        // either both persist or neither does.
-        // Collision-safe journal entry number: timestamp + random suffix.
-        const entryNumber = `JE-${Date.now()}-${crypto
-          .randomBytes(4)
-          .toString("hex")}`;
-        const result = await db.transaction(async tx => {
-          const inserted = await tx
-            .insert(floatTopUpRequests)
-            .values({
-              agentId: session.id,
-              requestedAmount: String(input.amount),
-              status: "pending",
-              notes: input.notes ?? null,
-              supervisorApprovalRequired: requiresSupervisor,
-            })
-            .returning();
-
-          // Double-entry GL journal entry
-          await tx.insert(gl_journal_entries).values({
-            entryNumber,
-            description: `floatTopUp transaction`,
-            debitAccountId: 2001,
-            creditAccountId: 1001,
-            amount: Math.round(input.amount * 100),
-            currency: "NGN",
-            status: "posted",
-          });
-
-          return inserted;
-        });
-
-        await writeAuditLog({
-          agentId: session.id,
-          agentCode: session.agentCode,
-          action: "FLOAT_TOPUP_REQUESTED",
-          resource: "float_topup",
-          resourceId: String(result[0].id),
-          status: "success",
-          metadata: { amount: input.amount, requiresSupervisor },
-        });
-
-        // Notify supervisor(s) assigned to this agent if threshold exceeded
-        if (requiresSupervisor) {
-          try {
-            const { notifyOwner } = await import("../_core/notification");
-            await notifyOwner({
-              title: `Large Float Top-Up Requires Supervisor Approval — ₦${input.amount.toLocaleString()}`,
-              content: `Agent ${session.agentCode} (${session.name}) has requested a float top-up of ₦${input.amount.toLocaleString()} (above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()} threshold). Please review in the Supervisor Dashboard → Pending Float Approvals.`,
+        // The actual submission, wrapped in claim-first idempotency when the
+        // client supplies an idempotencyKey (mirrors transactions.ts create:
+        // the key is CLAIMED before any writes; same key + same payload
+        // replays the stored result, same key + different payload → 409).
+        const executeSubmit = async () => {
+          // Fail-closed duplicate guard: check for existing pending request.
+          // Backstopped by the UNIQUE partial index
+          // float_topup_requests(agentId) WHERE status = 'pending'
+          // (migration 0054) which makes this guard race-safe under
+          // concurrent submissions.
+          const existing = await db
+            .select()
+            .from(floatTopUpRequests)
+            .where(eq(floatTopUpRequests.agentId, session.id))
+            .orderBy(desc(floatTopUpRequests.createdAt))
+            .limit(1);
+          if (existing[0] && existing[0].status === "pending") {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "You already have a pending top-up request. Please wait for approval.",
             });
-          } catch (notifyErr) {
-            // MB-15/16: non-blocking, but NOT silent — a missed supervisor
-            // notification stalls the approval workflow for a large top-up.
-            console.error(
-              `[floatTopUp] supervisor notification failed for top-up request ${result[0].id}:`,
-              notifyErr instanceof Error ? notifyErr.message : notifyErr
-            );
           }
-        }
 
-        floatTopupRequestsTotal.labels("submitted").inc();
+          // Phase 48: determine if supervisor approval is required
+          const requiresSupervisor =
+            input.amount > SUPERVISOR_APPROVAL_THRESHOLD;
 
-        return {
-          success: true,
-          requestId: result[0].id,
-          requiresSupervisorApproval: requiresSupervisor,
-          message: requiresSupervisor
-            ? `Top-up request submitted. Supervisor approval required for amounts above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()}.`
-            : "Top-up request submitted. Awaiting admin approval.",
+          // Funds-flow hardening: the top-up request row and its double-entry
+          // GL journal entry are written atomically in a single transaction —
+          // either both persist or neither does.
+          // Collision-safe journal entry number: timestamp + random suffix.
+          const entryNumber = `JE-${Date.now()}-${crypto
+            .randomBytes(4)
+            .toString("hex")}`;
+          const result = await db.transaction(async tx => {
+            const inserted = await tx
+              .insert(floatTopUpRequests)
+              .values({
+                agentId: session.id,
+                requestedAmount: String(input.amount),
+                status: "pending",
+                notes: input.notes ?? null,
+                supervisorApprovalRequired: requiresSupervisor,
+              })
+              .returning();
+
+            // Double-entry GL journal entry
+            await tx.insert(gl_journal_entries).values({
+              entryNumber,
+              description: `floatTopUp transaction`,
+              debitAccountId: 2001,
+              creditAccountId: 1001,
+              amount: Math.round(input.amount * 100),
+              currency: "NGN",
+              status: "posted",
+            });
+
+            return inserted;
+          });
+
+          await writeAuditLog({
+            agentId: session.id,
+            agentCode: session.agentCode,
+            action: "FLOAT_TOPUP_REQUESTED",
+            resource: "float_topup",
+            resourceId: String(result[0].id),
+            status: "success",
+            metadata: { amount: input.amount, requiresSupervisor },
+          });
+
+          // Notify supervisor(s) assigned to this agent if threshold exceeded
+          if (requiresSupervisor) {
+            try {
+              const { notifyOwner } = await import("../_core/notification");
+              await notifyOwner({
+                title: `Large Float Top-Up Requires Supervisor Approval — ₦${input.amount.toLocaleString()}`,
+                content: `Agent ${session.agentCode} (${session.name}) has requested a float top-up of ₦${input.amount.toLocaleString()} (above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()} threshold). Please review in the Supervisor Dashboard → Pending Float Approvals.`,
+              });
+            } catch (notifyErr) {
+              // MB-15/16: non-blocking, but NOT silent — a missed supervisor
+              // notification stalls the approval workflow for a large top-up.
+              console.error(
+                `[floatTopUp] supervisor notification failed for top-up request ${result[0].id}:`,
+                notifyErr instanceof Error ? notifyErr.message : notifyErr
+              );
+            }
+          }
+
+          floatTopupRequestsTotal.labels("submitted").inc();
+
+          return {
+            success: true,
+            requestId: result[0].id,
+            requiresSupervisorApproval: requiresSupervisor,
+            message: requiresSupervisor
+              ? `Top-up request submitted. Supervisor approval required for amounts above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()}.`
+              : "Top-up request submitted. Awaiting admin approval.",
+          };
         };
+
+        if (input.idempotencyKey) {
+          return await withIdempotency(input.idempotencyKey, executeSubmit, {
+            payload: {
+              agentId: session.id,
+              amount: input.amount,
+              notes: input.notes ?? null,
+            },
+          });
+        }
+        return await executeSubmit();
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

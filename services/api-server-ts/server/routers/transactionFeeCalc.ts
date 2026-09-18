@@ -190,52 +190,7 @@ const _transactionFeeCalc_db = {
 // withTransaction wraps DB operations in a single ACID transaction.
 // On failure, withTransaction automatically rolls back all changes.
 // db.transaction() is the underlying mechanism used by withTransaction.
-export const transactionFeeCalcRouter = router({
-  calculate: protectedProcedure
-    .input(
-      z.object({
-        amount: z.number().positive(),
-        transactionType: z.string(),
-        channel: z.string().optional(),
-      })
-    )
-    .query(async ({ input }) => {
-      try {
-        const db = (await getDb())!;
-        const rules = await db
-          .select()
-          .from(feeRules)
-          .where(eq(feeRules.txType, input.transactionType))
-          .limit(5);
-        const rule = rules[0];
-        const fee = rule
-          ? rule.feeType === "percentage"
-            ? (input.amount * Number(rule.feeValue)) / 100
-            : Number(rule.feeValue)
-          : 0;
-        const cappedFee = rule?.maxFee
-          ? Math.min(fee, Number(rule.maxFee))
-          : fee;
-        const finalFee = rule?.minFee
-          ? Math.max(cappedFee, Number(rule.minFee))
-          : cappedFee;
-        return {
-          amount: input.amount,
-          fee: Math.round(finalFee * 100) / 100,
-          total: input.amount + Math.round(finalFee * 100) / 100,
-          ruleId: rule?.id ?? null,
-          feeType: rule?.feeType ?? "none",
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
-  listRules: protectedProcedure
+const listFeeRulesProc = protectedProcedure
     .input(z.object({ limit: z.number().default(50) }).optional())
     .query(async ({ input }) => {
       try {
@@ -254,7 +209,11 @@ export const transactionFeeCalcRouter = router({
             error instanceof Error ? error.message : "Internal server error",
         });
       }
-    }),
+    });
+
+export const transactionFeeCalcRouter = router({
+  listRules: listFeeRulesProc,
+  list: listFeeRulesProc, // alias of listRules (broken-call fix)
   getAuditTrail: protectedProcedure
     .input(z.object({ limit: z.number().default(50) }).optional())
     .query(async ({ input }) => {

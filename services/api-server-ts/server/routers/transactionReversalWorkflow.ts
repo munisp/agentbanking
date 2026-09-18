@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { reversalRequests, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import {
   calculateFee,
@@ -312,5 +312,74 @@ export const transactionReversalWorkflowRouter = router({
         .limit(input.limit);
 
       return results;
+    }),
+  approve: protectedProcedure
+    .input(z.object({ id: z.number(), note: z.string().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
+      // TOCTOU-safe: conditional transition applies only while still pending.
+      const updated = await database
+        .update(reversalRequests)
+        .set({
+          status: "approved" as const,
+          reviewedBy: ctx.user.id,
+          reviewedAt: new Date(),
+          reviewNote: input.note ?? null,
+        })
+        .where(
+          and(
+            eq(reversalRequests.id, input.id),
+            eq(reversalRequests.status, "pending")
+          )
+        )
+        .returning();
+      if (updated.length === 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Reversal request not found or already processed",
+        });
+      }
+      logOperation("approve", { id: input.id });
+      return { success: true, reversal: updated[0] };
+    }),
+
+  reject: protectedProcedure
+    .input(z.object({ id: z.number(), note: z.string().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
+      // TOCTOU-safe: conditional transition applies only while still pending.
+      const updated = await database
+        .update(reversalRequests)
+        .set({
+          status: "rejected" as const,
+          reviewedBy: ctx.user.id,
+          reviewedAt: new Date(),
+          reviewNote: input.note ?? null,
+        })
+        .where(
+          and(
+            eq(reversalRequests.id, input.id),
+            eq(reversalRequests.status, "pending")
+          )
+        )
+        .returning();
+      if (updated.length === 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Reversal request not found or already processed",
+        });
+      }
+      logOperation("reject", { id: input.id });
+      return { success: true, reversal: updated[0] };
     }),
 });

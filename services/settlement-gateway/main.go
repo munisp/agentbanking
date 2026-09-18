@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -287,6 +288,21 @@ func (g *Gateway) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleReady is the readiness probe — distinct from /health: it fails with
+// 503 unless the TigerBeetle ledger (critical dependency) accepts a TCP
+// connection within 2 seconds.
+func (g *Gateway) handleReady(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	conn, err := net.DialTimeout("tcp", g.config.TigerBeetleAddr, 2*time.Second)
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{"status": "not_ready", "tigerbeetle": err.Error()})
+		return
+	}
+	conn.Close()
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ready", "service": "settlement-gateway"})
+}
+
 func (g *Gateway) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	g.metrics.Lock()
 	defer g.metrics.Unlock()
@@ -336,6 +352,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/settle", gw.handleSettle)
 	mux.HandleFunc("/health", gw.handleHealth)
+	mux.HandleFunc("/ready", gw.handleReady)
 	mux.HandleFunc("/metrics", gw.handleMetrics)
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: mux, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second}

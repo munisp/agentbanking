@@ -19,7 +19,8 @@ class KubecostIntegration:
         try:
             response = requests.get(
                 f"{self.api_url}/model/allocation",
-                params={'window': window}
+                params={'window': window},
+                timeout=(5, 30)
             )
             response.raise_for_status()
             return response.json()
@@ -35,7 +36,8 @@ class KubecostIntegration:
                     'window': window,
                     'aggregate': 'namespace',
                     'filter': f'namespace:{namespace}'
-                }
+                },
+                timeout=(5, 30)
             )
             response.raise_for_status()
             return response.json()
@@ -51,7 +53,8 @@ class KubecostIntegration:
                     'window': window,
                     'aggregate': 'service',
                     'filter': f'service:{service}'
-                }
+                },
+                timeout=(5, 30)
             )
             response.raise_for_status()
             return response.json()
@@ -62,7 +65,8 @@ class KubecostIntegration:
         """Get cost optimization recommendations"""
         try:
             response = requests.get(
-                f"{self.api_url}/savings"
+                f"{self.api_url}/savings",
+                timeout=(5, 30)
             )
             response.raise_for_status()
             return response.json().get('recommendations', [])

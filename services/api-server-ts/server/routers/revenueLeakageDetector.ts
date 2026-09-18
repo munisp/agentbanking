@@ -382,6 +382,7 @@ function applyIntegrityChecks(data: Record<string, unknown>) {
 export const revenueLeakageDetectorRouter = router({
   getLeakageReport,
   getDiscrepancies,
+  list: getDiscrepancies, // alias of getDiscrepancies (broken-call fix)
   getRecoveryStats,
   getStats,
   runScan,

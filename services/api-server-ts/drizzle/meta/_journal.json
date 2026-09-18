@@ -288,6 +288,132 @@
       "when": 1778948926315,
       "tag": "0042_bouncy_blindfold",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1778948927315,
+      "tag": "0047_middleware_integration_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1778948928315,
+      "tag": "0048_schema_enhancements",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1778948929315,
+      "tag": "0049_stakeholder_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1778948930315,
+      "tag": "0050_jsonb_onupdate_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1778948931315,
+      "tag": "0051_rls_tenant_isolation_failclosed",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1778948932315,
+      "tag": "0052_balance_non_negative",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1778948933315,
+      "tag": "0053_pin_reset_otp_attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1778948934315,
+      "tag": "0054_float_topup_pending_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1778948935315,
+      "tag": "0055_satellite_tenant_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1778948936315,
+      "tag": "0056_audit_hash_chain",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1778948937315,
+      "tag": "0057_bvn_nin_encryption_blind_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1778948938315,
+      "tag": "0058_outbox_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1778948939315,
+      "tag": "0059_netting_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1778948940315,
+      "tag": "0060_kyb_results",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1778948941315,
+      "tag": "0061_merchant_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1778948942315,
+      "tag": "0062_onboarding_pipeline",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1778948943315,
+      "tag": "0063_insider_threat_persistence",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1778948944315,
+      "tag": "0064_settlement_batches",
+      "breakpoints": true
     }
   ]
 }

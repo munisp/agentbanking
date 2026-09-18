@@ -15,7 +15,13 @@ import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc.js";
 import { getAgentFromCookie } from "../middleware/agentAuth.js";
 import { getDb } from "../db.js";
-import { kycSessions } from "../../drizzle/schema.js";
+import { kycSessions, customers } from "../../drizzle/schema.js";
+import {
+  encryptField,
+  decryptField,
+  isEncryptedField,
+  blindIndex,
+} from "../lib/fieldEncryption.js";
 import {
   createLivenessChallenge,
   verifyLivenessChallenge,
@@ -75,6 +81,20 @@ async function requireAgent(req: Request | any) {
       message: "Agent session required",
     });
   return agent;
+}
+
+/**
+ * Read-side helper for encrypted PII columns: decrypts v1 payloads, passes
+ * legacy plaintext rows through unchanged, and never throws on read.
+ */
+function safeDecryptField(value: string | null): string | null {
+  if (!value) return value;
+  if (!isEncryptedField(value)) return value;
+  try {
+    return decryptField(value);
+  } catch {
+    return null;
+  }
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -723,6 +743,17 @@ export const kycRouter = router({
         const finalStatus =
           docPassed && session.livenessPassed ? "pending_review" : newStatus;
 
+        // PII at rest: for NIN / BVN_CARD documents the extracted ID number IS
+        // the customer's NIN/BVN — store it AES-256-GCM encrypted and keep a
+        // blind index (sha256+salt) for equality lookups. No plaintext at rest.
+        const extractedId = ocr?.extractedIdNumber ?? null;
+        const isNationalIdDoc =
+          input.docType === "NIN" || input.docType === "BVN_CARD";
+        const storedIdNumber =
+          extractedId && isNationalIdDoc ? encryptField(extractedId) : extractedId;
+        const idHash =
+          extractedId && isNationalIdDoc ? blindIndex(extractedId) : null;
+
         await db
           .update(kycSessions)
           .set({
@@ -730,7 +761,13 @@ export const kycRouter = router({
             docType: input.docType,
             docExtractedName: ocr?.extractedName ?? null,
             docExtractedDob: ocr?.extractedDob ?? null,
-            docExtractedIdNumber: ocr?.extractedIdNumber ?? null,
+            docExtractedIdNumber: storedIdNumber,
+            ...(input.docType === "NIN" && storedIdNumber
+              ? { nin: storedIdNumber, ninHash: idHash }
+              : {}),
+            ...(input.docType === "BVN_CARD" && storedIdNumber
+              ? { bvn: storedIdNumber, bvnHash: idHash }
+              : {}),
             docConfidence: ocr?.confidence?.toString() ?? null,
             docFraudIndicators: ocr?.fraudIndicators ?? [],
             ocrRaw: ocr?.raw ?? null,
@@ -761,6 +798,113 @@ export const kycRouter = router({
           fraudIndicators: ocr?.fraudIndicators ?? [],
           status: finalStatus,
           complianceRecordId: complianceId,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  /**
+   * Verify a BVN against stored customer records.
+   * Lookup is by blind index (sha256 of normalized value + server salt) —
+   * the plaintext BVN is never decrypted or compared in app code, and the
+   * value is never echoed back. Rate-limited via the shared cooldown store.
+   */
+  verifyBvn: protectedProcedure
+    .input(z.object({ bvn: z.string().regex(/^\d{11}$/, "BVN must be 11 digits") }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const agent = await requireAgent(ctx.req);
+        const rateKey = `verify-bvn:agent-${agent.id}`;
+        const cooldown = isLockedOut(rateKey);
+        if (cooldown.locked) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: `Too many failed attempts. Please wait ${Math.ceil(cooldown.remainingMs / 60000)} minutes before trying again.`,
+          });
+        }
+        const db = (await getDb())!;
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "DB unavailable",
+          });
+        const [match] = await db
+          .select({
+            id: customers.id,
+            status: customers.status,
+            kycLevel: customers.kycLevel,
+          })
+          .from(customers)
+          .where(eq(customers.bvnHash, blindIndex(input.bvn)))
+          .limit(1);
+        if (match) {
+          recordLivenessSuccess(rateKey);
+        } else {
+          recordLivenessFailure(rateKey);
+        }
+        // Never echo the BVN back — boolean match + tier metadata only.
+        return {
+          match: !!match,
+          verified: match?.status === "active",
+          kycLevel: match?.kycLevel ?? null,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  /**
+   * Verify a NIN against stored customer records (blind-index lookup,
+   * rate-limited, never echoes the NIN).
+   */
+  verifyNin: protectedProcedure
+    .input(z.object({ nin: z.string().regex(/^\d{11}$/, "NIN must be 11 digits") }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const agent = await requireAgent(ctx.req);
+        const rateKey = `verify-nin:agent-${agent.id}`;
+        const cooldown = isLockedOut(rateKey);
+        if (cooldown.locked) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: `Too many failed attempts. Please wait ${Math.ceil(cooldown.remainingMs / 60000)} minutes before trying again.`,
+          });
+        }
+        const db = (await getDb())!;
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "DB unavailable",
+          });
+        const [match] = await db
+          .select({
+            id: customers.id,
+            status: customers.status,
+            kycLevel: customers.kycLevel,
+          })
+          .from(customers)
+          .where(eq(customers.ninHash, blindIndex(input.nin)))
+          .limit(1);
+        if (match) {
+          recordLivenessSuccess(rateKey);
+        } else {
+          recordLivenessFailure(rateKey);
+        }
+        return {
+          match: !!match,
+          verified: match?.status === "active",
+          kycLevel: match?.kycLevel ?? null,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -804,7 +948,7 @@ export const kycRouter = router({
           docType: session.docType,
           docExtractedName: session.docExtractedName,
           docExtractedDob: session.docExtractedDob,
-          docExtractedIdNumber: session.docExtractedIdNumber,
+          docExtractedIdNumber: safeDecryptField(session.docExtractedIdNumber),
           docConfidence: session.docConfidence
             ? Number(session.docConfidence)
             : null,
@@ -871,7 +1015,7 @@ export const kycRouter = router({
             livenessScore: s.livenessScore ? Number(s.livenessScore) : null,
             docType: s.docType,
             docExtractedName: s.docExtractedName,
-            docExtractedIdNumber: s.docExtractedIdNumber,
+            docExtractedIdNumber: safeDecryptField(s.docExtractedIdNumber),
             docConfidence: s.docConfidence ? Number(s.docConfidence) : null,
             fraudIndicators: s.docFraudIndicators ?? [],
             complianceRecordId: s.complianceRecordId,

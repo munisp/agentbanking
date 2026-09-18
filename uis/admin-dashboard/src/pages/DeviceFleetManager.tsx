@@ -7,12 +7,12 @@ import { Smartphone } from "lucide-react";
 
 export default function DeviceFleetManager() {
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data: liveData, isLoading, error, refetch } = trpc.deviceFleetManager.list.useQuery(
+  const { data: liveData, isLoading, error, refetch } = trpc.deviceFleetManager.listDevices.useQuery(
     undefined,
     { retry: 1 }
   );
   // Render only real backend data — no fabricated fallback rows.
-  const mockData = liveData ?? [];
+  const mockData = liveData?.items ?? [];
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<
     "overview" | "details" | "history" | "settings"

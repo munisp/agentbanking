@@ -868,11 +868,10 @@ export const mdmRouter = router({
           apiBase: "/api/trpc",
         });
 
-        publishPosMiddleware(
-          "generateEnrollmentToken",
-          String(input.terminalId),
-          { action: "generateEnrollmentToken", ...input }
-        );
+        publishPosMiddleware("generateEnrollmentToken", serial, {
+          action: "generateEnrollmentToken",
+          ...input,
+        });
         return {
           token,
           expiresAt,
@@ -927,7 +926,8 @@ export const mdmRouter = router({
           });
         }
 
-        // Verify agent code matches
+        // Verify agent code matches — the enrollment token is bound to the
+        // agentId captured when the token was generated.
         const [agent] = await db
           .select()
           .from(agents)
@@ -937,6 +937,23 @@ export const mdmRouter = router({
           throw new TRPCError({
             code: "FORBIDDEN",
             message: "Agent code mismatch",
+          });
+        }
+
+        // Verify terminal binding — when the token was generated for a known
+        // serial number (i.e. not an auto-generated PENDING- placeholder), the
+        // enrolling terminal MUST present that exact serial. This prevents a
+        // token issued for terminal A being used to enroll terminal B.
+        const boundSerial = device.serialNumber ?? "";
+        if (
+          boundSerial &&
+          !boundSerial.startsWith("PENDING-") &&
+          boundSerial !== input.serialNumber
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Serial number mismatch — enrollment token is bound to a different terminal",
           });
         }
 

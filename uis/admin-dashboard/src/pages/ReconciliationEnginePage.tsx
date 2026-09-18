@@ -36,7 +36,7 @@ export default function ReconciliationEnginePage() {
   });
 
   // @ts-ignore Sprint 85
-  const batchesQuery = trpc.reconciliationEngine.listBatches.useQuery({
+  const batchesQuery = trpc.financialReconciliationDash.listBatches.useQuery({
     limit: 100,
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
@@ -51,7 +51,7 @@ export default function ReconciliationEnginePage() {
     onError: (e: any) => toast.error(e.message),
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const runMutation = trpc.reconciliationEngine.runReconciliation.useMutation({
+  const runMutation = trpc.paymentReconciliation.runReconciliation.useMutation({
     onSuccess: () => {
       batchesQuery.refetch();
       toast.success("Reconciliation started");
@@ -60,7 +60,7 @@ export default function ReconciliationEnginePage() {
   });
 
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const batches = (batchesQuery.data ?? []).filter((b: any) => {
+  const batches = (batchesQuery.data?.batches ?? []).filter((b: any) => {
     if (
       search &&
       !b.source?.toLowerCase().includes(search.toLowerCase()) &&

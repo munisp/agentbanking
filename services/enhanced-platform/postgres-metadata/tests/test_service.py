@@ -14,7 +14,7 @@ def test_service():
     
     # Test health check
     try:
-        response = requests.get(f"{base_url}/health")
+        response = requests.get(f"{base_url}/health", timeout=(5, 30))
         data = response.json()
         
         assert data["role"] == "METADATA_ONLY_STORAGE"
@@ -22,7 +22,7 @@ def test_service():
         print("✅ Health check passed")
         
         # Test PIX key resolution
-        response = requests.get(f"{base_url}/api/v1/pix-keys/test@example.com")
+        response = requests.get(f"{base_url}/api/v1/pix-keys/test@example.com", timeout=(5, 30))
         data = response.json()
         
         assert "tigerbeetle_account_id" in data

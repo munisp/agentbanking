@@ -34,6 +34,7 @@ import { ENV } from "../_core/env";
 import {
   transactions,
   agents,
+  customers,
   velocityLimits,
   platformSettings,
   devices,
@@ -49,8 +50,6 @@ import { floatPlatform, analyticsPlatform } from "../_core/platformClient.js";
 import crypto from "crypto";
 import {
   transactionsTotal,
-  transactionErrorsTotal,
-  transactionDurationMs,
   floatLocksTotal,
 } from "../metrics";
 import {
@@ -357,6 +356,8 @@ export const transactionsRouter = router({
         deviceToken: z.string().optional(),
         metadata: z.record(z.string(), z.unknown()).optional(),
         idempotencyKey: z.string().max(64).optional(),
+        // AML: caller-declared cross-border flag (feeds checkAmlTriggers)
+        isInternational: z.boolean().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -727,9 +728,38 @@ export const transactionsRouter = router({
               fraudScore: String(fraudScoreVal),
             });
           }
-          // AML triggers for high-value transactions
-          // @ts-expect-error auto-fix
-          const amlResult = checkAmlTriggers(input.amount, input.type, 0, 0);
+          // AML triggers for high-value transactions.
+          // Compute the agent's real daily total (sum of today's successful
+          // transactions) instead of the previous hardcoded 0 — the CTR
+          // threshold check depends on it. isInternational comes from the
+          // caller-supplied flag.
+          let dailyTotal = 0;
+          {
+            const amlDb = (await getDb())!;
+            if (amlDb) {
+              const startOfDay = new Date();
+              startOfDay.setHours(0, 0, 0, 0);
+              const [dailyRow] = await amlDb
+                .select({
+                  total: sql<string>`COALESCE(SUM(amount::numeric),0)`,
+                })
+                .from(transactions)
+                .where(
+                  and(
+                    eq(transactions.agentId, agent.id),
+                    eq(transactions.status, "success"),
+                    gte(transactions.createdAt, startOfDay)
+                  )
+                );
+              dailyTotal = Number(dailyRow?.total ?? 0);
+            }
+          }
+          const amlResult = checkAmlTriggers(
+            input.amount,
+            input.type,
+            dailyTotal,
+            input.isInternational ?? false
+          );
           if (amlResult.triggered) {
             await writeAuditLog({
               agentId: agent.id,
@@ -793,6 +823,174 @@ export const transactionsRouter = router({
             message: "Transaction limit check failed",
           });
         }
+
+        // ── Gate 6: Sanctions screening (fail-CLOSED on confirmed hit) ────────
+        // Runs after the velocity/limit gates and BEFORE any TigerBeetle money
+        // movement. A confirmed sanctions/PEP hit creates a fraud alert and
+        // blocks the transaction. Screening-service unavailability is the ONLY
+        // fail-open path, and it is recorded with an audit row.
+        try {
+          const { screenTransaction } = await import(
+            "../lib/complianceScreening"
+          );
+          const screening = await screenTransaction(
+            {
+              fullName: agentRecord.name ?? agent.agentCode,
+              idNumber: agent.agentCode,
+              transactionAmount: input.amount,
+            },
+            {
+              fullName: input.customerName ?? input.customerPhone ?? "unknown",
+              transactionAmount: input.amount,
+            },
+            input.amount,
+            "NGN"
+          );
+          const sanctionsHit =
+            !screening.transactionCleared &&
+            (screening.senderResult.matchType === "sanctions" ||
+              screening.recipientResult.matchType === "sanctions");
+          if (sanctionsHit) {
+            await createFraudAlert({
+              agentId: agent.id,
+              severity: "critical",
+              type: "SANCTIONS_HIT",
+              customerName: input.customerName ?? null,
+              amount: String(input.amount),
+              reason: `Sanctions screening hit: ${screening.flags.join("; ")}`,
+              fraudScore: "1.00",
+            });
+            await writeAuditLog(
+              {
+                agentId: agent.id,
+                agentCode: agent.agentCode,
+                action: "SANCTIONS_SCREENING_BLOCKED",
+                resource: "transaction",
+                status: "failure",
+                metadata: {
+                  flags: screening.flags,
+                  amount: input.amount,
+                  type: input.type,
+                  senderRef: screening.senderResult.referenceId,
+                  recipientRef: screening.recipientResult.referenceId,
+                },
+              },
+              { critical: true }
+            );
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Transaction blocked by compliance screening (sanctions match).",
+            });
+          }
+        } catch (screenErr) {
+          if (screenErr instanceof TRPCError) throw screenErr;
+          // Screening service unavailable — fail OPEN but leave an audit trail
+          // so the gap is visible to compliance.
+          console.error(
+            "[Compliance] Screening service error (fail-open with audit):",
+            (screenErr as Error).message
+          );
+          await writeAuditLog({
+            agentId: agent.id,
+            agentCode: agent.agentCode,
+            action: "SANCTIONS_SCREENING_UNAVAILABLE",
+            resource: "transaction",
+            status: "warning",
+            metadata: {
+              error: (screenErr as Error).message,
+              amount: input.amount,
+              type: input.type,
+            },
+          });
+        }
+
+        // ── Gate 7: Customer KYC-tier gate (fail-closed on lookup error when a
+        //    customer record exists) ──────────────────────────────────────────
+        // Unverified customers (status != 'active') may not transact above the
+        // tier-1 single-transaction limit.
+        if (input.customerPhone) {
+          const kycDb = (await getDb())!;
+          let customerRow: any = null;
+          let lookupFailed = false;
+          try {
+            if (kycDb) {
+              const [row] = await kycDb
+                .select({
+                  id: customers.id,
+                  status: customers.status,
+                  kycLevel: customers.kycLevel,
+                })
+                .from(customers)
+                .where(eq(customers.phone, input.customerPhone))
+                .limit(1);
+              customerRow = row ?? null;
+            }
+          } catch (custErr) {
+            lookupFailed = true;
+            console.error(
+              "[KYC] Customer lookup failed:",
+              (custErr as Error).message
+            );
+          }
+          if (lookupFailed) {
+            // Cannot confirm customer KYC state — fail closed.
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message:
+                "Customer KYC verification lookup failed — transaction blocked (fail-closed).",
+            });
+          }
+          if (customerRow && customerRow.status !== "active") {
+            // Tier-1 single-tx ceiling: lowest configured velocity tier limit
+            // (fallback ₦50,000 — CBN tier-1 single-tx limit).
+            let tier1SingleTxLimit = 50_000;
+            try {
+              const [limitRow] = await kycDb
+                .select({
+                  min: sql<string>`MIN("maxSingleTxAmount"::numeric)`,
+                })
+                .from(velocityLimits);
+              const parsed = Number(limitRow?.min);
+              if (Number.isFinite(parsed) && parsed > 0) {
+                tier1SingleTxLimit = parsed;
+              }
+            } catch (limitLookupErr) {
+              // Customer exists and is unverified; limit table unreadable —
+              // fail closed rather than guess.
+              console.error(
+                "[KYC] Tier-1 limit lookup failed (fail-closed):",
+                (limitLookupErr as Error).message
+              );
+              throw new TRPCError({
+                code: "INTERNAL_SERVER_ERROR",
+                message:
+                  "KYC tier limit lookup failed — transaction blocked (fail-closed).",
+              });
+            }
+            if (input.amount > tier1SingleTxLimit) {
+              await writeAuditLog({
+                agentId: agent.id,
+                agentCode: agent.agentCode,
+                action: "KYC_TIER_LIMIT_BLOCKED",
+                resource: "transaction",
+                status: "failure",
+                metadata: {
+                  customerId: customerRow.id,
+                  customerStatus: customerRow.status,
+                  kycLevel: customerRow.kycLevel,
+                  amount: input.amount,
+                  tier1SingleTxLimit,
+                },
+              });
+              throw new TRPCError({
+                code: "FORBIDDEN",
+                message: `Customer KYC not verified — transactions above ₦${tier1SingleTxLimit.toLocaleString()} require a verified customer (KYC tier upgrade).`,
+              });
+            }
+          }
+        }
+
         const fee =
           input.type === "Transfer" ? Math.min(input.amount * 0.001, 100) : 0;
 
@@ -941,15 +1139,20 @@ export const transactionsRouter = router({
           );
         }
 
-        await writeAuditLog({
-          agentId: agent.id,
-          agentCode: agent.agentCode,
-          action: "TRANSACTION_CREATED",
-          resource: "transaction",
-          resourceId: ref,
-          status: "success",
-          metadata: { type: input.type, amount: input.amount },
-        });
+        // Money has moved — this audit record is CRITICAL: a write failure
+        // must surface (throw) rather than be swallowed.
+        await writeAuditLog(
+          {
+            agentId: agent.id,
+            agentCode: agent.agentCode,
+            action: "TRANSACTION_CREATED",
+            resource: "transaction",
+            resourceId: ref,
+            status: "success",
+            metadata: { type: input.type, amount: input.amount },
+          },
+          { critical: true }
+        );
 
         // ── Phase 44: Customer SMS confirmation (fire-and-forget) ─────────────
         if (SMS_CONFIRMATION_TYPES.has(input.type) && input.customerPhone) {

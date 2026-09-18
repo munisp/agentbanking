@@ -14,7 +14,12 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { auditLog, systemConfig } from "../../drizzle/schema";
+import {
+  auditLog,
+  systemConfig,
+  sla_definitions,
+  sla_breaches,
+} from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -354,5 +359,94 @@ export const carrierSlaRouter = router({
             error instanceof Error ? error.message : "Internal server error",
         });
       }
+    }),
+
+  // SLA breaches within the last `hours` hours, joined with sla_definitions
+  getViolations: protectedProcedure
+    .input(z.object({ hours: z.number().default(24) }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const since = new Date(Date.now() - (input?.hours ?? 24) * 3600 * 1000);
+      const rows = await db
+        .select({ breach: sla_breaches, definition: sla_definitions })
+        .from(sla_breaches)
+        .leftJoin(
+          sla_definitions,
+          eq(sla_breaches.slaDefinitionId, sla_definitions.id)
+        )
+        .where(gte(sla_breaches.createdAt, since))
+        .orderBy(desc(sla_breaches.createdAt))
+        .limit(100);
+      return rows.map(r => ({
+        id: r.breach.id,
+        carrier: r.definition?.name ?? `SLA #${r.breach.slaDefinitionId}`,
+        region: r.definition?.serviceType ?? null,
+        violation: `${r.breach.breachType}: actual ${r.breach.actualValue} vs target ${r.breach.targetValue}`,
+        severity: r.breach.impactLevel,
+        resolved: r.breach.resolvedAt != null,
+        timestamp: r.breach.createdAt?.toISOString() ?? null,
+      }));
+    }),
+
+  // Compliance report over sla_definitions / sla_breaches for a period
+  getComplianceReport: protectedProcedure
+    .input(
+      z
+        .object({ period: z.enum(["daily", "weekly", "monthly"]).default("weekly") })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      const empty = {
+        compliantCarriers: 0,
+        nonCompliantCarriers: 0,
+        overallScore: 100,
+        details: [],
+      };
+      if (!db) return empty;
+      const periodDays = { daily: 1, weekly: 7, monthly: 30 }[
+        input?.period ?? "weekly"
+      ];
+      const since = new Date(Date.now() - periodDays * 24 * 3600 * 1000);
+      const definitions = await db
+        .select()
+        .from(sla_definitions)
+        .where(eq(sla_definitions.isActive, true))
+        .limit(200);
+      const breaches = await db
+        .select()
+        .from(sla_breaches)
+        .where(gte(sla_breaches.createdAt, since))
+        .limit(1000);
+      const breachCountByDef = new Map<number, number>();
+      for (const b of breaches) {
+        breachCountByDef.set(
+          b.slaDefinitionId,
+          (breachCountByDef.get(b.slaDefinitionId) ?? 0) + 1
+        );
+      }
+      const details = definitions.map(d => {
+        const breachCount = breachCountByDef.get(d.id) ?? 0;
+        const compliant = breachCount === 0;
+        const metric = d.metricType.toLowerCase();
+        return {
+          carrier: d.name,
+          uptime:
+            metric.includes("uptime") || metric.includes("availability")
+              ? d.targetValue
+              : Math.max(0, 100 - breachCount),
+          avgLatency: metric.includes("latency") ? d.targetValue : 0,
+          breachCount,
+          compliant,
+        };
+      });
+      const compliantCarriers = details.filter(d => d.compliant).length;
+      const nonCompliantCarriers = details.length - compliantCarriers;
+      const overallScore =
+        details.length > 0
+          ? Math.round((compliantCarriers / details.length) * 1000) / 10
+          : 100;
+      return { compliantCarriers, nonCompliantCarriers, overallScore, details };
     }),
 });

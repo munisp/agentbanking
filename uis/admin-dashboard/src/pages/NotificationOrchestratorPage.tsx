@@ -35,11 +35,11 @@ export default function NotificationOrchestratorPage() {
   });
 
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const templatesQuery = trpc.notificationOrchestrator.listTemplates.useQuery({
+  const templatesQuery = trpc.notificationOrchestrator.templates.useQuery({
     limit: 100,
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const statsQuery = trpc.notificationOrchestrator.getStats.useQuery();
+  const statsQuery = trpc.notificationOrchestrator.deliveryStats.useQuery();
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const createMutation =
     // @ts-ignore Sprint 85

@@ -25,7 +25,7 @@ export default function TenantFeatureTogglePage() {
   });
 
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const togglesQuery = trpc.tenantFeatureToggle.listToggles.useQuery({
+  const togglesQuery = trpc.tenantFeatureToggle.list.useQuery({
     limit: 100,
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
@@ -40,7 +40,7 @@ export default function TenantFeatureTogglePage() {
     onError: (e: any) => toast.error(e.message),
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const updateMutation = trpc.tenantFeatureToggle.updateToggle.useMutation({
+  const updateMutation = trpc.tenantFeatureToggle.update.useMutation({
     onSuccess: () => {
       togglesQuery.refetch();
       setEditToggle(null);
@@ -49,7 +49,7 @@ export default function TenantFeatureTogglePage() {
     onError: (e: any) => toast.error(e.message),
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const deleteMutation = trpc.tenantFeatureToggle.deleteToggle.useMutation({
+  const deleteMutation = trpc.tenantFeatureToggle.delete.useMutation({
     onSuccess: () => {
       togglesQuery.refetch();
       toast.success("Toggle deleted");
@@ -65,7 +65,7 @@ export default function TenantFeatureTogglePage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const toggles = (togglesQuery.data ?? []).filter((t: any) => {
+  const toggles = (togglesQuery.data?.items ?? []).filter((t: any) => {
     if (
       search &&
       !t.feature_key?.toLowerCase().includes(search.toLowerCase()) &&
@@ -231,7 +231,7 @@ export default function TenantFeatureTogglePage() {
                   <button
                     onClick={() => {
                       if (confirm("Delete this toggle?"))
-                        deleteMutation.mutate({ id: t.id });
+                        deleteMutation.mutate({ toggleId: t.id });
                     }}
                     className="p-1.5 hover:bg-red-700/30 rounded-lg"
                   >
@@ -317,7 +317,7 @@ export default function TenantFeatureTogglePage() {
                         parseInt(form.rollout_percentage) || 100,
                     };
                     if (editToggle)
-                      updateMutation.mutate({ id: editToggle.id, ...data });
+                      updateMutation.mutate({ toggleId: editToggle.id, enabled: data.is_enabled, rolloutPercentage: data.rollout_percentage });
                     else createMutation.mutate(data);
                   }}
                   className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-sm"

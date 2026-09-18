@@ -355,4 +355,102 @@ export const dataExportRouter = router({
     )
     .query(async () => ({ csv: "", rows: 0 })),
   agentsCsv: protectedProcedure.query(async () => ({ csv: "", rows: 0 })),
+
+  // Audit trail viewer over the real audit_log table.
+  // severity/category are derived from real columns (status / resource).
+  auditLog: protectedProcedure
+    .input(
+      z
+        .object({
+          format: z.enum(["json", "csv"]).default("json"),
+          severity: z.string().optional(),
+          category: z.string().optional(),
+          action: z.string().optional(),
+          limit: z.number().default(50),
+          offset: z.number().default(0),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { entries: [], total: 0 };
+      const severityOf = (status: string | null): string =>
+        status === "failure"
+          ? "high"
+          : status === "warning"
+            ? "medium"
+            : "info";
+      const conditions = [];
+      if (input?.category) conditions.push(eq(auditLog.resource, input.category));
+      if (input?.action) conditions.push(eq(auditLog.action, input.action));
+      if (input?.severity) {
+        const sev = input.severity.toLowerCase();
+        if (sev === "critical" || sev === "high")
+          conditions.push(eq(auditLog.status, "failure"));
+        else if (sev === "medium")
+          conditions.push(eq(auditLog.status, "warning"));
+        else conditions.push(eq(auditLog.status, "success"));
+      }
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .where(where)
+        .orderBy(desc(auditLog.createdAt))
+        .limit(input?.limit ?? 50)
+        .offset(input?.offset ?? 0);
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(auditLog)
+        .where(where);
+      const entries = rows.map(r => ({
+        id: r.id,
+        action: r.action,
+        description: `${r.action} on ${r.resource ?? "system"}${r.resourceId ? ` ${r.resourceId}` : ""}`,
+        severity: severityOf(r.status),
+        userId:
+          r.agentCode ?? (r.agentId != null ? String(r.agentId) : null),
+        resource: r.resource,
+        category: r.resource,
+        status: r.status,
+        metadata: r.metadata,
+        timestamp: r.createdAt?.toISOString() ?? null,
+      }));
+      return { entries, total: Number(totalRow?.value ?? 0) };
+    }),
+
+  auditStats: protectedProcedure.query(async () => {
+    const zero = {
+      total: 0,
+      last24h: 0,
+      bySeverity: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
+    };
+    const db = await getDb();
+    if (!db) return zero;
+    const [total] = await db.select({ value: count() }).from(auditLog);
+    const since = new Date(Date.now() - 24 * 3600 * 1000);
+    const [recent] = await db
+      .select({ value: count() })
+      .from(auditLog)
+      .where(gte(auditLog.createdAt, since));
+    const byStatus = await db
+      .select({ status: auditLog.status, cnt: count() })
+      .from(auditLog)
+      .groupBy(auditLog.status);
+    const counts: Record<string, number> = {};
+    byStatus.forEach(r => {
+      counts[String(r.status)] = Number(r.cnt);
+    });
+    return {
+      total: Number(total.value),
+      last24h: Number(recent.value),
+      bySeverity: {
+        critical: 0,
+        high: counts["failure"] ?? 0,
+        medium: counts["warning"] ?? 0,
+        low: 0,
+        info: counts["success"] ?? 0,
+      },
+    };
+  }),
 });

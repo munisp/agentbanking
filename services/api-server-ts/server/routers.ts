@@ -31,6 +31,7 @@ import { gdprRouter } from "./routers/gdpr";
 import { merchantRouter } from "./routers/merchant";
 import { developerPortalRouter } from "./routers/developerPortal";
 import { systemConfigRouter } from "./routers/systemConfig";
+import { insiderThreatManagementRouter } from "./routers/insiderThreatManagement";
 import { simOrchestratorRouter } from "./routers/simOrchestrator";
 import { pushNotificationsRouter } from "./routers/pushNotifications";
 import { cbnReportingRouter } from "./routers/cbnReporting";
@@ -65,6 +66,8 @@ import { escalationChainsRouter } from "./routers/escalationChains";
 import { inviteCodesRouter } from "./routers/inviteCodes";
 import { partnerOnboardingRouter } from "./routers/partnerOnboarding";
 import { tenantAdminRouter } from "./routers/tenantAdmin";
+import { tenantRouter } from "./routers/tenant";
+import { usageRouter } from "./routers/usage";
 import { systemHealthMonitorRouter } from "./routers/systemHealthMonitor";
 import { weeklyReportsRouter } from "./routers/weeklyReports";
 import { sprint23Router } from "./routers/sprint23Router";
@@ -614,6 +617,9 @@ export const appRouter = router({
   push: pushNotificationsRouter,
   // CBN Regulatory Reporting (Monthly Activity, Quarterly Fraud, SAR)
   cbnReporting: cbnReportingRouter,
+  // Insider threat prevention: maker-checker approvals, step-up auth, staff velocity
+  // (ported from root server/ orphan mirror; handlers enforce admin/compliance roles)
+  insiderThreatManagement: insiderThreatManagementRouter,
   // Agency Banking Business Rules Engine (CBN limits, KYC, fraud scoring, commissions, loyalty)
   businessRules: businessRulesRouter,
   // Data Lakehouse: snapshot management, Sedona spatial queries, DataFusion proxy, Gold-layer metrics
@@ -706,6 +712,8 @@ export const appRouter = router({
   inviteCodes: inviteCodesRouter,
   partnerOnboarding: partnerOnboardingRouter,
   tenantAdmin: tenantAdminRouter,
+  tenant: tenantRouter,
+  usage: usageRouter,
   // Sprint 18: System Health Monitoring Dashboard
   healthMonitor: systemHealthMonitorRouter,
   weeklyReports: weeklyReportsRouter,

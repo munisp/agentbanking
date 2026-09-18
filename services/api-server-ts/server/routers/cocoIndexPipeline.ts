@@ -2,7 +2,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
-import { auditLog, platform_health_checks } from "../../drizzle/schema";
+import { auditLog, platform_health_checks, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -369,5 +369,142 @@ export const cocoIndexPipelineRouter = router({
         domain: "coco_index",
         procedure: "config",
       };
+    }),
+
+  // Pipeline runs recorded in auditLog with resource='coco_index'
+  listRuns: protectedProcedure
+    .input(z.object({ limit: z.number().default(50) }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { runs: [], total: 0 };
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.resource, "coco_index"))
+        .orderBy(desc(auditLog.createdAt))
+        .limit(input?.limit ?? 50);
+      const runs = rows.map(r => {
+        const meta = (r.metadata ?? {}) as Record<string, unknown>;
+        return {
+          id: r.id,
+          pipelineId: String(meta.pipelineId ?? r.resourceId ?? "unknown"),
+          status: r.status === "success" ? "completed" : String(r.status),
+          recordsProcessed: Number(meta.recordsProcessed ?? 0),
+          recordsFailed: Number(meta.recordsFailed ?? 0),
+          metrics: { throughput: Number(meta.throughput ?? 0) },
+          startedAt: r.createdAt,
+          completedAt: r.createdAt,
+        };
+      });
+      return { runs, total: runs.length };
+    }),
+
+  // Aggregates over coco_index audit runs
+  analytics: protectedProcedure.query(async () => {
+    const zero = {
+      totalPipelines: 0,
+      activePipelines: 0,
+      totalRecordsProcessed: 0,
+      successRate: 100,
+      avgThroughput: 0,
+      sinkDistribution: { qdrant: 0, falkordb: 0, iceberg: 0 },
+    };
+    const db = await getDb();
+    if (!db) return zero;
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.resource, "coco_index"))
+      .orderBy(desc(auditLog.createdAt))
+      .limit(1000);
+    const pipelineIds = new Set<string>();
+    let processed = 0;
+    let successes = 0;
+    let throughputSum = 0;
+    let throughputN = 0;
+    const sinkDistribution = { qdrant: 0, falkordb: 0, iceberg: 0 };
+    for (const r of rows) {
+      const meta = (r.metadata ?? {}) as Record<string, unknown>;
+      if (meta.pipelineId) pipelineIds.add(String(meta.pipelineId));
+      processed += Number(meta.recordsProcessed ?? 0);
+      if (r.status === "success") successes += 1;
+      if (typeof meta.throughput === "number") {
+        throughputSum += meta.throughput;
+        throughputN += 1;
+      }
+      const sink = String(meta.sink ?? "").toLowerCase();
+      if (sink === "qdrant") sinkDistribution.qdrant += 1;
+      else if (sink === "falkordb") sinkDistribution.falkordb += 1;
+      else if (sink === "iceberg") sinkDistribution.iceberg += 1;
+    }
+    // Pipeline enabled state is kept in systemConfig `coco_pipeline_%` keys
+    const toggleRows = await db
+      .select()
+      .from(systemConfig)
+      .where(sql`${systemConfig.key} LIKE 'coco_pipeline_%'`)
+      .limit(200);
+    let activePipelines = 0;
+    for (const t of toggleRows) {
+      try {
+        const parsed = JSON.parse(String(t.value ?? "{}"));
+        if (parsed.status === "active") activePipelines += 1;
+        pipelineIds.add(t.key.replace(/^coco_pipeline_/, ""));
+      } catch {
+        // ignore malformed rows
+      }
+    }
+    return {
+      totalPipelines: pipelineIds.size,
+      activePipelines,
+      totalRecordsProcessed: processed,
+      successRate:
+        rows.length > 0 ? Math.round((successes / rows.length) * 1000) / 10 : 100,
+      avgThroughput:
+        throughputN > 0 ? Math.round((throughputSum / throughputN) * 10) / 10 : 0,
+      sinkDistribution,
+    };
+  }),
+
+  // Pause/resume a pipeline — persisted to systemConfig `coco_pipeline_<id>`
+  togglePipeline: protectedProcedure
+    .input(
+      z.object({
+        pipelineId: z.union([z.string(), z.number()]),
+        action: z.enum(["pause", "resume"]),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — pipeline not toggled",
+        });
+      const status = input.action === "pause" ? "paused" : "active";
+      const key = `coco_pipeline_${input.pipelineId}`;
+      await db
+        .insert(systemConfig)
+        .values({
+          key,
+          value: JSON.stringify({ status }),
+          description: "coco index pipeline enabled state",
+          updatedBy: ctx.user?.id != null ? String(ctx.user.id) : "system",
+        })
+        .onConflictDoUpdate({
+          target: systemConfig.key,
+          set: {
+            value: JSON.stringify({ status }),
+            updatedAt: new Date(),
+          },
+        });
+      await db.insert(auditLog).values({
+        agentId: ctx.user?.id ?? null,
+        action: `coco_pipeline_${input.action}d`,
+        resource: "coco_index",
+        resourceId: String(input.pipelineId),
+        status: "success",
+        metadata: { pipelineId: input.pipelineId, status },
+      });
+      return { success: true, pipelineId: String(input.pipelineId), status };
     }),
 });

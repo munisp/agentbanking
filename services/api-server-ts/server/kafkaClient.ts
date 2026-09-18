@@ -13,8 +13,15 @@
  *     This is the default in production where the POS Shell sits behind the
  *     gateway and does not have direct broker access.
  *
- * Fail-open: publish() returns false on error so callers can continue
- * without Kafka (the transaction is already committed to PostgreSQL).
+ * Delivery guarantees (mirrors services/shared/kafka_consumer.py DLQ
+ * semantics — never silently drop a message):
+ *  1. publishEvent() retries the publish with bounded exponential backoff
+ *     (PUBLISH_MAX_ATTEMPTS, 250ms base, doubling, capped at 5s).
+ *  2. On final failure the event is published to the dead-letter topic
+ *     "<topic>.dlq" with an envelope recording the original topic, key,
+ *     timestamp, error and attempt count.
+ *  3. publishEvent() returns false ONLY after the DLQ attempt; the failure
+ *     is always logged with full context so operations can replay the DLQ.
  *
  * Environment variables:
  *  - KAFKA_BROKERS        Comma-separated list e.g. kafka:9092,kafka2:9092
@@ -98,11 +105,77 @@ export interface KafkaEvent<T = unknown> {
   payload: T;
 }
 
+// ── Retry / DLQ configuration ─────────────────────────────────────────────────
+// Bounded retry with exponential backoff, then dead-letter on final failure —
+// mirrors services/shared/kafka_consumer.py ("<topic>.dlq" suffix, envelope
+// with original topic/key/timestamp/error). Messages are never silently dropped.
+const PUBLISH_MAX_ATTEMPTS = 4;
+const PUBLISH_BACKOFF_BASE_MS = 250;
+const PUBLISH_BACKOFF_CAP_MS = 5000;
+const DLQ_TOPIC_SUFFIX = ".dlq";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function publishBackoffMs(attempt: number): number {
+  // attempt is 1-based for the retry about to happen
+  return Math.min(
+    PUBLISH_BACKOFF_BASE_MS * Math.pow(2, attempt - 1),
+    PUBLISH_BACKOFF_CAP_MS
+  );
+}
+
+/**
+ * Publish a poison event to the dead-letter topic "<topic>.dlq".
+ * Tries the direct producer first, then the platform proxy. Returns true when
+ * the event was durably dead-lettered; false only if every DLQ path failed.
+ */
+async function publishToDeadLetter<T>(
+  topic: KafkaTopic,
+  key: string,
+  event: KafkaEvent<T>,
+  error: Error,
+  attempts: number
+): Promise<boolean> {
+  const dlqTopic = `${topic}${DLQ_TOPIC_SUFFIX}`;
+  const envelope = {
+    original_topic: topic,
+    original_key: key,
+    failed_at: new Date().toISOString(),
+    error: error.message,
+    attempts,
+    payload: event,
+  };
+  try {
+    const producer = await getProducer();
+    if (producer) {
+      await producer.send({
+        topic: dlqTopic,
+        messages: [{ key, value: JSON.stringify(envelope) }],
+      });
+      console.warn(`[Kafka] Event dead-lettered → ${dlqTopic} (key=${key})`);
+      return true;
+    }
+    await proxyPublish(dlqTopic, key, envelope);
+    console.warn(`[Kafka] Event dead-lettered via proxy → ${dlqTopic} (key=${key})`);
+    return true;
+  } catch (dlqErr) {
+    console.error(
+      `[Kafka] CRITICAL: DLQ publish failed for ${dlqTopic} (key=${key}) — event may be lost:`,
+      (dlqErr as Error).message
+    );
+    return false;
+  }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
  * Publish a domain event to a Kafka topic.
- * Returns true on success, false if Kafka is unavailable (fail-open).
+ * Retries with bounded exponential backoff; on final failure the event is
+ * dead-lettered to "<topic>.dlq". Returns true on success, false only after
+ * retries were exhausted and the DLQ path was attempted (never silent).
  */
 export async function publishEvent<T>(
   topic: KafkaTopic,
@@ -119,24 +192,48 @@ export async function publishEvent<T>(
     payload,
   };
 
-  try {
-    const producer = await getProducer();
-    if (producer) {
-      await producer.send({
-        topic,
-        messages: [{ key, value: JSON.stringify(event) }],
-      });
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= PUBLISH_MAX_ATTEMPTS; attempt++) {
+    try {
+      const producer = await getProducer();
+      if (producer) {
+        await producer.send({
+          topic,
+          messages: [{ key, value: JSON.stringify(event) }],
+        });
+        return true;
+      }
+      await proxyPublish(topic, key, event);
       return true;
+    } catch (err) {
+      lastError = err as Error;
+      if (attempt < PUBLISH_MAX_ATTEMPTS) {
+        const backoffMs = publishBackoffMs(attempt);
+        console.warn(
+          `[Kafka] Publish ${topic} attempt ${attempt}/${PUBLISH_MAX_ATTEMPTS} failed (${lastError.message}); retrying in ${backoffMs}ms`
+        );
+        await sleep(backoffMs);
+      }
     }
-    await proxyPublish(topic, key, event);
-    return true;
-  } catch (err) {
-    console.error(
-      `[Kafka] Failed to publish ${topic}:`,
-      (err as Error).message
-    );
-    return false;
   }
+
+  console.error(
+    `[Kafka] Failed to publish ${topic} after ${PUBLISH_MAX_ATTEMPTS} attempts:`,
+    lastError?.message
+  );
+  const deadLettered = await publishToDeadLetter(
+    topic,
+    key,
+    event,
+    lastError ?? new Error("unknown publish failure"),
+    PUBLISH_MAX_ATTEMPTS
+  );
+  if (!deadLettered) {
+    console.error(
+      `[Kafka] CRITICAL: ${topic} event (key=${key}, eventId=${event.eventId}) was neither published nor dead-lettered`
+    );
+  }
+  return false;
 }
 
 /**

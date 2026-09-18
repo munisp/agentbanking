@@ -26,11 +26,11 @@ export default function MerchantPayoutSettlementPage() {
   const [selectedPayout, setSelectedPayout] = useState<any>(null);
 
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const payoutsQuery = trpc.merchantPayoutSettlement.listPayouts.useQuery({
+  const payoutsQuery = trpc.merchantPayoutSettlement.list.useQuery({
     limit: 100,
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const statsQuery = trpc.merchantPayoutSettlement.getStats.useQuery();
+  const statsQuery = trpc.merchantPayoutSettlement.summary.useQuery();
   const approveMutation =
     trpc.merchantPayoutSettlement.approvePayout.useMutation({
       onSuccess: () => {
@@ -40,7 +40,7 @@ export default function MerchantPayoutSettlementPage() {
       onError: (e: any) => toast.error(e.message),
     });
 
-  const payouts = (payoutsQuery.data ?? []).filter((p: any) => {
+  const payouts = (payoutsQuery.data?.items ?? []).filter((p: any) => {
     if (
       search &&
       !p.merchant_id?.toString().includes(search) &&

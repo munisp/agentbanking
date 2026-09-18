@@ -26,9 +26,9 @@ export default function PlatformHealthPage() {
   );
 
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const healthQuery = trpc.platformHealth.getOverview.useQuery();
+  const healthQuery = trpc.platformHealth.overview.useQuery();
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const servicesQuery = trpc.platformHealth.listServices.useQuery({
+  const servicesQuery = trpc.platformHealth.serviceRegistry.useQuery({
     limit: 50,
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface

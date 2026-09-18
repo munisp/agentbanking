@@ -292,7 +292,7 @@ const _txPatterns = {
     typeof withTransaction === "function"
       ? (withTransaction as Function)(...args)
       : Promise.resolve(args),
-  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+  atomicBatch: async <T,>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
       for (const op of ops) results.push(await op());
@@ -301,10 +301,40 @@ const _txPatterns = {
   },
 };
 
+const deleteCustomer = protectedProcedure
+  .input(z.object({ id: z.number() }))
+  .mutation(async ({ input }) => {
+    try {
+      const db = (await getDb())!;
+      // Soft delete, consistent with this router's agents backing table
+      // and the schema's P0-B deletedAt convention.
+      const deleted = await db
+        .update(agents)
+        .set({ deletedAt: new Date(), isActive: false })
+        .where(eq(agents.id, input.id))
+        .returning();
+      if (deleted.length === 0) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Record with id ${input.id} not found`,
+        });
+      }
+      return { success: true, id: input.id };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  });
+
 export const customerDatabaseRouter = router({
   list,
   getById,
   create,
   update,
+  delete: deleteCustomer,
   getStats,
 });

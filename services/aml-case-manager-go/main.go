@@ -648,6 +648,18 @@ func (s *AppState) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleReady is the readiness probe — distinct from /health. The case
+// manager keeps state in-process (no external datastore), so readiness ==
+// server initialized and serving.
+func (s *AppState) handleReady(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ready",
+		"service": "aml-case-manager",
+		"version": "1.0.0",
+	})
+}
+
 func (s *AppState) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -725,6 +737,7 @@ func main() {
 	})
 	mux.HandleFunc("/api/v1/dashboard", state.handleDashboard)
 	mux.HandleFunc("/health", state.handleHealth)
+	mux.HandleFunc("/ready", state.handleReady)
 
 	addr := ":" + cfg.Port
 	log.Printf("[AML-Case-Manager] Starting on %s (env=%s)", addr, cfg.Environment)

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { disputes, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import {
   calculateFee,
@@ -312,5 +312,39 @@ export const transactionDisputeResolutionRouter = router({
         .limit(input.limit);
 
       return results;
+    }),
+  resolve: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        resolution: z.string().min(1).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
+      // TOCTOU-safe: only resolve disputes still in 'open' state.
+      const updated = await database
+        .update(disputes)
+        .set({
+          status: "resolved",
+          resolution: input.resolution ?? "resolved",
+          resolvedBy: String(ctx.user.id),
+          resolvedAt: new Date(),
+        })
+        .where(and(eq(disputes.id, input.id), eq(disputes.status, "open")))
+        .returning();
+      if (updated.length === 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Dispute not found or already resolved",
+        });
+      }
+      logOperation("resolve", { id: input.id });
+      return { success: true, dispute: updated[0] };
     }),
 });

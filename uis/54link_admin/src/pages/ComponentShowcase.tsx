@@ -221,7 +221,7 @@ export default function ComponentsShowcase() {
         content: `This showcase is returning an **instructional preview response**. To wire it into the active platform, connect the component to a server-backed mutation such as:
 
 \`\`\`typescript
-const chatMutation = trpc.ai.chat.useMutation({
+const chatMutation = trpc.aiChat.sendMessage.useMutation({
   onSuccess: (response) => {
     setChatMessages(prev => [...prev, {
       role: "assistant",

@@ -25,7 +25,8 @@ class WazuhIntegration:
             response = requests.post(
                 f"{self.api_url}/security/user/authenticate",
                 auth=(self.username, self.password),
-                verify=False
+                verify=False,
+                timeout=(5, 30)
             )
             response.raise_for_status()
             self.token = response.json()['data']['token']
@@ -46,7 +47,8 @@ class WazuhIntegration:
                 f"{self.api_url}/security/alerts",
                 headers=self.get_headers(),
                 params={'limit': limit},
-                verify=False
+                verify=False,
+                timeout=(5, 30)
             )
             response.raise_for_status()
             return response.json()['data']['affected_items']
@@ -60,7 +62,8 @@ class WazuhIntegration:
             response = requests.get(
                 f"{self.api_url}/agents",
                 headers=self.get_headers(),
-                verify=False
+                verify=False,
+                timeout=(5, 30)
             )
             response.raise_for_status()
             agents = response.json()['data']['affected_items']
@@ -89,7 +92,8 @@ class WazuhIntegration:
             response = requests.get(
                 endpoint,
                 headers=self.get_headers(),
-                verify=False
+                verify=False,
+                timeout=(5, 30)
             )
             response.raise_for_status()
             return response.json()['data']['affected_items']
@@ -107,7 +111,8 @@ class WazuhIntegration:
                     'q': f'rule.groups:service AND data.service:{service_name}',
                     'limit': 50
                 },
-                verify=False
+                verify=False,
+                timeout=(5, 30)
             )
             response.raise_for_status()
             alerts = response.json()['data']['affected_items']

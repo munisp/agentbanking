@@ -4,7 +4,6 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { fraudAlerts } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
-import { validateInput } from "../lib/routerHelpers";
 
 import {
   validateAmount,

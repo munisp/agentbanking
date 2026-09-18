@@ -1,5 +1,6 @@
 """Card Management Service"""
 
+import asyncio
 import base64
 import hmac
 import os
@@ -13,6 +14,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -224,6 +226,29 @@ async def shutdown():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "card-service"}
+
+
+@app.get("/ready")
+async def readiness_check():
+    """Readiness — distinct from /health: fails with 503 unless the card DB
+    pool is initialized and reachable. The probe is bounded to 2 seconds so a
+    hung pool cannot stall the load balancer's readiness check."""
+    if db_pool is None:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "database": "pool not initialized"},
+        )
+    try:
+        async def _ping():
+            async with db_pool.acquire() as conn:
+                await conn.fetchval("SELECT 1")
+        await asyncio.wait_for(_ping(), timeout=2)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "database": str(exc)},
+        )
+    return {"status": "ready", "service": "card-service"}
 
 
 @app.post("/api/v1/cards/issue")

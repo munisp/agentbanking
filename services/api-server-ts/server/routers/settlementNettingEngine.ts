@@ -298,20 +298,65 @@ export const settlementNettingEngineRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
+      const grossAmount =
+        typeof input.grossAmount === "number" && Number.isFinite(input.grossAmount)
+          ? input.grossAmount
+          : 0;
+      const _fees = calculateFee(grossAmount, "transfer");
       const _commission = calculateCommission(_fees.fee, "transfer");
       const _tax = calculateTax(_fees.fee, "vat");
+      const feeAmount = _fees.fee;
+      const taxAmount = _tax.taxAmount;
+      const netAmount = Math.max(grossAmount - feeAmount - taxAmount, 0);
+      const savings = grossAmount - netAmount;
       auditFinancialAction(
         "UPDATE",
         "settlementNettingEngine",
         "mutation",
         "Executed settlementNettingEngine mutation"
       );
+
+      // Persist the netting run + per-party items (migration
+      // 0059_netting_runs.sql) so the session is real and settleSession can
+      // transition it — previously the sessionId was a fabricated
+      // NET-<timestamp> with no database row.
+      const db = (await getDb())!;
+      if (!db) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
+      }
+      const createdBy = (ctx as any)?.user?.id ?? null;
+      const runId = await withTransaction(async (tx: any) => {
+        const runRows = await tx.execute(sql`
+          INSERT INTO netting_runs
+            (type, parties, gross_amount, fee_amount, tax_amount, net_amount, savings, status, created_by)
+          VALUES (
+            ${input.type},
+            ${JSON.stringify(input.parties ?? [])}::jsonb,
+            ${grossAmount}, ${feeAmount}, ${taxAmount}, ${netAmount}, ${savings},
+            'calculating', ${createdBy != null ? String(createdBy) : null}
+          )
+          RETURNING id
+        `);
+        const id = Number((runRows as any[])[0]?.id);
+        if (!Number.isFinite(id) || id <= 0) {
+          throw new Error("netting_runs insert returned no id");
+        }
+        const perPartyGross =
+          (input.parties?.length ?? 0) > 0
+            ? grossAmount / (input.parties?.length ?? 1)
+            : grossAmount;
+        for (const party of input.parties ?? []) {
+          await tx.execute(sql`
+            INSERT INTO netting_run_items (run_id, party, gross_amount, fee_amount, net_amount)
+            VALUES (${id}, ${party}, ${perPartyGross}, ${feeAmount}, ${netAmount})
+          `);
+        }
+        return id;
+      }, "netting.createSession");
+      const sessionId = `NET-${runId}`;
 
       try {
         await publishEvent(
@@ -352,9 +397,14 @@ export const settlementNettingEngineRouter = router({
         });
       } catch {}
       return {
-        sessionId: `NET-${Date.now()}`,
+        sessionId,
         status: "calculating",
         ...input,
+        grossAmount,
+        feeAmount,
+        taxAmount,
+        netAmount,
+        savings,
         estimatedSavings: "80-85%",
       };
     }),
@@ -402,13 +452,27 @@ export const settlementNettingEngineRouter = router({
           )
           .returning({ id: merchantSettlements.id });
         if (updatedRows.length === 0) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "Settlement session is not in 'calculating' status (unknown id or already settled)",
-          });
+          // Sessions created via createSession persist to netting_runs
+          // (migration 0059). Transition that row atomically instead —
+          // still conditional on 'calculating', still 0-rows → 409.
+          const runRows = await db.execute(sql`
+            UPDATE netting_runs
+            SET status = 'settled', settled_at = NOW(), confirmation_ref = ${confirmationRef}
+            WHERE id = ${numId} AND status = 'calculating'
+            RETURNING id
+          `);
+          const runUpdated = (runRows as any[]).length > 0;
+          if (!runUpdated) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message:
+                "Settlement session is not in 'calculating' status (unknown id or already settled)",
+            });
+          }
+          settledRow = { id: numId };
+        } else {
+          settledRow = updatedRows[0];
         }
-        settledRow = updatedRows[0];
       } catch (e) {
         if (e instanceof TRPCError) throw e;
         // @ts-expect-error middleware type mismatch

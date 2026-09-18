@@ -6,7 +6,10 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { customerJourneySteps } from "../../drizzle/schema";
+import {
+  customerJourneySteps,
+  customer_journey_events,
+} from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sql, lte } from "drizzle-orm";
 import {
   validateAmount,
@@ -402,4 +405,95 @@ export const customerJourneyAnalyticsRouter = router({
     "dispute_resolution",
     "churn_prevention",
   ]),
+
+  // Raw journey events from customer_journey_events
+  listEvents: protectedProcedure
+    .input(z.object({ limit: z.number().default(100) }).optional())
+    .query(async ({ input }) => {
+      try {
+        const db = await getDb();
+        if (!db) return [];
+        const rows = await db
+          .select()
+          .from(customer_journey_events)
+          .orderBy(desc(customer_journey_events.createdAt))
+          .limit(input?.limit ?? 100);
+        return rows.map(r => ({
+          id: r.id,
+          customer_id: r.customerId,
+          event_type: r.eventType,
+          event_source: r.eventSource,
+          channel: r.channel,
+          session_id: r.sessionId,
+          device_type: r.deviceType,
+          properties: r.eventData
+            ? (() => {
+                try {
+                  return JSON.parse(r.eventData);
+                } catch {
+                  return r.eventData;
+                }
+              })()
+            : null,
+          created_at: r.createdAt?.toISOString() ?? null,
+        }));
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  // Aggregate stats across customer_journey_events + customerJourneySteps
+  getStats: protectedProcedure.query(async () => {
+    const zero = {
+      totalEvents: 0,
+      uniqueCustomers: 0,
+      conversionRate: 0,
+      avgTouchpoints: 0,
+    };
+    try {
+      const db = await getDb();
+      if (!db) return zero;
+      const [total] = await db
+        .select({ value: count() })
+        .from(customer_journey_events);
+      const uniqueRows = await db
+        .select({ customerId: customer_journey_events.customerId })
+        .from(customer_journey_events)
+        .groupBy(customer_journey_events.customerId);
+      const uniqueCustomers = uniqueRows.length;
+      const totalEvents = Number(total.value);
+      // Conversion: completed journey steps / total journey steps
+      const [stepsTotal] = await db
+        .select({ value: count() })
+        .from(customerJourneySteps);
+      const [stepsCompleted] = await db
+        .select({ value: count() })
+        .from(customerJourneySteps)
+        .where(eq(customerJourneySteps.status, "completed"));
+      const conversionRate =
+        Number(stepsTotal.value) > 0
+          ? (Number(stepsCompleted.value) / Number(stepsTotal.value)) * 100
+          : 0;
+      return {
+        totalEvents,
+        uniqueCustomers,
+        conversionRate: Math.round(conversionRate * 10) / 10,
+        avgTouchpoints:
+          uniqueCustomers > 0
+            ? Math.round((totalEvents / uniqueCustomers) * 10) / 10
+            : 0,
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }),
 });

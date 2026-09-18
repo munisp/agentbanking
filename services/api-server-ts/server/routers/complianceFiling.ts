@@ -338,4 +338,45 @@ export const complianceFilingRouter = router({
 
   filingTypes: protectedProcedure.query(() => FILING_TYPES),
   regulators: protectedProcedure.query(() => REGULATORS),
+
+  getStats: protectedProcedure.query(async () => {
+    const db = (await getDb())!;
+    if (!db) return { totalFilings: 0, submitted: 0, pending: 0, overdue: 0 };
+    const [total] = await db
+      .select({ value: count() })
+      .from(complianceFilings)
+      .limit(100);
+    const [submitted] = await db
+      .select({ value: count() })
+      .from(complianceFilings)
+      .where(eq(complianceFilings.status, "submitted"))
+      .limit(100);
+    // Pending = not yet submitted/acknowledged
+    const [pending] = await db
+      .select({ value: count() })
+      .from(complianceFilings)
+      .where(
+        sql`${complianceFilings.status} NOT IN ('submitted', 'acknowledged')`
+      )
+      .limit(100);
+    // Overdue = still unsubmitted 30+ days after creation (complianceFilings
+    // has no dueDate column; 30-day window mirrors upcomingDeadlines)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
+    const [overdue] = await db
+      .select({ value: count() })
+      .from(complianceFilings)
+      .where(
+        and(
+          lte(complianceFilings.createdAt, thirtyDaysAgo),
+          sql`${complianceFilings.status} NOT IN ('submitted', 'acknowledged')`
+        )
+      )
+      .limit(100);
+    return {
+      totalFilings: Number(total?.value ?? 0),
+      submitted: Number(submitted?.value ?? 0),
+      pending: Number(pending?.value ?? 0),
+      overdue: Number(overdue?.value ?? 0),
+    };
+  }),
 });

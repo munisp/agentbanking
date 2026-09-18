@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog, platform_health_checks } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { desc, eq, sql, and, gte, lte, count, like } from "drizzle-orm";
 import {
   validateAmount,
   validateStatusTransition,
@@ -346,6 +346,35 @@ export const dbtIntegrationRouter = router({
         .limit(input.limit);
 
       return results;
+    }),
+
+  listRuns: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ input }) => {
+      try {
+        const database = await getDb();
+        if (!database) return { runs: [], total: 0 };
+        const where = like(auditLog.action, "dbt%");
+        const runs = await database
+          .select()
+          .from(auditLog)
+          .where(where)
+          .orderBy(desc(auditLog.createdAt))
+          .limit(input.limit)
+          .offset(input.offset);
+        const [totalRow] = await database
+          .select({ total: count() })
+          .from(auditLog)
+          .where(where);
+        return { runs, total: totalRow?.total ?? 0 };
+      } catch {
+        return { runs: [], total: 0 };
+      }
     }),
 
   getProjectInfo: protectedProcedure.query(async () => {

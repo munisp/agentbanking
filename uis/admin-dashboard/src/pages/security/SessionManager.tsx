@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function SessionManager() {
-  const sessionsQ = trpc.sessionMgmt.list.useQuery({}) as any;
+  const sessionsQ = trpc.sessionMgmt.listActive.useQuery({}) as any;
   const forceLogout = trpc.sessionMgmt.forceLogout.useMutation({
     onSuccess: () => {
       sessionsQ.refetch();

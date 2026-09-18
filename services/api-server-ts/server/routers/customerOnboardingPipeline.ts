@@ -258,13 +258,25 @@ export const customerOnboardingPipelineRouter = router({
       try {
         const db = (await getDb())!;
         const userId = input.userId || ctx.user.id;
+        // Prefer persisted pipeline state (survives restarts) over the legacy
+        // in-memory derivation. Table created by migration 0062.
+        const persisted = await db.execute(
+          sql`SELECT current_stage, status FROM onboarding_pipeline_state WHERE entity_type = 'customer' AND entity_id = ${String(userId)} LIMIT 1`
+        );
+        const persistedStage = (persisted as any).rows?.[0]
+          ?.current_stage as string | undefined;
         const [user] = await db
           .select()
           .from(users)
           .where(eq(users.id, userId as any))
           .limit(1);
-        const currentStage = user ? "live" : "registration";
-        const stageIndex = STAGES.indexOf(currentStage);
+        const currentStage =
+          persistedStage && (STAGES as readonly string[]).includes(persistedStage)
+            ? persistedStage
+            : user
+              ? "live"
+              : "registration";
+        const stageIndex = STAGES.indexOf(currentStage as any);
         return {
           userId,
           currentStage,
@@ -393,9 +405,64 @@ export const customerOnboardingPipelineRouter = router({
           }
         }
 
+        // ── Persist pipeline state (migration 0062) — FAIL-CLOSED ─────────
+        // The transition is only applied when the persisted current stage
+        // matches fromStage, so retries/concurrent calls cannot fork or skip
+        // the pipeline and restarts never lose progress.
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const existing = await db.execute(
+          sql`SELECT current_stage FROM onboarding_pipeline_state WHERE entity_type = 'customer' AND entity_id = ${input.userId} LIMIT 1`
+        );
+        const existingStage = (existing as any).rows?.[0]?.current_stage as
+          | string
+          | undefined;
+        if (existingStage && existingStage !== input.fromStage) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Pipeline state conflict — persisted stage is '${existingStage}', not '${input.fromStage}'. Refresh and retry.`,
+          });
+        }
+        if (!existingStage && input.fromStage !== "registration") {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "No persisted pipeline state for this customer — cannot advance from a non-initial stage (fail-closed).",
+          });
+        }
+        const completedStages = JSON.stringify(
+          STAGES.slice(0, toIdx + 1)
+        );
+        const pipelineStatus =
+          input.toStage === "live" ? "completed" : "in_progress";
+        const upsertResult = await db.execute(sql`
+          INSERT INTO onboarding_pipeline_state
+            (tenant_id, entity_type, entity_id, current_stage, stages_completed, status, updated_by, notes, updated_at)
+          VALUES
+            (${tenantId}, 'customer', ${input.userId}, ${input.toStage}, ${completedStages}::jsonb, ${pipelineStatus}, ${String(ctx.user.id)}, ${input.notes ?? null}, NOW())
+          ON CONFLICT (entity_type, entity_id, (COALESCE(tenant_id, 0)))
+          DO UPDATE SET
+            current_stage = EXCLUDED.current_stage,
+            stages_completed = EXCLUDED.stages_completed,
+            status = EXCLUDED.status,
+            updated_by = EXCLUDED.updated_by,
+            notes = EXCLUDED.notes,
+            updated_at = NOW()
+        `);
+        if ((upsertResult as any)?.rowCount === 0) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to persist onboarding pipeline state (fail-closed)",
+          });
+        }
+
         await writeAuditLog({
-          agentId: 0,
-          agentCode: "system",
+          agentId: Number(ctx.user.id) || 0,
+          agentCode: String(
+            (ctx.user as any)?.email ??
+              (ctx.user as any)?.sub ??
+              ctx.user.id ??
+              "unknown"
+          ),
           action: "customer_onboarding_stage_advanced",
           resource: "customer_onboarding",
           resourceId: input.userId,

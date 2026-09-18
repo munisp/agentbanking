@@ -191,15 +191,37 @@ export function registerHealthEndpoints(app: Express) {
   });
 
   // Readiness — is the server ready to accept traffic?
-  app.get("/readyz", (_req, res) => {
-    if (serverReady) {
+  // Distinct from /healthz: fails (503) unless the process is up AND the
+  // database is reachable (bounded 2s probe so a hung pool can't stall the
+  // load balancer's readiness check).
+  app.get("/readyz", async (_req, res) => {
+    let dbReady = false;
+    try {
+      const { getPool } = await import("../db");
+      const pool = await getPool();
+      if (pool) {
+        await Promise.race([
+          pool.query("SELECT 1 as ok"),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("db probe timeout")), 2000)
+          ),
+        ]);
+        dbReady = true;
+      }
+    } catch {
+      dbReady = false;
+    }
+    if (serverReady && dbReady) {
       res
         .status(200)
         .json({ status: "ready", timestamp: new Date().toISOString() });
     } else {
-      res
-        .status(503)
-        .json({ status: "not_ready", timestamp: new Date().toISOString() });
+      res.status(503).json({
+        status: "not_ready",
+        serverReady,
+        database: dbReady ? "ok" : "unreachable",
+        timestamp: new Date().toISOString(),
+      });
     }
   });
 

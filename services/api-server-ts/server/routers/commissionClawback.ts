@@ -354,6 +354,50 @@ export const commissionClawbackRouter = router({
       }
     }),
 
+  reject: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = (await getDb())!;
+        const [updated] = await db
+          .update(commissionClawbacks)
+          .set({ status: "rejected" } as any)
+          .where(eq(commissionClawbacks.id, input.id))
+          .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Clawback not found",
+          });
+        await db.insert(commissionAuditTrail).values({
+          action: "clawback_rejected",
+          entityType: "clawback",
+          entityId: String(input.id),
+          performedBy: ctx.user?.name ?? "system",
+          details: JSON.stringify({
+            rejectedAt: new Date().toISOString(),
+          } as any),
+        } as any);
+        try {
+          await publishCommissionEvent({
+            eventType: "commission.clawback.rejected" as any,
+          } as any);
+        } catch (e) {
+          logger.warn(
+            `[CommissionClawback] Middleware event failed: ${e instanceof Error ? e.message : String(e)}`
+          );
+        }
+        return { success: true, message: "Clawback rejected" };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
   dispute: protectedProcedure
     .input(z.object({ id: z.number(), reason: z.string() }))
     .mutation(async ({ input, ctx }) => {

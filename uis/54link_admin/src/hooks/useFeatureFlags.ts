@@ -4,7 +4,8 @@
  * and exposes helpers to check flag state for sidebar/route gating.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { trpc } from "@/lib/trpc";
 
 export interface FeatureFlag {
   key: string;
@@ -207,48 +208,72 @@ export const FLAG_CATEGORIES = [
 ] as const;
 
 export function useFeatureFlags(): FeatureFlagState {
-  const [flags, setFlags] = useState<FeatureFlag[]>([]);
-  const [loading, setLoading] = useState(true);
   const [tenantId, setTenantId] = useState("TEN-PLATFORM-ADMIN");
 
-  const fetchFlags = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/feature-flag-engine/v1/tenant-flags");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.items) {
-          setFlags(data.items);
-          if (data.tenantId) setTenantId(data.tenantId);
-        }
-      } else {
-        // Fallback: all flags enabled for platform admin
-        setFlags(FLAG_CATEGORIES.map((cat) => ({
-          key: cat.key,
-          label: cat.label,
-          enabled: true,
-          rolloutPct: 100,
-          category: cat.key,
-          tenantId: "TEN-PLATFORM-ADMIN",
-        })));
-      }
-    } catch {
-      // Offline or unavailable: enable all for admin
-      setFlags(FLAG_CATEGORIES.map((cat) => ({
+  // Backend repair: the REST endpoint /api/feature-flag-engine/v1/tenant-flags does
+  // not exist on the api-server. Replaced with the verified tRPC procedure
+  // tenantFeatureToggle.list (services/api-server-ts/server/routers/tenantFeatureToggle.ts),
+  // which returns { items: tenant_feature_toggles rows, total }.
+  const listQuery = trpc.tenantFeatureToggle.list.useQuery(
+    { limit: 100 },
+    { retry: 1 },
+  );
+
+  const loading: boolean = listQuery.isLoading;
+
+  const flags = useMemo<FeatureFlag[]>(() => {
+    const items = (listQuery.data as any)?.items as
+      | Array<{
+          id: number;
+          tenantId: number;
+          featureKey: string;
+          enabled: boolean | null;
+          config: string | null;
+        }>
+      | undefined;
+    if (!items) {
+      if (!listQuery.isError) return [];
+      // Backend unavailable: preserve previous fallback — all flags enabled for platform admin
+      return FLAG_CATEGORIES.map((cat) => ({
         key: cat.key,
         label: cat.label,
         enabled: true,
         rolloutPct: 100,
         category: cat.key,
         tenantId: "TEN-PLATFORM-ADMIN",
-      })));
+      }));
     }
-    setLoading(false);
-  }, []);
+    return items.map((row) => {
+      let rolloutPct = row.enabled ? 100 : 0;
+      try {
+        const cfg = row.config ? JSON.parse(row.config) : null;
+        if (cfg && typeof cfg.rolloutPercentage === "number") {
+          rolloutPct = cfg.rolloutPercentage;
+        }
+      } catch {
+        // config is free-form JSON; ignore parse failures
+      }
+      const cat = FLAG_CATEGORIES.find((c) => c.key === row.featureKey);
+      return {
+        key: row.featureKey,
+        label: cat?.label ?? row.featureKey,
+        enabled: row.enabled ?? false,
+        rolloutPct,
+        category: cat?.key ?? row.featureKey,
+        tenantId: String(row.tenantId),
+      };
+    });
+  }, [listQuery.data, listQuery.isError]);
 
+  // Adopt the tenant id reported by the backend rows when available
   useEffect(() => {
-    void fetchFlags();
-  }, [fetchFlags]);
+    const first = (listQuery.data as any)?.items?.[0];
+    if (first?.tenantId != null) setTenantId(String(first.tenantId));
+  }, [listQuery.data]);
+
+  const refresh = useCallback(() => {
+    void listQuery.refetch();
+  }, [listQuery]);
 
   const isEnabled = useCallback(
     (flagKey: string) => {
@@ -260,5 +285,5 @@ export function useFeatureFlags(): FeatureFlagState {
     [flags, tenantId],
   );
 
-  return { flags, loading, tenantId, isEnabled, refresh: fetchFlags };
+  return { flags, loading, tenantId, isEnabled, refresh };
 }

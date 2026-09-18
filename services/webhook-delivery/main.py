@@ -24,7 +24,7 @@ from enum import Enum
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 
 # --- Production: Graceful Shutdown ---
@@ -56,7 +56,29 @@ atexit.register(lambda: logging.info("[shutdown] atexit handler called"))
 
 app = FastAPI(title="54agent Webhook Delivery Service", version="1.0.0")
 
-SIGNING_SECRET = os.getenv("WEBHOOK_SIGNING_SECRET", "54agent-webhook-secret-change-in-prod")
+SIGNING_SECRET = os.getenv("WEBHOOK_SIGNING_SECRET", "")
+
+INTERNAL_GATEWAY_TOKEN = os.getenv("INTERNAL_GATEWAY_TOKEN", "")
+
+
+async def require_internal_auth(request: Request) -> None:
+    """Require the internal gateway token on management/delivery endpoints.
+
+    Fail-closed: when INTERNAL_GATEWAY_TOKEN is not configured every protected
+    endpoint responds 503 instead of allowing open access.
+    """
+    if not INTERNAL_GATEWAY_TOKEN:
+        raise HTTPException(503, "service authentication not configured")
+    provided = request.headers.get("x-internal-gateway-token", "")
+    if not provided or not hmac.compare_digest(provided, INTERNAL_GATEWAY_TOKEN):
+        raise HTTPException(401, "unauthorized")
+
+
+def require_signing_secret(secret: str) -> str:
+    """Fail closed when no signing secret is configured for a delivery."""
+    if not secret:
+        raise HTTPException(503, "webhook signing secret not configured")
+    return secret
 MAX_RETRIES = int(os.getenv("WEBHOOK_MAX_RETRIES", "5"))
 BACKOFF_BASE = int(os.getenv("WEBHOOK_BACKOFF_BASE_SECONDS", "5"))
 
@@ -172,14 +194,14 @@ async def deliver_webhook(record: DeliveryRecord, endpoint_secret: str) -> Deliv
     return record
 
 
-@app.post("/endpoints/register")
+@app.post("/endpoints/register", dependencies=[Depends(require_internal_auth)])
 async def register_endpoint(reg: WebhookRegistration):
     endpoint_id = str(uuid.uuid4())
     endpoints[endpoint_id] = {
         "id": endpoint_id,
         "url": reg.endpoint_url,
         "events": reg.events,
-        "secret": reg.secret or SIGNING_SECRET,
+        "secret": reg.secret or SIGNING_SECRET,  # empty global secret is rejected at delivery time
         "description": reg.description,
         "rate_limit": reg.rate_limit,
         "active": reg.active,
@@ -190,12 +212,13 @@ async def register_endpoint(reg: WebhookRegistration):
     return {"id": endpoint_id, "message": "endpoint registered"}
 
 
-@app.get("/endpoints")
+@app.get("/endpoints", dependencies=[Depends(require_internal_auth)])
 async def list_endpoints():
-    return {"endpoints": list(endpoints.values()), "count": len(endpoints)}
+    redacted = [{**ep, "secret": "***redacted***"} for ep in endpoints.values()]
+    return {"endpoints": redacted, "count": len(endpoints)}
 
 
-@app.delete("/endpoints/{endpoint_id}")
+@app.delete("/endpoints/{endpoint_id}", dependencies=[Depends(require_internal_auth)])
 async def remove_endpoint(endpoint_id: str):
     if endpoint_id not in endpoints:
         raise HTTPException(404, "endpoint not found")
@@ -203,7 +226,7 @@ async def remove_endpoint(endpoint_id: str):
     return {"message": "endpoint removed"}
 
 
-@app.post("/deliver")
+@app.post("/deliver", dependencies=[Depends(require_internal_auth)])
 async def deliver(payload: WebhookPayload):
     """Deliver a webhook to all registered endpoints matching the event type."""
     matching = [
@@ -227,7 +250,7 @@ async def deliver(payload: WebhookPayload):
             signature="",
             created_at=datetime.now(timezone.utc).isoformat(),
         )
-        result = await deliver_webhook(record, ep.get("secret", SIGNING_SECRET))
+        result = await deliver_webhook(record, require_signing_secret(ep.get("secret", SIGNING_SECRET)))
         ep["delivery_count"] = ep.get("delivery_count", 0) + 1
         if result.status in (DeliveryStatus.FAILED, DeliveryStatus.DLQ):
             ep["failure_count"] = ep.get("failure_count", 0) + 1
@@ -241,7 +264,7 @@ async def deliver(payload: WebhookPayload):
     return {"delivered": len(results), "results": results}
 
 
-@app.get("/deliveries")
+@app.get("/deliveries", dependencies=[Depends(require_internal_auth)])
 async def list_deliveries(status: Optional[str] = None, limit: int = 50):
     items = list(deliveries.values())
     if status:
@@ -250,38 +273,38 @@ async def list_deliveries(status: Optional[str] = None, limit: int = 50):
     return {"deliveries": [d.model_dump() for d in items[:limit]], "total": len(items)}
 
 
-@app.get("/deliveries/{delivery_id}")
+@app.get("/deliveries/{delivery_id}", dependencies=[Depends(require_internal_auth)])
 async def get_delivery(delivery_id: str):
     if delivery_id not in deliveries:
         raise HTTPException(404, "delivery not found")
     return deliveries[delivery_id].model_dump()
 
 
-@app.post("/deliveries/{delivery_id}/retry")
+@app.post("/deliveries/{delivery_id}/retry", dependencies=[Depends(require_internal_auth)])
 async def retry_delivery(delivery_id: str):
     if delivery_id not in deliveries:
         raise HTTPException(404, "delivery not found")
     record = deliveries[delivery_id]
     record.status = DeliveryStatus.PENDING
     ep = next((e for e in endpoints.values() if e["url"] == record.endpoint_url), None)
-    secret = ep.get("secret", SIGNING_SECRET) if ep else SIGNING_SECRET
+    secret = require_signing_secret(ep.get("secret", SIGNING_SECRET) if ep else SIGNING_SECRET)
     result = await deliver_webhook(record, secret)
     return result.model_dump()
 
 
-@app.get("/dlq")
+@app.get("/dlq", dependencies=[Depends(require_internal_auth)])
 async def list_dlq(limit: int = 50):
     return {"dead_letters": [d.model_dump() for d in dlq[-limit:]], "total": len(dlq)}
 
 
-@app.post("/dlq/replay")
+@app.post("/dlq/replay", dependencies=[Depends(require_internal_auth)])
 async def replay_dlq():
     replayed = 0
     for record in list(dlq):
         record.attempts = 0
         record.status = DeliveryStatus.PENDING
         ep = next((e for e in endpoints.values() if e["url"] == record.endpoint_url), None)
-        secret = ep.get("secret", SIGNING_SECRET) if ep else SIGNING_SECRET
+        secret = require_signing_secret(ep.get("secret", SIGNING_SECRET) if ep else SIGNING_SECRET)
         await deliver_webhook(record, secret)
         replayed += 1
     dlq.clear()

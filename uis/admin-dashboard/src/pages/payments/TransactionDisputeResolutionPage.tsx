@@ -24,7 +24,7 @@ export default function TransactionDisputeResolutionPage() {
     onSuccess: () => toast.success("Dispute resolved"),
   }) as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const escalateMut = trpc.transactionDisputeResolution.escalate.useMutation({
+  const escalateMut = trpc.disputeWorkflowEngine.escalate.useMutation({
     onSuccess: () => toast.success("Dispute escalated"),
   }) as any;
   const disputes = (data?.disputes || []).filter(
@@ -132,7 +132,7 @@ export default function TransactionDisputeResolutionPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => escalateMut.mutate({ id: d.id })}
+                          onClick={() => escalateMut.mutate({ disputeId: d.id, level: "high", reason: "Escalated from Transaction Dispute Resolution console" })}
                         >
                           Escalate
                         </Button>

@@ -9,7 +9,7 @@ import { trpc } from "@/lib/trpc";
 export default function AutomatedComplianceChecker() {
   const [tab, setTab] = useState("overview");
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data: _liveData } = trpc.automatedComplianceChecker.list.useQuery(
+  const { data: _liveData } = trpc.automatedComplianceChecker.listRules.useQuery(
     undefined,
     { retry: 1 }
   );

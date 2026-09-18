@@ -46,6 +46,13 @@ func main() {
         w.Write([]byte(`{"status": "healthy", "service": "gateway-service"}`))
     })
 
+    // Readiness — distinct from /health. gateway-service has no external
+    // datastore dependencies, so readiness == server initialized and serving.
+    http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte(`{"status": "ready", "service": "gateway-service"}`))
+    })
+
     // Prometheus metrics endpoint (canonical cross-language contract).
     http.Handle("/metrics", promhttp.Handler())
 

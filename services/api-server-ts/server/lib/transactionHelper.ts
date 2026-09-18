@@ -43,6 +43,20 @@ export async function withTransaction<T>(
 }
 
 /**
+ * Transactional outbox integration: emit a domain event atomically with the
+ * business write by calling writeToOutboxTx with the same `tx` handle inside
+ * withTransaction. The event row (migrations/0058_outbox_events.sql) commits
+ * or rolls back with the operation and is published to Kafka asynchronously
+ * by pollAndPublishOutbox with bounded retry + dead-lettering.
+ *
+ *   await withTransaction(async (tx) => {
+ *     ...business writes...
+ *     await writeToOutboxTx(tx, "agent", agentId, "pos.agents.registered", {...});
+ *   });
+ */
+export { writeToOutboxTx } from "../middleware/transactionalOutbox";
+
+/**
  * Idempotency key store — prevents duplicate financial operations.
  *
  * FF-7 hardening (claim-first, payload-bound, fail-closed):

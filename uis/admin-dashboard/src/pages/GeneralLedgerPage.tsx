@@ -29,11 +29,11 @@ export default function GeneralLedgerPage() {
 
   const entriesQuery = trpc.generalLedger.listEntries.useQuery({ limit: 200 });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const accountsQuery = trpc.generalLedger.listAccounts.useQuery({
+  const accountsQuery = trpc.generalLedger.chartOfAccounts.useQuery({
     limit: 100,
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const trialBalanceQuery = trpc.generalLedger.getTrialBalance.useQuery();
+  const trialBalanceQuery = trpc.generalLedger.trialBalance.useQuery();
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.generalLedger.getStats.useQuery();
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
@@ -292,7 +292,7 @@ export default function GeneralLedgerPage() {
                       </td>
                     </tr>
                   ))
-                : (trialBalanceQuery.data ?? []).map((tb: any, idx: number) => (
+                : (trialBalanceQuery.data?.accounts ?? []).map((tb: any, idx: number) => (
                     <tr key={idx} className="border-b border-zinc-700/30">
                       <td className="p-4 text-white">
                         {tb.account_name || tb.account_code}
@@ -313,7 +313,7 @@ export default function GeneralLedgerPage() {
                 <td className="p-4 text-white">TOTAL</td>
                 <td className="p-4 text-right text-emerald-400">
                   ₦
-                  {(trialBalanceQuery.data ?? [])
+                  {(trialBalanceQuery.data?.accounts ?? [])
                     .reduce(
                       (s: number, tb: any) => s + Number(tb.debit_balance || 0),
                       0
@@ -322,7 +322,7 @@ export default function GeneralLedgerPage() {
                 </td>
                 <td className="p-4 text-right text-red-400">
                   ₦
-                  {(trialBalanceQuery.data ?? [])
+                  {(trialBalanceQuery.data?.accounts ?? [])
                     .reduce(
                       (s: number, tb: any) =>
                         s + Number(tb.credit_balance || 0),

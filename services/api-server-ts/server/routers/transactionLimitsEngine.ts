@@ -220,22 +220,7 @@ const _transactionLimitsEngine_db = {
   },
 };
 
-export const transactionLimitsEngineRouter = router({
-  getStats: protectedProcedure.query(async () => {
-    const db = await getDb();
-    if (!db) return { totalLimits: 0, activeLimits: 0, breachesToday: 0 };
-    const rows = await db
-      .select()
-      .from(systemConfig)
-      .where(sql`${systemConfig.key} LIKE 'tx_limit_%'`)
-      .limit(100);
-    return {
-      totalLimits: rows.length,
-      activeLimits: rows.length,
-      breachesToday: 0,
-    };
-  }),
-  listLimits: protectedProcedure
+const listLimitsProc = protectedProcedure
     .input(z.object({ limit: z.number().default(20) }).optional())
     .query(async ({ input }) => {
       try {
@@ -261,7 +246,11 @@ export const transactionLimitsEngineRouter = router({
             error instanceof Error ? error.message : "Internal server error",
         });
       }
-    }),
+    });
+
+export const transactionLimitsEngineRouter = router({
+  listLimits: listLimitsProc,
+  list: listLimitsProc, // alias of listLimits (broken-call fix)
   checkLimit: protectedProcedure
     .input(
       z.object({

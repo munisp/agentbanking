@@ -1,5 +1,5 @@
-import { uuid4 } from "@temporalio/workflow";
 import { asyncHandler } from "../../middlewares/async";
+import { deterministicWorkflowId } from "../../utils/deterministicWorkflowId";
 import { workflowRunner } from "../../utils/workflowRunner";
 import { validateRequest } from "../../validations";
 import { createCustomerWorkflow } from "../../workflows/createCustomerWorkflow";
@@ -19,7 +19,14 @@ export const postCreateCustomer = asyncHandler(async (req, res) => {
 
   const verification = await workflowRunner(createCustomerWorkflow, {
     args: { ...payload, tenantId, keycloakRealm, keycloakPublicKey },
-    workflowId: `54agent_create_customer_${tenantId}_${payload.email}_${uuid4()}`,
+    // Deterministic workflowId — retries resume the same workflow instead of
+    // duplicating customer creation.
+    workflowId: deterministicWorkflowId(
+      "54agent_create_customer",
+      tenantId,
+      "customer",
+      payload.email,
+    ),
     defaultErrorMessage: "Create customer failed.",
     withTimeOut: 40000,
     timeOutFn: () => {

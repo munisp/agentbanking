@@ -313,4 +313,59 @@ export const regulatoryComplianceChecksRouter = router({
 
       return results;
     }),
+  runCheck: protectedProcedure
+    .input(
+      z
+        .object({
+          checkType: z.string().optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
+      const where = input?.checkType
+        ? eq(complianceChecks.checkType, input.checkType)
+        : undefined;
+      // Aggregate real compliance check outcomes grouped by result.
+      const byResult = await database
+        .select({
+          result: complianceChecks.result,
+          value: count(),
+        })
+        .from(complianceChecks)
+        .where(where)
+        .groupBy(complianceChecks.result);
+      const byType = await database
+        .select({
+          checkType: complianceChecks.checkType,
+          value: count(),
+        })
+        .from(complianceChecks)
+        .where(where)
+        .groupBy(complianceChecks.checkType);
+      const tally = (rows: { result: string; value: number }[]): number =>
+        rows.reduce((acc: number, r: { result: string; value: number }) => acc + Number(r.value ?? 0), 0);
+      const countFor = (rows: { result: string; value: number }[], key: string): number =>
+        Number(rows.find((r: { result: string; value: number }) => r.result === key)?.value ?? 0);
+      const total = tally(byResult);
+      const passed = countFor(byResult, "pass");
+      const failed = countFor(byResult, "fail");
+      const flagged = countFor(byResult, "flag");
+      return {
+        checkType: input?.checkType ?? "all",
+        total,
+        passed,
+        failed,
+        flagged,
+        passRate: total > 0 ? parseFloat(((passed / total) * 100).toFixed(2)) : 100,
+        byResult,
+        byType,
+        ranAt: new Date().toISOString(),
+      };
+    }),
 });

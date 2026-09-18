@@ -414,6 +414,7 @@ export const bulkTransactionProcessorRouter = router({
   uploadBatch,
   getBatchStatus,
   listBatches,
+  list: listBatches, // alias of listBatches (broken-call fix)
   getBatchResults,
   downloadTemplate,
   cancelBatch,

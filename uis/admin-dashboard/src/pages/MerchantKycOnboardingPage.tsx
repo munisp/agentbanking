@@ -34,7 +34,7 @@ export default function MerchantKycOnboardingPage() {
   });
 
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const docsQuery = trpc.merchantKycOnboarding.listDocuments.useQuery({
+  const docsQuery = trpc.merchantKycOnboarding.listDocs.useQuery({
     limit: 100,
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
@@ -65,7 +65,7 @@ export default function MerchantKycOnboardingPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const docs = (docsQuery.data ?? []).filter((d: any) => {
+  const docs = (docsQuery.data?.items ?? []).filter((d: any) => {
     if (
       search &&
       !d.doc_type?.toLowerCase().includes(search.toLowerCase()) &&

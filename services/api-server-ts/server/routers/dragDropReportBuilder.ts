@@ -4,7 +4,6 @@ import { getDb, writeAuditLog } from "../db";
 import { eq, desc, sql, count, and, gte, lte } from "drizzle-orm";
 import { biReportDefinitions, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
-import { validateInput } from "../lib/routerHelpers";
 
 import {
   validateAmount,

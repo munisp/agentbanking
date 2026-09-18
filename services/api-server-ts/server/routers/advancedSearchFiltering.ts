@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog, transactions } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { desc, eq, sql, and, or, ilike, gte, lte, count } from "drizzle-orm";
 import {
   calculateFee,
   calculateCommission,
@@ -343,4 +343,68 @@ export const advancedSearchFilteringRouter = router({
       };
     }
   }),
+  globalSearch: protectedProcedure
+    .input(
+      z
+        .object({
+          query: z.string().optional(),
+          q: z.string().optional(),
+          page: z.number().min(1).default(1),
+          limit: z.number().min(1).max(100).default(10),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database)
+        return { transactions: [], auditLog: [], total: 0, page: 1, limit: 0 };
+      const page = input?.page ?? 1;
+      const limit = input?.limit ?? 10;
+      const offset = (page - 1) * limit;
+      const term = (input?.query ?? input?.q ?? "").trim();
+      const pattern = `%${term}%`;
+      const txWhere = term
+        ? or(
+            ilike(transactions.ref, pattern),
+            ilike(transactions.customerName, pattern),
+            ilike(transactions.customerPhone, pattern)
+          )
+        : undefined;
+      const logWhere = term
+        ? or(
+            ilike(auditLog.action, pattern),
+            ilike(auditLog.resource, pattern),
+            ilike(auditLog.agentCode, pattern)
+          )
+        : undefined;
+      const txRows = await database
+        .select()
+        .from(transactions)
+        .where(txWhere)
+        .orderBy(desc(transactions.id))
+        .limit(limit)
+        .offset(offset);
+      const logRows = await database
+        .select()
+        .from(auditLog)
+        .where(logWhere)
+        .orderBy(desc(auditLog.id))
+        .limit(limit)
+        .offset(offset);
+      const [txTotal] = await database
+        .select({ value: count() })
+        .from(transactions)
+        .where(txWhere);
+      const [logTotal] = await database
+        .select({ value: count() })
+        .from(auditLog)
+        .where(logWhere);
+      return {
+        transactions: txRows,
+        auditLog: logRows,
+        total: Number(txTotal?.value ?? 0) + Number(logTotal?.value ?? 0),
+        page,
+        limit,
+      };
+    }),
 });

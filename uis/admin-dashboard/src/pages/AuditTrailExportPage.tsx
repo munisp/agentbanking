@@ -10,14 +10,14 @@ export default function AuditTrailExportPage() {
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } = trpc.auditTrailExport.list.useQuery() as any;
+  const { data, isLoading } = trpc.auditTrailExport.history.useQuery() as any;
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const exportMut = trpc.auditTrailExport.export.useMutation({
     onSuccess: (d: any) => {
       toast.success(`Export ready: ${d?.filename || "audit_export.csv"}`);
     },
   }) as any;
-  const entries = (data?.entries || []).filter(
+  const entries = (data?.items || []).filter(
     (e: any) =>
       !search ||
       e.action?.toLowerCase().includes(search.toLowerCase()) ||

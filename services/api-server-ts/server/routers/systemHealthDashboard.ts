@@ -351,4 +351,43 @@ export const systemHealthDashboardRouter = router({
         procedure: "latency",
       };
     }),
+
+  // Latest platform_health_checks row per service
+  getHealth: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { services: [], overall: "unknown", checkedAt: null };
+    const rows = await db
+      .select()
+      .from(platform_health_checks)
+      .orderBy(desc(platform_health_checks.checkedAt))
+      .limit(500);
+    const latestByService = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      if (!latestByService.has(row.serviceName))
+        latestByService.set(row.serviceName, row);
+    }
+    const services = Array.from(latestByService.values()).map(r => ({
+      id: r.id,
+      name: r.serviceName,
+      checkType: r.checkType,
+      status: r.status,
+      responseTime: r.responseTime,
+      statusCode: r.statusCode,
+      message: r.message,
+      checkedAt: r.checkedAt,
+    }));
+    const overall =
+      services.length === 0
+        ? "unknown"
+        : services.some(s => s.status === "down")
+          ? "down"
+          : services.some(s => s.status === "degraded")
+            ? "degraded"
+            : "healthy";
+    return {
+      services,
+      overall,
+      checkedAt: services[0]?.checkedAt ?? null,
+    };
+  }),
 });

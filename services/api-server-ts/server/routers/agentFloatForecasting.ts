@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agents } from "../../drizzle/schema";
+import { agents, floatTopUpRequests, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import {
   calculateFee,
@@ -326,4 +326,114 @@ export const agentFloatForecastingRouter = router({
       avgAccuracy: 0,
     };
   }),
+  getForecast: protectedProcedure
+    .input(
+      z
+        .object({
+          days: z.number().min(1).max(90).default(7),
+          limit: z.number().min(1).max(200).default(50),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return { forecasts: [], horizonDays: input?.days ?? 7 };
+      const days = input?.days ?? 7;
+      const since = new Date();
+      since.setDate(since.getDate() - days);
+      const agentRows = await database
+        .select()
+        .from(agents)
+        .where(eq(agents.isActive, true))
+        .limit(input?.limit ?? 50);
+      // Aggregate observed outflow per agent over the lookback window.
+      const flowRows = await database
+        .select({
+          agentId: transactions.agentId,
+          totalVolume: sql<string>`COALESCE(SUM(${transactions.amount}), 0)`,
+          txCount: count(),
+        })
+        .from(transactions)
+        .where(gte(transactions.createdAt, since))
+        .groupBy(transactions.agentId);
+      const flowByAgent = new Map<number, { total: number; count: number }>();
+      for (const fr of flowRows) {
+        flowByAgent.set(Number(fr.agentId), {
+          total: Number(fr.totalVolume ?? 0),
+          count: Number(fr.txCount ?? 0),
+        });
+      }
+      const forecasts = agentRows.map((a: typeof agents.$inferSelect) => {
+        const flow = flowByAgent.get(a.id) ?? { total: 0, count: 0 };
+        const avgDailyOutflow = days > 0 ? flow.total / days : 0;
+        const floatBalance = Number(a.floatBalance ?? 0);
+        const floatLimit = Number(a.floatLimit ?? 0);
+        const daysUntilDepletion =
+          avgDailyOutflow > 0
+            ? Math.max(0, Math.floor(floatBalance / avgDailyOutflow))
+            : null;
+        const projectedBalance = Math.max(
+          0,
+          floatBalance - avgDailyOutflow * days
+        );
+        const recommendedTopUp =
+          avgDailyOutflow > 0 && projectedBalance < floatLimit * 0.2
+            ? Math.ceil(floatLimit - projectedBalance)
+            : 0;
+        return {
+          agentId: a.id,
+          agentCode: a.agentCode,
+          agentName: a.name,
+          floatBalance,
+          floatLimit,
+          avgDailyOutflow: parseFloat(avgDailyOutflow.toFixed(2)),
+          observedTxCount: flow.count,
+          daysUntilDepletion,
+          projectedBalance: parseFloat(projectedBalance.toFixed(2)),
+          recommendedTopUp,
+          replenishmentNeeded: recommendedTopUp > 0,
+        };
+      });
+      return { forecasts, horizonDays: days };
+    }),
+
+  triggerReplenishment: protectedProcedure
+    .input(
+      z.object({
+        agentId: z.number(),
+        amount: z.number().positive(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
+      const [agent] = await database
+        .select()
+        .from(agents)
+        .where(eq(agents.id, input.agentId))
+        .limit(1);
+      if (!agent)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+      const inserted = await database
+        .insert(floatTopUpRequests)
+        .values({
+          agentId: input.agentId,
+          requestedAmount: input.amount.toFixed(2),
+          status: "pending",
+          notes:
+            input.notes ??
+            `Auto-triggered by float forecasting (requested by user ${ctx.user.id})`,
+        })
+        .returning();
+      logOperation("triggerReplenishment", {
+        agentId: input.agentId,
+        amount: input.amount,
+      });
+      return { success: true, topUpRequest: inserted[0] ?? null };
+    }),
 });

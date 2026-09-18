@@ -187,13 +187,18 @@ class InstantReversalEngine:
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
+                # Real gateway endpoint: POST /api/v1/payments/refund
+                # (payment-gateway-service/routers/payment_router.py) with the
+                # RefundInitiateRequest shape: transaction_id / amount / reason /
+                # metadata. The previous /api/v1/transactions/reverse path does
+                # not exist on the gateway.
                 response = await client.post(
-                    f"{gateway_url}/api/v1/transactions/reverse",
+                    f"{gateway_url}/api/v1/payments/refund",
                     json={
                         "transaction_id": str(reversal.original_transaction_id),
                         "amount": float(reversal.amount),
                         "reason": reversal.reversal_reason,
-                        "reversal_id": str(reversal.id),
+                        "metadata": {"reversal_id": str(reversal.id)},
                     },
                     headers={
                         "Authorization": f"Bearer {settings.GATEWAY_API_KEY}",
@@ -205,7 +210,8 @@ class InstantReversalEngine:
                     return {
                         "success": True,
                         "bank_reference": data.get("bank_reference"),
-                        "reversal_reference": data.get("reversal_reference"),
+                        # RefundInitiateResponse carries the reference as refund_id
+                        "reversal_reference": data.get("refund_id") or data.get("reversal_reference"),
                     }
                 else:
                     return {

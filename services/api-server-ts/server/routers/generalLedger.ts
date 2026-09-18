@@ -6,7 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { glEntries } from "../../drizzle/schema";
+import { glEntries, gl_accounts } from "../../drizzle/schema";
 import { eq, desc, and, gte, lte, count, sum, sql } from "drizzle-orm";
 import {
   validateAmount,
@@ -370,4 +370,41 @@ export const generalLedgerRouter = router({
 
   chartOfAccounts: protectedProcedure.query(() => GL_ACCOUNTS),
   accountTypes: protectedProcedure.query(() => ACCOUNT_TYPES),
+
+  getStats: protectedProcedure.query(async () => {
+    try {
+      const db = (await getDb())!;
+      if (!db)
+        return {
+          totalEntries: 0,
+          totalDebits: "0",
+          totalCredits: "0",
+          totalAccounts: 0,
+        };
+      const [totals] = await db
+        .select({
+          totalEntries: count(),
+          totalDebits: sql<string>`COALESCE(SUM(CASE WHEN ${glEntries.entryType} = 'debit' THEN CAST(${glEntries.amount} AS NUMERIC) ELSE 0 END), 0)`,
+          totalCredits: sql<string>`COALESCE(SUM(CASE WHEN ${glEntries.entryType} = 'credit' THEN CAST(${glEntries.amount} AS NUMERIC) ELSE 0 END), 0)`,
+        })
+        .from(glEntries);
+      const [accounts] = await db
+        .select({ value: count() })
+        .from(gl_accounts)
+        .limit(100);
+      return {
+        totalEntries: totals?.totalEntries ?? 0,
+        totalDebits: totals?.totalDebits ?? "0",
+        totalCredits: totals?.totalCredits ?? "0",
+        totalAccounts: Number(accounts?.value ?? 0),
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }),
 });

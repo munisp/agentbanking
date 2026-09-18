@@ -87,8 +87,17 @@ export function tenantScopeMiddleware({
     });
   }
 
-  // Resolve tenant from user mapping
-  const tenantId = getUserTenantId(ctx.user.keycloakSub) || "tenant-default";
+  // Resolve tenant from user mapping — fail closed: an authenticated user
+  // without an explicit tenant mapping is denied. No silent "tenant-default"
+  // fallback (that would cross tenant isolation boundaries).
+  const mappedTenantId = getUserTenantId(ctx.user.keycloakSub);
+  if (!mappedTenantId) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "User is not assigned to a tenant",
+    });
+  }
+  const tenantId = mappedTenantId;
   const tenant = tenantRegistry.get(tenantId);
 
   if (!tenant) {

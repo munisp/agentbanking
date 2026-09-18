@@ -289,6 +289,38 @@ export const realtimeTxMonitorRouter = router({
       }
     }),
 
+  // Dismiss a velocity/monitoring alert (no `resolution` column on txMonitoringAlerts)
+  dismissAlert: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) throw new Error("Database unavailable");
+        const [updated] = await db
+          .update(txMonitoringAlerts)
+          .set({
+            resolved: true,
+            resolvedBy: ctx.user?.id,
+            resolvedAt: new Date(),
+          })
+          .where(eq(txMonitoringAlerts.id, input.id))
+          .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Alert not found",
+          });
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
   // Geographic distribution of transactions
   geoDistribution: protectedProcedure
     .input(z.object({ period: z.enum(["24h", "7d", "30d"]).default("7d") }))

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import AdminWorkspaceLayout from "@/components/AdminWorkspaceLayout";
+import { trpc } from "@/lib/trpc";
 import {
   approveCustomerApprovalRequest,
   formatCurrency,
@@ -191,6 +192,7 @@ export function AdminFeatureFlagsPage() {
   const [tenantFlags, setTenantFlags] = useState<Record<string, Record<string, boolean>>>({});
   const [brandingDrafts, setBrandingDrafts] = useState<Record<string, { displayName: string; primaryColor: string; accentColor: string; customDomain: string }>>({});
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const trpcUtils = trpc.useUtils();
 
   useEffect(() => {
     if (!selectedTenantId && tenants.length) {
@@ -270,14 +272,22 @@ export function AdminFeatureFlagsPage() {
   async function syncFeatureFlag(tenantId: string, flagKey: string, enabled: boolean) {
     try {
       setSyncStatus(`Syncing ${flagKey} to recovered tenant governance…`);
-      const response = await fetch(`/api/db/tenant-feature-flags/${encodeURIComponent(flagKey)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled, rolloutPct: enabled ? 100 : 0 }),
+      // Backend repair: /api/db/tenant-feature-flags/* does not exist. Use the verified
+      // tRPC procedures tenantFeatureToggle.list / .update (server/routers/tenantFeatureToggle.ts).
+      // The legacy endpoint keyed flags by name, so resolve the toggle id by featureName first.
+      const list = await trpcUtils.tenantFeatureToggle.list.fetch({
+        featureName: flagKey,
+        limit: 1,
       });
-      if (!response.ok) {
-        throw new Error(`Feature sync failed with status ${response.status}`);
+      const toggle = list?.items?.[0];
+      if (!toggle) {
+        throw new Error(`No tenant feature toggle found for ${flagKey}`);
       }
+      await trpcUtils.tenantFeatureToggle.update.mutate({
+        toggleId: toggle.id,
+        enabled,
+        rolloutPercentage: enabled ? 100 : 0,
+      });
       setSyncStatus(`Recovered backend saved ${flagKey} for ${tenantId}.`);
     } catch {
       setSyncStatus(`Unable to persist ${flagKey} to the backend for ${tenantId}. Refresh before assuming the change is saved.`);
@@ -290,7 +300,7 @@ export function AdminFeatureFlagsPage() {
   ) {
     try {
       setSyncStatus(`Syncing white-label branding for ${tenantId}…`);
-      const response = await fetch(`/api/db/tenants/${encodeURIComponent(tenantId)}`, {
+      const response = await fetch(`/api/v1/tenants/${encodeURIComponent(tenantId)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(draft),

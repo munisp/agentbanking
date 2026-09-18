@@ -2,7 +2,12 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, count, and, sql, gte, lte, desc } from "drizzle-orm";
-import { geofenceZones } from "../../drizzle/schema";
+import {
+  geofenceZones,
+  complianceReports,
+  deviceLocations,
+  auditLog,
+} from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -395,6 +400,93 @@ export const geoFencingRouter = router({
       total: zones.length,
     };
   }),
+
+  updateZone: protectedProcedure
+    .input(
+      z.object({
+        id: z.union([z.string(), z.number()]),
+        isActive: z.boolean().optional(),
+        name: z.string().optional(),
+        type: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — zone not updated",
+        });
+      const zoneId = Number(input.id);
+      if (!Number.isFinite(zoneId))
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Invalid zone id",
+        });
+      const setObj: Record<string, unknown> = { updatedAt: new Date() };
+      if (input.isActive !== undefined) setObj.isActive = input.isActive;
+      if (input.name !== undefined) setObj.name = input.name;
+      if (input.type !== undefined) setObj.type = input.type;
+      const [updated] = await db
+        .update(geofenceZones)
+        .set(setObj)
+        .where(eq(geofenceZones.id, zoneId))
+        .returning();
+      if (!updated)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Zone ${input.id} not found`,
+        });
+      await db.insert(auditLog).values({
+        action: "geofence_zone_updated",
+        resource: "geofence_zones",
+        resourceId: String(zoneId),
+        status: "success",
+        metadata: { isActive: input.isActive, name: input.name },
+      });
+      return { success: true, id: String(zoneId), zone: updated };
+    }),
+
+  listComplianceReports: protectedProcedure
+    .input(z.object({ limit: z.number().default(12) }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db
+        .select()
+        .from(complianceReports)
+        .orderBy(desc(complianceReports.createdAt))
+        .limit(input?.limit ?? 12);
+      return rows;
+    }),
+
+  getLocationHistory: protectedProcedure
+    .input(
+      z.object({
+        deviceId: z.number(),
+        limit: z.number().default(50),
+      })
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db
+        .select()
+        .from(deviceLocations)
+        .where(eq(deviceLocations.deviceId, input.deviceId))
+        .orderBy(desc(deviceLocations.createdAt))
+        .limit(input?.limit ?? 50);
+      return rows.map(r => ({
+        id: r.id,
+        deviceId: r.deviceId,
+        recordedAt: (r.reportedAt ?? r.createdAt)?.toISOString() ?? null,
+        latitude: r.latitude ?? r.lat,
+        longitude: r.longitude ?? r.lng,
+        accuracy: r.accuracy,
+        withinZone: r.withinZone,
+        source: r.source,
+      }));
+    }),
 });
 
 /** Haversine distance in km between two lat/lng points */

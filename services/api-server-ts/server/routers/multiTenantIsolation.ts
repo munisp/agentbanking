@@ -153,7 +153,7 @@ const _txPatterns = {
     typeof withTransaction === "function"
       ? (withTransaction as Function)(...args)
       : Promise.resolve(args),
-  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+  atomicBatch: async <T,>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
       for (const op of ops) results.push(await op());
@@ -162,8 +162,7 @@ const _txPatterns = {
   },
 };
 
-export const multiTenantIsolationRouter = router({
-  listTenants: adminProcedure
+const listTenantsProc = adminProcedure
     .input(z.object({ limit: z.number().default(50) }).optional())
     .query(async ({ input }) => {
       try {
@@ -182,7 +181,11 @@ export const multiTenantIsolationRouter = router({
             error instanceof Error ? error.message : "Internal server error",
         });
       }
-    }),
+    });
+
+export const multiTenantIsolationRouter = router({
+  listTenants: listTenantsProc,
+  list: listTenantsProc, // alias of listTenants (broken-call fix)
   getTenant: adminProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {

@@ -13,8 +13,9 @@ import {
   lte,
   or,
   asc,
+  like,
 } from "drizzle-orm";
-import { notification_logs, auditLog } from "../../drizzle/schema";
+import { notification_logs, auditLog, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -359,4 +360,188 @@ export const alertNotificationsRouter = router({
       value: input.value,
       updated: true,
     })),
+
+  // Escalation rules persisted as JSON values in systemConfig under
+  // keys `alert_escalation_rule_<ruleId>`.
+  listEscalationRules: protectedProcedure.query(async () => {
+    try {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db
+        .select()
+        .from(systemConfig)
+        .where(like(systemConfig.key, "alert_escalation_rule_%"))
+        .orderBy(asc(systemConfig.key))
+        .limit(100);
+      return rows.map(row => {
+        let parsed: Record<string, unknown> = {};
+        try {
+          parsed = JSON.parse(String(row.value ?? "{}"));
+        } catch {
+          parsed = {};
+        }
+        return {
+          id: row.key.replace(/^alert_escalation_rule_/, ""),
+          name: typeof parsed.name === "string" ? parsed.name : row.key,
+          triggerAfterMinutes:
+            typeof parsed.triggerAfterMinutes === "number"
+              ? parsed.triggerAfterMinutes
+              : 0,
+          enabled: parsed.enabled !== false,
+          fromSeverity:
+            typeof parsed.fromSeverity === "string"
+              ? parsed.fromSeverity
+              : "warning",
+          escalateToSeverity:
+            typeof parsed.escalateToSeverity === "string"
+              ? parsed.escalateToSeverity
+              : "critical",
+          notifyAdditionalRecipients: Array.isArray(
+            parsed.notifyAdditionalRecipients
+          )
+            ? (parsed.notifyAdditionalRecipients as string[])
+            : [],
+          description: row.description,
+          updatedAt: row.updatedAt,
+        };
+      });
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }),
+
+  getDeliveryHistory: protectedProcedure
+    .input(z.object({ limit: z.number().default(20) }).optional())
+    .query(async ({ input }) => {
+      try {
+        const db = await getDb();
+        if (!db) return { records: [], total: 0 };
+        const rows = await db
+          .select()
+          .from(notification_logs)
+          .orderBy(desc(notification_logs.createdAt))
+          .limit(input?.limit ?? 20);
+        const records = rows.map(r => ({
+          id: r.id,
+          channel: r.channelId != null ? String(r.channelId) : "in_app",
+          messagePreview:
+            (r.subject ? `${r.subject} — ` : "") + (r.body ?? "").slice(0, 120),
+          recipientAddress: r.recipientId,
+          status: r.status,
+          sentAt: (r.sentAt ?? r.createdAt)?.toISOString() ?? null,
+          deliveredAt: r.deliveredAt?.toISOString() ?? null,
+          failureReason: r.failureReason,
+        }));
+        return { records, total: records.length };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  updateEscalationRule: protectedProcedure
+    .input(z.object({ ruleId: z.string(), enabled: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = await getDb();
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database unavailable",
+          });
+        const key = `alert_escalation_rule_${input.ruleId}`;
+        const [existing] = await db
+          .select()
+          .from(systemConfig)
+          .where(eq(systemConfig.key, key))
+          .limit(1);
+        if (!existing)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `Escalation rule ${input.ruleId} not found`,
+          });
+        let parsed: Record<string, unknown> = {};
+        try {
+          parsed = JSON.parse(String(existing.value ?? "{}"));
+        } catch {
+          parsed = {};
+        }
+        parsed.enabled = input.enabled;
+        await db
+          .update(systemConfig)
+          .set({
+            value: JSON.stringify(parsed),
+            updatedBy:
+              ctx.user?.id != null ? String(ctx.user.id) : "system",
+          })
+          .where(eq(systemConfig.key, key));
+        await db.insert(auditLog).values({
+          action: "alert_escalation_rule_updated",
+          resource: "system_config",
+          resourceId: key,
+          status: "success",
+          metadata: { ruleId: input.ruleId, enabled: input.enabled },
+        } as any);
+        return { success: true, ruleId: input.ruleId, enabled: input.enabled };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  sendTestAlert: protectedProcedure
+    .input(
+      z.object({
+        adminId: z.string(),
+        severity: z.string().default("info"),
+      })
+    )
+    .mutation(async ({ input }) => {
+      try {
+        const db = await getDb();
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database unavailable",
+          });
+        const [alert] = await db
+          .insert(notification_logs)
+          .values({
+            recipientId: input.adminId,
+            recipientType: "admin",
+            subject: "Test Alert",
+            body: `Test ${input.severity} alert from Alert Notification Preferences`,
+            status: "sent",
+            sentAt: new Date(),
+          })
+          .returning();
+        await db.insert(auditLog).values({
+          action: "alert_test_sent",
+          resource: "notification_logs",
+          resourceId: String(alert.id),
+          status: "success",
+          metadata: { adminId: input.adminId, severity: input.severity },
+        } as any);
+        return { success: true, deliveryCount: 1, alertId: alert.id };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
 });

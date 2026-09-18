@@ -245,7 +245,7 @@ services:
   # ── Go: OTA Firmware Service ─────────────────────────────────────────────────
   ota-service:
     build:
-      context: ./server/ota-service
+      context: ./services/api-server-ts/server/ota-service
       dockerfile: Dockerfile
     ports:
       - "8081:8081"
@@ -262,7 +262,7 @@ services:
   # ── Go: FIDO2 Authentication Service ────────────────────────────────────────
   fido2-service:
     build:
-      context: ./server/fido2-service
+      context: ./services/api-server-ts/server/fido2-service
       dockerfile: Dockerfile
     ports:
       - "8083:8083"
@@ -649,7 +649,7 @@ services:
   # ── E-Commerce Microservices ─────────────────────────────────────────────────
   ecommerce-catalog:
     build:
-      context: ./server/ecommerce-catalog-go
+      context: ./services/api-server-ts/server/ecommerce-catalog-go
       dockerfile: Dockerfile
     ports:
       - "8100:8100"
@@ -671,7 +671,7 @@ services:
 
   ecommerce-cart:
     build:
-      context: ./server/ecommerce-cart-rust
+      context: ./services/api-server-ts/server/ecommerce-cart-rust
       dockerfile: Dockerfile
     ports:
       - "8102:8102"
@@ -694,7 +694,7 @@ services:
 
   ecommerce-intelligence:
     build:
-      context: ./server/ecommerce-intelligence-py
+      context: ./services/api-server-ts/server/ecommerce-intelligence-py
       dockerfile: Dockerfile
     ports:
       - "8103:8103"
@@ -722,30 +722,10 @@ services:
     networks:
       - 54link-network
 
-  # ─── Supply Chain Service (Go) ───────────────────────────────────────────
-  supply-chain:
-    build:
-      context: ./server/supply-chain-go
-      dockerfile: Dockerfile
-    container_name: 54link-supply-chain
-    ports:
-      - "8200:8200"
-    environment:
-      - PORT=8200
-      - DATABASE_URL=${DATABASE_URL}
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8200/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    networks:
-      - 54link-network
-
   # ─── Marketplace Integrations Service (Go) ─────────────────────────────
   marketplace-integrations:
     build:
-      context: ./server/marketplace-integrations-go
+      context: ./services/api-server-ts/server/marketplace-integrations-go
       dockerfile: Dockerfile
     container_name: 54link-marketplace
     ports:
@@ -765,32 +745,6 @@ services:
     networks:
       - 54link-network
 
-  # ─── Demand Forecasting Service (Python) ───────────────────────────────
-  demand-forecasting:
-    build:
-      context: ./server/demand-forecasting-py
-      dockerfile: Dockerfile
-    container_name: 54link-demand-forecasting
-    ports:
-      - "8202:8202"
-    environment:
-      - PORT=8202
-      - DATABASE_URL=${DATABASE_URL}
-    restart: unless-stopped
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8202/health')",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    networks:
-      - 54link-network
-
   # ── KYC/KYB Enforcement & Compliance Services ──
   # Round-3 topology fix: the services in this section reference infra hosts
   # that have no service definition in this file (permify, liveness-detection,
@@ -802,7 +756,7 @@ services:
     profiles:
       - external-integrations
     build:
-      context: ./server/goaml-integration-go
+      context: ./services/api-server-ts/server/goaml-integration-go
       dockerfile: Dockerfile
     ports:
       - "8210:8210"
@@ -827,7 +781,7 @@ services:
     profiles:
       - external-integrations
     build:
-      context: ./server/kyc-enforcement-go
+      context: ./services/api-server-ts/server/kyc-enforcement-go
       dockerfile: Dockerfile
     ports:
       - "8211:8211"
@@ -856,7 +810,7 @@ services:
     profiles:
       - external-integrations
     build:
-      context: ./server/aml-case-manager-go
+      context: ./services/api-server-ts/server/aml-case-manager-go
       dockerfile: Dockerfile
     ports:
       - "8212:8212"

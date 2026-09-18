@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { pnlReports, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import {
   calculateFee,
@@ -306,5 +306,103 @@ export const dailyPnlReportRouter = router({
         .limit(input.limit);
 
       return results;
+    }),
+  getReport: protectedProcedure
+    .input(
+      z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      })
+    )
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return { rows: [], summary: null };
+      const rows = await database
+        .select()
+        .from(pnlReports)
+        .where(
+          and(
+            eq(pnlReports.period, input.date),
+            eq(pnlReports.periodType, "daily")
+          )
+        )
+        .limit(500);
+      const summary = rows.reduce(
+        (acc: Record<string, number>, r: typeof pnlReports.$inferSelect) => {
+          acc.totalRevenue += Number(r.totalRevenue ?? 0);
+          acc.totalCommission += Number(r.totalCommission ?? 0);
+          acc.totalFees += Number(r.totalFees ?? 0);
+          acc.operatingCosts += Number(r.operatingCosts ?? 0);
+          acc.netMargin += Number(r.netMargin ?? 0);
+          acc.txCount += Number(r.txCount ?? 0);
+          acc.txVolume += Number(r.txVolume ?? 0);
+          return acc;
+        },
+        {
+          totalRevenue: 0,
+          totalCommission: 0,
+          totalFees: 0,
+          operatingCosts: 0,
+          netMargin: 0,
+          txCount: 0,
+          txVolume: 0,
+        }
+      );
+      return { rows, summary };
+    }),
+
+  export: protectedProcedure
+    .input(
+      z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable",
+        });
+      const rows = await database
+        .select()
+        .from(pnlReports)
+        .where(
+          and(
+            eq(pnlReports.period, input.date),
+            eq(pnlReports.periodType, "daily")
+          )
+        )
+        .limit(500);
+      const header =
+        "id,period,periodType,agentId,regionCode,totalRevenue,totalCommission,totalFees,operatingCosts,netMargin,txCount,txVolume";
+      const csvEscape = (v: unknown): string => {
+        const s = v === null || v === undefined ? "" : String(v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const lines = rows.map((r: typeof pnlReports.$inferSelect) =>
+        [
+          r.id,
+          r.period,
+          r.periodType,
+          r.agentId,
+          r.regionCode,
+          r.totalRevenue,
+          r.totalCommission,
+          r.totalFees,
+          r.operatingCosts,
+          r.netMargin,
+          r.txCount,
+          r.txVolume,
+        ]
+          .map(csvEscape)
+          .join(",")
+      );
+      const csv = [header, ...lines].join("\n");
+      logOperation("export", { date: input.date, rows: rows.length });
+      return {
+        csv,
+        filename: `daily-pnl-${input.date}.csv`,
+        rowCount: rows.length,
+      };
     }),
 });

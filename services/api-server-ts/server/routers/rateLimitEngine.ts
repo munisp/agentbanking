@@ -7,7 +7,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { rateLimitRules } from "../../drizzle/schema";
+import { rateLimitRules, auditLog } from "../../drizzle/schema";
 import { eq, desc, and, count, sql, gte, lte } from "drizzle-orm";
 import {
   validateAmount,
@@ -435,4 +435,73 @@ export const rateLimitEngineRouter = router({
         return { items: [], total: 0 };
       }
     }),
+
+  // Rate-limit violations recorded in auditLog (action/resource LIKE '%rate_limit%')
+  listViolations: protectedProcedure
+    .input(z.object({ limit: z.number().default(50) }).optional())
+    .query(async ({ input }) => {
+      try {
+        const db = await getDb();
+        if (!db) return [];
+        const rows = await db
+          .select()
+          .from(auditLog)
+          .where(
+            sql`(${auditLog.action} LIKE '%rate_limit%' OR ${auditLog.resource} LIKE '%rate_limit%')`
+          )
+          .orderBy(desc(auditLog.createdAt))
+          .limit(input?.limit ?? 50);
+        return rows.map(r => {
+          const meta = (r.metadata ?? {}) as Record<string, unknown>;
+          return {
+            id: r.id,
+            ip_address: r.ipAddress ?? String(meta.ip_address ?? "—"),
+            endpoint: String(meta.endpoint ?? r.resourceId ?? r.action),
+            request_count: Number(meta.request_count ?? meta.requestCount ?? 0),
+            limit: Number(meta.limit ?? 0),
+            created_at: r.createdAt?.toISOString() ?? null,
+          };
+        });
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  // Aggregate stats over rateLimitRules + recent violations
+  getStats: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db)
+      return {
+        totalRules: 0,
+        activeRules: 0,
+        violations24h: 0,
+        blockedRequests: 0,
+      };
+    const [total] = await db.select({ value: count() }).from(rateLimitRules);
+    const [active] = await db
+      .select({ value: count() })
+      .from(rateLimitRules)
+      .where(eq(rateLimitRules.isActive, true));
+    const since = new Date(Date.now() - 24 * 3600 * 1000);
+    const violationCond = sql`(${auditLog.action} LIKE '%rate_limit%' OR ${auditLog.resource} LIKE '%rate_limit%')`;
+    const [violations] = await db
+      .select({ value: count() })
+      .from(auditLog)
+      .where(and(violationCond, gte(auditLog.createdAt, since)));
+    const [blocked] = await db
+      .select({ value: count() })
+      .from(auditLog)
+      .where(and(violationCond, eq(auditLog.status, "failure")));
+    return {
+      totalRules: Number(total.value),
+      activeRules: Number(active.value),
+      violations24h: Number(violations.value),
+      blockedRequests: Number(blocked.value),
+    };
+  }),
 });

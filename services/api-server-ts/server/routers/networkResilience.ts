@@ -2,7 +2,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
-import { connectivityLog, auditLog } from "../../drizzle/schema";
+import { connectivityLog, auditLog, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -417,4 +417,119 @@ export const networkResilienceRouter = router({
         id: input?.id || null,
       };
     }),
+
+  // Connection metrics aggregated from connectivity_log (last 24h)
+  getConnectionMetrics: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db)
+      return {
+        avgLatencyMs: 0,
+        jitterMs: 0,
+        packetLossPct: 0,
+        bandwidthKbps: 0,
+        agents: [],
+        totalConnections: 0,
+        activeWebSocket: 0,
+        activeSSE: 0,
+        activeLongPoll: 0,
+        offlineAgents: 0,
+      };
+    const since = new Date(Date.now() - 24 * 3600 * 1000);
+    const rows = await db
+      .select()
+      .from(connectivityLog)
+      .where(gte(connectivityLog.recordedAt, since))
+      .orderBy(desc(connectivityLog.recordedAt))
+      .limit(1000);
+    const latencies = rows
+      .map(r => r.latencyMs)
+      .filter((v): v is number => v != null);
+    const avgLatencyMs =
+      latencies.length > 0
+        ? Math.round(
+            latencies.reduce((a: number, b: number) => a + b, 0) /
+              latencies.length
+          )
+        : 0;
+    const jitterMs =
+      latencies.length > 1
+        ? Math.round(
+            latencies.reduce(
+              (a: number, b: number) => a + Math.abs(b - avgLatencyMs),
+              0
+            ) / latencies.length
+          )
+        : 0;
+    const degraded = rows.filter(
+      r => r.quality === "Poor" || r.quality === "Offline"
+    ).length;
+    const packetLossPct =
+      rows.length > 0 ? Math.round((degraded / rows.length) * 1000) / 10 : 0;
+    const latestByAgent = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      if (!latestByAgent.has(row.agentCode)) latestByAgent.set(row.agentCode, row);
+    }
+    const agents = Array.from(latestByAgent.values()).map(r => ({
+      agentCode: r.agentCode,
+      quality: r.quality,
+      latencyMs: r.latencyMs,
+      recordedAt: r.recordedAt,
+    }));
+    const offlineAgents = agents.filter(a => a.quality === "Offline").length;
+    return {
+      avgLatencyMs,
+      jitterMs,
+      packetLossPct,
+      bandwidthKbps: 0,
+      agents,
+      totalConnections: rows.length,
+      activeWebSocket: 0,
+      activeSSE: 0,
+      activeLongPoll: 0,
+      offlineAgents,
+    };
+  }),
+
+  // Bandwidth tuning config persisted in systemConfig under `bandwidth_%` keys
+  getBandwidthConfig: protectedProcedure.query(async () => {
+    const defaults = {
+      adaptiveBandwidth: false,
+      compressionEnabled: false,
+      lowBandwidthThresholdKbps: 256,
+      maxPayloadBytes: 65536,
+    };
+    const db = await getDb();
+    if (!db) return defaults;
+    const rows = await db
+      .select()
+      .from(systemConfig)
+      .where(sql`${systemConfig.key} LIKE 'bandwidth_%'`)
+      .limit(50);
+    const byKey: Record<string, string> = {};
+    for (const r of rows) byKey[r.key] = String(r.value ?? "");
+    const asBool = (v: string | undefined, d: boolean) =>
+      v === undefined ? d : v === "true" || v === "1";
+    const asInt = (v: string | undefined, d: number) => {
+      const n = parseInt(v ?? "", 10);
+      return Number.isFinite(n) ? n : d;
+    };
+    return {
+      adaptiveBandwidth: asBool(
+        byKey["bandwidth_adaptive"],
+        defaults.adaptiveBandwidth
+      ),
+      compressionEnabled: asBool(
+        byKey["bandwidth_compression"],
+        defaults.compressionEnabled
+      ),
+      lowBandwidthThresholdKbps: asInt(
+        byKey["bandwidth_low_threshold_kbps"],
+        defaults.lowBandwidthThresholdKbps
+      ),
+      maxPayloadBytes: asInt(
+        byKey["bandwidth_max_payload_bytes"],
+        defaults.maxPayloadBytes
+      ),
+    };
+  }),
 });

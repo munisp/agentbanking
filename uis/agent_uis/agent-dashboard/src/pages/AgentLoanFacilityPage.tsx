@@ -36,7 +36,7 @@ export default function AgentLoanFacilityPage() {
   });
 
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const loansQuery = trpc.agentLoanFacility.listLoans.useQuery({ limit: 100 });
+  const loansQuery = trpc.agentLoanFacility.list.useQuery({ limit: 100 });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const statsQuery = trpc.agentLoanFacility.getStats.useQuery();
   const applyMutation = trpc.agentLoanFacility.applyLoan.useMutation({
@@ -48,7 +48,7 @@ export default function AgentLoanFacilityPage() {
     onError: (e: any) => toast.error(e.message),
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const approveMutation = trpc.agentLoanFacility.approveLoan.useMutation({
+  const approveMutation = trpc.agentLoanFacility.approve.useMutation({
     onSuccess: () => {
       loansQuery.refetch();
       toast.success("Loan approved");
@@ -56,7 +56,7 @@ export default function AgentLoanFacilityPage() {
     onError: (e: any) => toast.error(e.message),
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const rejectMutation = trpc.agentLoanFacility.rejectLoan.useMutation({
+  const rejectMutation = trpc.agentLoanFacility.reject.useMutation({
     onSuccess: () => {
       loansQuery.refetch();
       toast.success("Loan rejected");
@@ -64,7 +64,7 @@ export default function AgentLoanFacilityPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const loans = (loansQuery.data ?? []).filter((l: any) => {
+  const loans = (loansQuery.data?.items ?? []).filter((l: any) => {
     if (
       search &&
       !l.agent_id?.toString().includes(search) &&
@@ -285,13 +285,13 @@ export default function AgentLoanFacilityPage() {
                       {l.status === "pending" && (
                         <>
                           <button
-                            onClick={() => approveMutation.mutate({ id: l.id })}
+                            onClick={() => approveMutation.mutate({ loanId: l.id })}
                             className="p-1.5 hover:bg-emerald-700/30 rounded-lg"
                           >
                             <CheckCircle className="h-4 w-4 text-emerald-400" />
                           </button>
                           <button
-                            onClick={() => rejectMutation.mutate({ id: l.id })}
+                            onClick={() => rejectMutation.mutate({ loanId: l.id, reason: "Rejected via admin console" })}
                             className="p-1.5 hover:bg-red-700/30 rounded-lg"
                           >
                             <XCircle className="h-4 w-4 text-red-400" />

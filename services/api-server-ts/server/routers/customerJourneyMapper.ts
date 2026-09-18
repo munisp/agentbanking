@@ -335,6 +335,7 @@ const _constraints = {
 export const customerJourneyMapperRouter = router({
   getJourney,
   listJourneys,
+  list: listJourneys, // alias of listJourneys (broken-call fix)
   getJourneyStats,
   getDropoffPoints,
   getConversionFunnel,

@@ -227,7 +227,7 @@ const _txPatterns = {
     typeof withTransaction === "function"
       ? (withTransaction as Function)(...args)
       : Promise.resolve(args),
-  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+  atomicBatch: async <T,>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
       for (const op of ops) results.push(await op());
@@ -236,34 +236,7 @@ const _txPatterns = {
   },
 };
 
-export const automatedComplianceCheckerRouter = router({
-  dashboard: protectedProcedure.query(async () => {
-    const db = await getDb();
-    if (!db)
-      return {
-        totalRules: 0,
-        passingRules: 0,
-        failingRules: 0,
-        lastCheckAt: null,
-        complianceScore: 0,
-      };
-    const rows = await db
-      .select()
-      .from(systemConfig)
-      .where(sql`${systemConfig.key} LIKE ${'compliance_rule_%'}`)
-      .limit(100);
-    const rules = rows.map(r => JSON.parse(String(r.value ?? "{}")));
-    const passing = rules.filter((r: any) => r.status === "passing").length;
-    return {
-      totalRules: rules.length,
-      passingRules: passing,
-      failingRules: rules.length - passing,
-      lastCheckAt: new Date().toISOString(),
-      complianceScore:
-        rules.length > 0 ? Math.round((passing / rules.length) * 100) : 100,
-    };
-  }),
-  listRules: protectedProcedure
+const listRulesProc = protectedProcedure
     .input(
       z
         .object({
@@ -296,7 +269,11 @@ export const automatedComplianceCheckerRouter = router({
             error instanceof Error ? error.message : "Internal server error",
         });
       }
-    }),
+    });
+
+export const automatedComplianceCheckerRouter = router({
+  listRules: listRulesProc,
+  list: listRulesProc, // alias of listRules (broken-call fix)
   runCheck: protectedProcedure
     .input(z.object({ ruleId: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {

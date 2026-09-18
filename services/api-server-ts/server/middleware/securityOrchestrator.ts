@@ -136,7 +136,15 @@ async function checkPBAC(
         id: req.path,
         type: detectResourceType(req.path),
         owner_id: "",
-        tenant_id: req.headers["x-tenant-id"] || "",
+        // Tenant is derived from the authenticated identity (set by the auth
+        // middleware), never from the client-supplied x-tenant-id header,
+        // which is spoofable. Omit signal ("unknown") when the user has no
+        // tenant assigned.
+        tenant_id: (
+          (req as any).user?.tenantId ??
+          (req as any).user?.tenant_id ??
+          "unknown"
+        ).toString(),
       },
       action: action,
       context: {

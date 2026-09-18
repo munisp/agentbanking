@@ -37,7 +37,14 @@ const MAX_RETRIES = 3;
 const RETRY_DELAYS = [60, 300, 900]; // seconds: 1min, 5min, 15min
 
 // Notification templates
-const TEMPLATES: Record<string, { subject: string; body: string }> = {
+interface NotificationTemplate {
+  subject: string;
+  body: string;
+  name?: string;
+  channel?: string;
+  variables?: string;
+}
+const TEMPLATES: Record<string, NotificationTemplate> = {
   tx_success: {
     subject: "Transaction Successful",
     body: "Your transaction of {{amount}} was successful. Ref: {{ref}}",
@@ -456,4 +463,75 @@ export const notificationOrchestratorRouter = router({
   templates: protectedProcedure.query(() => {
     return Object.entries(TEMPLATES).map(([id, tmpl]) => ({ id, ...tmpl }));
   }),
+
+  // Template CRUD against the router's TEMPLATES registry
+  createTemplate: protectedProcedure
+    .input(
+      z.object({
+        name: z.string(),
+        channel: z.string().default("sms"),
+        subject: z.string(),
+        body: z.string(),
+        variables: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const id =
+        input.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_+|_+$/g, "") ||
+        `tmpl_${Date.now()}`;
+      if (TEMPLATES[id])
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Template ${id} already exists`,
+        });
+      TEMPLATES[id] = {
+        name: input.name,
+        channel: input.channel,
+        subject: input.subject,
+        body: input.body,
+        variables: input.variables,
+      };
+      return { success: true, id, template: { id, ...TEMPLATES[id] } };
+    }),
+
+  updateTemplate: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().optional(),
+        channel: z.string().optional(),
+        subject: z.string().optional(),
+        body: z.string().optional(),
+        variables: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const tmpl = TEMPLATES[input.id];
+      if (!tmpl)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Template ${input.id} not found`,
+        });
+      const { id, ...updates } = input;
+      for (const [key, value] of Object.entries(updates)) {
+        if (value !== undefined)
+          (tmpl as Record<string, unknown>)[key] = value;
+      }
+      return { success: true, id, template: { id, ...tmpl } };
+    }),
+
+  deleteTemplate: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      if (!TEMPLATES[input.id])
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Template ${input.id} not found`,
+        });
+      delete TEMPLATES[input.id];
+      return { success: true, id: input.id };
+    }),
 });

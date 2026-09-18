@@ -383,8 +383,13 @@ export const kybRouter = router({
         }
 
         await writeAuditLog({
-          agentId: 0,
-          agentCode: "system",
+          agentId: Number((ctx.user as any)?.id) || 0,
+          agentCode: String(
+            (ctx.user as any)?.email ??
+              (ctx.user as any)?.sub ??
+              (ctx.user as any)?.id ??
+              "unknown"
+          ),
           action: "kyb_verification_started",
           resource: "kyb_verification",
           resourceId: result.id || "unknown",
@@ -573,15 +578,25 @@ export const kybRouter = router({
     .input(
       z.object({
         verification_id: z.string(),
-        actor_id: z.string().default("admin"),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
+        // Audit actor MUST come from the authenticated admin session — never
+        // from client-supplied input, never null/"system".
+        const actorId = String(
+          (ctx.user as any)?.id ?? (ctx.user as any)?.sub ?? ""
+        );
+        if (!actorId) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Admin actor identity required for KYB approval",
+          });
+        }
         const result = await serviceCall(
           `${KYB_ENGINE_URL}/kyb/verifications/${input.verification_id}/approve`,
           "POST",
-          { actor_id: input.actor_id }
+          { actor_id: actorId }
         );
         if (!result) {
           throw new TRPCError({
@@ -591,12 +606,15 @@ export const kybRouter = router({
         }
 
         await writeAuditLog({
-          agentId: 0,
-          agentCode: "system",
+          agentId: Number((ctx.user as any)?.id) || 0,
+          agentCode: String(
+            (ctx.user as any)?.email ?? (ctx.user as any)?.sub ?? actorId
+          ),
           action: "kyb_verification_approved",
           resource: "kyb_verification",
           resourceId: input.verification_id,
           status: "success",
+          metadata: { actorId },
         });
 
         return result;
@@ -616,16 +634,25 @@ export const kybRouter = router({
     .input(
       z.object({
         verification_id: z.string(),
-        actor_id: z.string().default("admin"),
         reason: z.string().min(5),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
+        // Audit actor MUST come from the authenticated admin session.
+        const actorId = String(
+          (ctx.user as any)?.id ?? (ctx.user as any)?.sub ?? ""
+        );
+        if (!actorId) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Admin actor identity required for KYB rejection",
+          });
+        }
         const result = await serviceCall(
           `${KYB_ENGINE_URL}/kyb/verifications/${input.verification_id}/reject`,
           "POST",
-          { actor_id: input.actor_id, reason: input.reason }
+          { actor_id: actorId, reason: input.reason }
         );
         if (!result) {
           throw new TRPCError({
@@ -635,13 +662,15 @@ export const kybRouter = router({
         }
 
         await writeAuditLog({
-          agentId: 0,
-          agentCode: "system",
+          agentId: Number((ctx.user as any)?.id) || 0,
+          agentCode: String(
+            (ctx.user as any)?.email ?? (ctx.user as any)?.sub ?? actorId
+          ),
           action: "kyb_verification_rejected",
           resource: "kyb_verification",
           resourceId: input.verification_id,
           status: "success",
-          metadata: { reason: input.reason },
+          metadata: { reason: input.reason, actorId },
         });
 
         return result;

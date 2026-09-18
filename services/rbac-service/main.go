@@ -104,6 +104,15 @@ func (s *rbacServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *rbacServer) readyHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "ready",
+		"service": serviceName,
+		"version": serviceVersion,
+	})
+}
+
 // checkHandler checks if a role has a specific permission.
 // POST /api/v1/rbac/check  { "role": "agent", "permission": "transactions:create" }
 func (s *rbacServer) checkHandler(w http.ResponseWriter, r *http.Request) {
@@ -192,6 +201,9 @@ func main() {
 	srv := &rbacServer{}
 	router := mux.NewRouter()
 	router.HandleFunc("/healthz", srv.healthHandler).Methods("GET")
+	// Readiness — distinct from /healthz. rbac-service keeps its policy store
+	// in-process (no external deps), so readiness == server initialized.
+	router.HandleFunc("/ready", srv.readyHandler).Methods("GET")
 	router.HandleFunc("/api/v1/rbac/check", srv.checkHandler).Methods("POST")
 	router.HandleFunc("/api/v1/rbac/roles", srv.rolesHandler).Methods("GET")
 	router.HandleFunc("/api/v1/rbac/roles/{role}/permissions", srv.permissionsHandler).Methods("GET")

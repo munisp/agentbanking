@@ -31,11 +31,11 @@ export default function AgentGamificationPage() {
     limit: 50,
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const achievementsQuery = trpc.agentGamification.listAchievements.useQuery({
+  const achievementsQuery = trpc.agentGamification.getAchievements.useQuery({
     limit: 100,
   });
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const badgesQuery = trpc.agentGamification.listBadges.useQuery({
+  const badgesQuery = trpc.agentGamification.getBadges.useQuery({
     limit: 100,
   });
   const statsQuery = trpc.agentGamification.getStats.useQuery();

@@ -281,7 +281,7 @@ apisix-bootstrap:
 # ── OTA service ───────────────────────────────────────────────────────────────
 ota-build:
 @echo "==> Building OTA service..."
-@cd server/ota-service && go build -o ota-service . 2>/dev/null || echo "Go not found — use Docker build"
+@cd services/api-server-ts/server/ota-service && go build -o ota-service . 2>/dev/null || echo "Go not found — use Docker build"
 @echo "==> OTA service built"
 
 ota-health:

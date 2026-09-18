@@ -418,6 +418,65 @@ export const backupDisasterRecoveryRouter = router({
       }
     }),
 
+  testFailover: adminProcedure.mutation(async () => {
+    try {
+      const db = (await getDb())!;
+      const [latest] = await db
+        .select()
+        .from(backupSnapshots)
+        .orderBy(desc(backupSnapshots.createdAt))
+        .limit(1);
+      if (!latest) {
+        await db.insert(auditLog).values({
+          action: "failover_tested",
+          resource: "backup_snapshots",
+          resourceId: null,
+          status: "failed",
+          metadata: { reason: "no_backup_snapshot_found" },
+        });
+        return {
+          success: false,
+          restorable: false,
+          reason: "No backup snapshot available for failover test",
+          testedAt: new Date().toISOString(),
+        };
+      }
+      const restorable =
+        latest.status === "completed" &&
+        latest.storageUrl !== null &&
+        (latest.sizeBytes ?? 0) > 0;
+      await db.insert(auditLog).values({
+        action: "failover_tested",
+        resource: "backup_snapshots",
+        resourceId: String(latest.id),
+        status: restorable ? "success" : "failed",
+        metadata: {
+          snapshotType: latest.snapshotType,
+          snapshotStatus: latest.status,
+          sizeBytes: latest.sizeBytes,
+          restorable,
+        },
+      });
+      return {
+        success: restorable,
+        restorable,
+        snapshotId: latest.id,
+        snapshotType: latest.snapshotType,
+        snapshotStatus: latest.status,
+        rtoMinutes: latest.rtoMinutes ?? null,
+        rpoMinutes: latest.rpoMinutes ?? null,
+        testedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }),
+
   triggerBackup: adminProcedure
     .input(z.object({ type: z.string().optional() }))
     .mutation(async ({ input }) => {

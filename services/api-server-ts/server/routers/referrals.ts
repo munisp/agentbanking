@@ -22,6 +22,7 @@ import {
   calculateTax,
   calculateLatePenalty,
 } from "../lib/domainCalculations";
+import { referralConversionsTotal } from "../metrics";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["active", "completed", "cancelled", "rejected"],
@@ -237,6 +238,22 @@ export const referralsRouter = router({
             activatedAt: new Date(),
           })
           .where(eq(referrals.referralCode, input.referralCode));
+
+        // Emit the referral-conversion metric (defined in server/metrics.ts,
+        // previously never incremented). Best-effort — never block the
+        // conversion on a metrics failure. Tier label is the referrer's.
+        try {
+          const [referrer] = await db
+            .select({ tier: agents.tier })
+            .from(agents)
+            .where(eq(agents.id, referral.referrerAgentId))
+            .limit(1);
+          referralConversionsTotal.inc({
+            tier: (referrer?.tier ?? "unknown").toString().toLowerCase(),
+          });
+        } catch {
+          /* metrics emission must never fail the request */
+        }
 
         return { success: true, message: "Referral code applied successfully" };
       } catch (error) {

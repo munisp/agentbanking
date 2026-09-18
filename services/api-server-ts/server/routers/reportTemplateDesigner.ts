@@ -17,7 +17,6 @@ import {
 } from "drizzle-orm";
 import { auditLog, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
-import { validateInput } from "../lib/routerHelpers";
 
 import {
   validateAmount,

@@ -147,7 +147,7 @@ const _txPatterns = {
     typeof withTransaction === "function"
       ? (withTransaction as Function)(...args)
       : Promise.resolve(args),
-  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+  atomicBatch: async <T,>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
       for (const op of ops) results.push(await op());
@@ -199,112 +199,7 @@ const _constraints = {
   },
 };
 
-export const auditTrailExportRouter = router({
-  export: protectedProcedure
-    .input(
-      z
-        .object({
-          limit: z.number().default(20),
-          offset: z.number().default(0),
-        })
-        .optional()
-    )
-    .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { items: [], total: 0 };
-      const limit = input?.limit ?? 20;
-      const offset = input?.offset ?? 0;
-      const rows = await db
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.createdAt))
-        .limit(limit)
-        .offset(offset);
-      const [totalRow] = await db.select({ value: count() }).from(auditLog);
-      return {
-        items: rows,
-        total: Number(totalRow.value),
-        domain: "trail_export",
-        procedure: "export",
-      };
-    }),
-  schedule: protectedProcedure
-    .input(
-      z
-        .object({
-          id: z.string().optional(),
-          data: z.record(z.string(), z.unknown()).optional(),
-        })
-        .optional()
-    )
-    .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "auditTrailExport",
-        "mutation",
-        "Executed auditTrailExport mutation"
-      );
-
-      const db = await getDb();
-      if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "DB unavailable",
-        });
-      await db.insert(auditLog).values({
-        action: "trail_export.schedule",
-        resource: "trail_export",
-        resourceId: input?.id || "system",
-        status: "success",
-        metadata: {
-          ...(input?.data || {}),
-          actor: ctx.user?.email || "system",
-        },
-      });
-      return {
-        success: true,
-        domain: "trail_export",
-        action: "schedule",
-        id: input?.id || null,
-      };
-    }),
-  templates: protectedProcedure
-    .input(
-      z
-        .object({
-          limit: z.number().default(20),
-          offset: z.number().default(0),
-        })
-        .optional()
-    )
-    .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { items: [], total: 0 };
-      const limit = input?.limit ?? 20;
-      const offset = input?.offset ?? 0;
-      const rows = await db
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.createdAt))
-        .limit(limit)
-        .offset(offset);
-      const [totalRow] = await db.select({ value: count() }).from(auditLog);
-      return {
-        items: rows,
-        total: Number(totalRow.value),
-        domain: "trail_export",
-        procedure: "templates",
-      };
-    }),
-  history: protectedProcedure
+const historyProc = protectedProcedure
     .input(
       z
         .object({
@@ -331,7 +226,11 @@ export const auditTrailExportRouter = router({
         domain: "trail_export",
         procedure: "history",
       };
-    }),
+    });
+
+export const auditTrailExportRouter = router({
+  history: historyProc,
+  list: historyProc, // alias of history (broken-call fix)
   config: protectedProcedure
     .input(
       z

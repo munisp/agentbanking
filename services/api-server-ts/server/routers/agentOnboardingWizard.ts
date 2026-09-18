@@ -138,7 +138,7 @@ function enforceAgentonboardingwizardRules(data: Record<string, unknown>) {
 export const agentOnboardingWizardRouter = router({
   getProgress: protectedProcedure
     .input(z.object({ agentId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         const [agent] = await db
@@ -194,6 +194,40 @@ export const agentOnboardingWizardRouter = router({
         ];
         const completedSteps = steps.filter(s => s.completed).length;
         const currentStep = steps.find(s => !s.completed)?.order ?? 5;
+
+        // Persist wizard step state (migration 0062 onboarding_pipeline_state)
+        // so restarts/deploys never lose onboarding progress. Read-path
+        // persistence is best-effort: a write failure degrades to the computed
+        // view rather than breaking the query.
+        try {
+          const completedNames = JSON.stringify(
+            steps.filter(s => s.completed).map(s => s.name)
+          );
+          const currentStageName =
+            completedSteps === 5
+              ? "completed"
+              : (steps.find(s => !s.completed)?.name ?? "Training");
+          const wizardTenantId = (ctx.user as any)?.tenantId ?? null;
+          await db.execute(sql`
+            INSERT INTO onboarding_pipeline_state
+              (tenant_id, entity_type, entity_id, current_stage, stages_completed, status, updated_by, updated_at)
+            VALUES
+              (${wizardTenantId}, 'agent', ${String(input.agentId)}, ${currentStageName}, ${completedNames}::jsonb, ${completedSteps === 5 ? "completed" : "in_progress"}, ${String((ctx.user as any)?.id ?? "")}, NOW())
+            ON CONFLICT (entity_type, entity_id, (COALESCE(tenant_id, 0)))
+            DO UPDATE SET
+              current_stage = EXCLUDED.current_stage,
+              stages_completed = EXCLUDED.stages_completed,
+              status = EXCLUDED.status,
+              updated_by = EXCLUDED.updated_by,
+              updated_at = NOW()
+          `);
+        } catch (persistErr) {
+          console.warn(
+            "[agentOnboardingWizard] failed to persist pipeline state:",
+            persistErr
+          );
+        }
+
         return {
           step: currentStep,
           steps,
@@ -309,6 +343,27 @@ export const agentOnboardingWizardRouter = router({
           status: "success",
           metadata: { approvedBy: String(ctx.user?.id ?? "") },
         });
+        // Mark the persisted onboarding pipeline as completed (migration 0062)
+        try {
+          const approveTenantId = (ctx.user as any)?.tenantId ?? null;
+          await db.execute(sql`
+            INSERT INTO onboarding_pipeline_state
+              (tenant_id, entity_type, entity_id, current_stage, stages_completed, status, updated_by, updated_at)
+            VALUES
+              (${approveTenantId}, 'agent', ${String(input.agentId)}, 'completed', '["Profile","KYC Verification","Float Setup","Terminal Assignment","Training"]'::jsonb, 'completed', ${String(ctx.user?.id ?? "")}, NOW())
+            ON CONFLICT (entity_type, entity_id, (COALESCE(tenant_id, 0)))
+            DO UPDATE SET
+              current_stage = 'completed',
+              status = 'completed',
+              updated_by = EXCLUDED.updated_by,
+              updated_at = NOW()
+          `);
+        } catch (persistErr) {
+          console.warn(
+            "[agentOnboardingWizard] failed to persist pipeline completion:",
+            persistErr
+          );
+        }
         return { success: true, agentId: input.agentId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

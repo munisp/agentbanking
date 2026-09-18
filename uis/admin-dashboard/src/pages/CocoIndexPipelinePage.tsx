@@ -15,11 +15,11 @@ export default function CocoIndexPipelinePage() {
   // @ts-ignore Sprint 85
   const analytics = trpc.cocoIndexPipeline.analytics.useQuery();
   // @ts-ignore Sprint 85
-  const pipelines = trpc.cocoIndexPipeline.listPipelines.useQuery();
+  const pipelines = trpc.cocoIndexPipeline.pipelines.useQuery();
   // @ts-ignore Sprint 85
   const runs = trpc.cocoIndexPipeline.listRuns.useQuery();
   // @ts-ignore Sprint 85
-  const triggerMut = trpc.cocoIndexPipeline.triggerRun.useMutation({
+  const triggerMut = trpc.cocoIndexPipeline.run.useMutation({
     // @ts-ignore Sprint 85
     onSuccess: d => {
       if (d.success)
@@ -115,7 +115,7 @@ export default function CocoIndexPipelinePage() {
         </TabsList>
 
         <TabsContent value="pipelines" className="space-y-4">
-          {pipelines.data?.pipelines?.map((p: any) => (
+          {pipelines.data?.items?.map((p: any) => (
             <Card key={p.id}>
               <CardContent className="pt-4">
                 <div className="flex justify-between items-start">
@@ -164,7 +164,7 @@ export default function CocoIndexPipelinePage() {
                     </Button>
                     <Button
                       size="sm"
-                      onClick={() => triggerMut.mutate({ pipelineId: p.id })}
+                      onClick={() => triggerMut.mutate({ id: String(p.id) })}
                       disabled={triggerMut.isPending}
                     >
                       {triggerMut.isPending ? (

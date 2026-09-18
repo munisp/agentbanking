@@ -11,31 +11,18 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: FormEvent) {
+  function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Login failed");
-        setLoading(false);
-        return;
-      }
-      localStorage.setItem("access_token", data.accessToken);
-      localStorage.setItem("refresh_token", data.refreshToken);
-      onLogin(data.user, data.accessToken);
-    } catch {
-      setError("Network error — please try again");
-    }
-    setLoading(false);
+    // The backend (services/api-server-ts/server/_core/keycloakAuth.ts) registers
+    // ONLY `GET /api/auth/login`, which initiates the Keycloak Authorization Code
+    // flow via a browser redirect (optional ?returnTo= query param). There is no
+    // POST JSON credential endpoint, so the previous fetch(POST) could never work.
+    // Redirect the browser to start the SSO flow instead.
+    const returnTo = window.location.pathname + window.location.search;
+    window.location.href = `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
   }
 
   return (

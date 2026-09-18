@@ -7,12 +7,12 @@ import { Settings } from "lucide-react";
 
 export default function SystemConfigManager() {
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data: liveData, isLoading, error, refetch } = trpc.systemConfigManager.list.useQuery(
+  const { data: liveData, isLoading, error, refetch } = trpc.systemConfigManager.listConfigs.useQuery(
     undefined,
     { retry: 1 }
   );
   // Render only real backend data — no fabricated fallback rows.
-  const mockData = liveData ?? [];
+  const mockData = liveData?.items ?? [];
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<
     "overview" | "details" | "history" | "settings"

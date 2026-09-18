@@ -1,4 +1,5 @@
 // @ts-nocheck
+import crypto from "crypto";
 import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
@@ -15,7 +16,7 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { tenants, auditLog } from "../../drizzle/schema";
+import { tenants, auditLog, tenantBillingConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -285,9 +286,74 @@ export const tenantAdminRouter = router({
           resource: "tenants",
           resourceId: String(tenant.id),
           status: "success",
-          metadata: { name: input.name, slug: input.slug },
+          metadata: {
+            name: input.name,
+            slug: input.slug,
+            actorId: String((ctx.user as any)?.id ?? (ctx.user as any)?.sub ?? ""),
+            note: "created in trial status — activation requires active billing subscription",
+          },
         });
-        return { success: true, tenant };
+
+        // ── Orchestrator provisioning (fail-open with audit) ──────────────────
+        // Kick off the Temporal createTenantWorkflow via the orchestrator HTTP
+        // endpoint (POST {WORKFLOW_URL}/tenant). Provisioning is retryable, so
+        // a failure here keeps the tenant row (status stays "trial") and is
+        // recorded in the audit log for the provisioning reconciler.
+        let provisioning: "triggered" | "failed" = "failed";
+        let provisioningError: string | null = null;
+        const orchestratorUrl =
+          process.env.WORKFLOW_URL ?? "http://workflow-orchestrator:8080";
+        try {
+          const resp = await fetch(`${orchestratorUrl}/tenant`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: AbortSignal.timeout(10_000),
+            body: JSON.stringify({
+              name: input.name,
+              type: "fintech",
+              plan: input.planId,
+              contact: {
+                email:
+                  input.contactEmail ?? `tenant-${tenant.id}@placeholder.local`,
+                firstName: input.name,
+                lastName: "Administrator",
+                phone: input.contactPhone ?? "",
+                uin: `tenant-${tenant.id}`,
+                password: crypto.randomUUID(),
+                address: "N/A",
+                city: "N/A",
+                state: "N/A",
+                postalCode: "000000",
+              },
+            }),
+          });
+          if (!resp.ok) {
+            provisioningError = `orchestrator returned HTTP ${resp.status}`;
+          } else {
+            provisioning = "triggered";
+          }
+        } catch (provErr) {
+          provisioningError =
+            provErr instanceof Error ? provErr.message : String(provErr);
+        }
+        if (provisioning === "failed") {
+          console.error(
+            `[tenantAdmin] Orchestrator provisioning failed for tenant ${tenant.id} (${input.slug}): ${provisioningError}`
+          );
+          await db.insert(auditLog).values({
+            action: "tenant_provisioning_failed",
+            resource: "tenants",
+            resourceId: String(tenant.id),
+            status: "failure",
+            metadata: {
+              name: input.name,
+              slug: input.slug,
+              error: provisioningError,
+              retryable: true,
+            },
+          });
+        }
+        return { success: true, tenant, provisioning };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -297,7 +363,7 @@ export const tenantAdminRouter = router({
         });
       }
     }),
-  updateTenant: protectedProcedure
+  updateTenant: adminProcedure
     .input(
       z.object({
         tenantId: z.number(),
@@ -308,11 +374,32 @@ export const tenantAdminRouter = router({
         status: z.enum(["active", "suspended", "trial", "churned"]).optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
         const { tenantId, ...updates } = input;
+
+        // ══ BILLING GATE (FAIL-CLOSED) ══
+        // A tenant may only transition to "active" when billing has been
+        // provisioned and is active (tenant_billing_config.status = 'active',
+        // written by tenantBillingOnboarding.provisionBilling). No billing
+        // subscription → activation BLOCKED with a clear error.
+        if (updates.status === "active") {
+          const [billing] = await db
+            .select({ status: tenantBillingConfig.status })
+            .from(tenantBillingConfig)
+            .where(eq(tenantBillingConfig.tenantId, tenantId))
+            .limit(1);
+          if (!billing || billing.status !== "active") {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message:
+                "Tenant billing subscription is not active — run billing provisioning (tenantBillingOnboarding.provisionBilling) before activating this tenant (fail-closed).",
+            });
+          }
+        }
+
         const setObj: any = { ...updates, updatedAt: new Date() };
         Object.keys(setObj).forEach(k => {
           if (setObj[k] === undefined) delete setObj[k];
@@ -327,7 +414,10 @@ export const tenantAdminRouter = router({
           resource: "tenants",
           resourceId: String(tenantId),
           status: "success",
-          metadata: updates,
+          metadata: {
+            ...updates,
+            actorId: String((ctx.user as any)?.id ?? (ctx.user as any)?.sub ?? ""),
+          },
         });
         return { success: true, tenant: updated };
       } catch (error) {
@@ -339,9 +429,9 @@ export const tenantAdminRouter = router({
         });
       }
     }),
-  suspendTenant: protectedProcedure
+  suspendTenant: adminProcedure
     .input(z.object({ tenantId: z.number(), reason: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -355,7 +445,10 @@ export const tenantAdminRouter = router({
           resource: "tenants",
           resourceId: String(input.tenantId),
           status: "success",
-          metadata: { reason: input.reason },
+          metadata: {
+            reason: input.reason,
+            actorId: String((ctx.user as any)?.id ?? (ctx.user as any)?.sub ?? ""),
+          },
         });
         return { success: true, tenant: updated };
       } catch (error) {

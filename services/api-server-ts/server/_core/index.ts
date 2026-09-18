@@ -44,7 +44,8 @@ import {
   startArchivalCronWorker,
   stopArchivalCronWorker,
 } from "../lib/archivalCronWorker";
-import { restBridgeRouter } from "../restBridge";
+import { restBridgeRouter, requireAuth } from "../restBridge";
+import { offlineSyncRouter } from "../middleware/offlineSyncQueue";
 import { caddyTlsValidationRouter } from "../routers/caddyTlsValidation";
 import { registry, httpRequestDurationMs } from "../metrics";
 import { verifyWebhookHmac, captureRawBody } from "../middleware/webhookHmac";
@@ -110,10 +111,12 @@ async function startServer() {
       runDisputeAutoEscalation,
     } = require("../cron/disputeAutoEscalation");
     const { runKycExpiryCheck } = require("../cron/kycExpiryCheck");
+    const { runFloatLockReconciler } = require("../cron/floatLockReconciler");
     cron.schedule("*/15 * * * *", runDisputeAutoEscalation); // Every 15 min
     cron.schedule("0 6 * * *", runKycExpiryCheck); // Daily at 6 AM
+    cron.schedule("*/5 * * * *", runFloatLockReconciler); // Every 5 min
     console.log(
-      "[Cron] Dispute auto-escalation (15min) and KYC expiry check (daily) registered"
+      "[Cron] Dispute auto-escalation (15min), KYC expiry check (daily) and float-lock reconciler (5min) registered"
     );
   } catch (e) {
     console.warn("[Cron] Registration failed:", (e as any).message);
@@ -507,6 +510,13 @@ async function startServer() {
   // ── REST Bridge (Management PWA, Customer Portal, Super Admin) ─────────────
   // Maps GET/POST/PUT/DELETE /api/v1/* to tRPC procedures and DB helpers.
   app.use("/api/v1", restBridgeRouter);
+  // ── Offline Sync Queue (/api/sync/push, /pull, /status, /stats) ───────────
+  // The Express handler in middleware/offlineSyncQueue.ts existed but was
+  // never mounted, while the PWA service worker (client/public/sw.js) and
+  // useOfflineTransactionQueue call POST /api/sync/push. Mounted behind the
+  // same requireAuth middleware as the REST bridge sibling routes (fail
+  // closed: unauthenticated sync pushes are rejected with 401).
+  app.use("/api/sync", requireAuth, offlineSyncRouter);
   // ── Caddy On-Demand TLS Validation ──────────────────────────────────────────
   // Called by Caddy before issuing a TLS certificate for a tenant custom domain.
   // GET  /internal/caddy/validate-domain?domain=<hostname> → 200 | 403

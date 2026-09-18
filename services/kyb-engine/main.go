@@ -52,7 +52,7 @@ type Config struct {
 func loadConfig() Config {
 	return Config{
 		Port:               envOr("PORT", "8130"),
-		PostgresURL: mustEnvOr("DATABASE_URL"), // NF-SEC-6: required, no hardcoded credential fallback
+		PostgresURL:        mustEnvOr("DATABASE_URL"), // NF-SEC-6: required, no hardcoded credential fallback
 		RedisURL:           envOr("REDIS_URL", "redis://localhost:6379/6"),
 		KafkaBrokers:       envOr("KAFKA_BROKERS", "localhost:9092"),
 		TemporalHost:       envOr("TEMPORAL_HOST", "localhost:7233"),
@@ -321,7 +321,9 @@ func (s *KYBService) indexToOpenSearch(verification *KYBVerification) {
 }
 
 // storeInDaprState stores verification state via Dapr state store (Redis-backed)
-func (s *KYBService) storeInDaprState(key string, value any) {
+// storeInDaprState stores verification state via Dapr state store (Redis-backed).
+// Returns an error so callers can fail closed when persistence is unavailable.
+func (s *KYBService) storeInDaprState(key string, value any) error {
 	daprURL := fmt.Sprintf("http://localhost:%s/v1.0/state/statestore", s.Config.DaprHTTPPort)
 	stateItem := []map[string]any{{
 		"key":   key,
@@ -335,10 +337,79 @@ func (s *KYBService) storeInDaprState(key string, value any) {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("[Dapr/Redis] state store failed: %v", err)
-		return
+		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		err := fmt.Errorf("state store returned %d", resp.StatusCode)
+		log.Printf("[Dapr/Redis] state store key=%s failed: %v", key, err)
+		return err
+	}
 	log.Printf("[Dapr/Redis] stored state key=%s", key)
+	return nil
+}
+
+// loadFromDaprState reads a verification snapshot back from the Dapr state
+// store. Returns (nil, nil) on a cache miss, (nil, err) when the store is
+// unreachable.
+func (s *KYBService) loadFromDaprState(key string) (*KYBVerification, error) {
+	daprURL := fmt.Sprintf("http://localhost:%s/v1.0/state/statestore/%s", s.Config.DaprHTTPPort, key)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", daprURL, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusNoContent {
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("state store GET returned %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) == 0 {
+		return nil, nil
+	}
+	var v KYBVerification
+	if err := json.Unmarshal(body, &v); err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+// persistVerification durably persists a verification snapshot so restarts do
+// not lose KYB results. Mutating endpoints MUST fail closed on error.
+func (s *KYBService) persistVerification(v *KYBVerification) error {
+	return s.storeInDaprState(fmt.Sprintf("kyb:%s", v.ID), v)
+}
+
+// getVerificationByID returns the verification from memory, falling back to
+// the persisted state store (read-repair) so a restarted engine can still
+// serve/transition verifications created before the restart.
+func (s *KYBService) getVerificationByID(id string) (*KYBVerification, bool) {
+	s.mu.RLock()
+	v, ok := s.verifications[id]
+	s.mu.RUnlock()
+	if ok {
+		return v, true
+	}
+	persisted, err := s.loadFromDaprState(fmt.Sprintf("kyb:%s", id))
+	if err != nil {
+		log.Printf("[Dapr/Redis] read-repair for %s failed: %v", id, err)
+		return nil, false
+	}
+	if persisted == nil {
+		return nil, false
+	}
+	s.mu.Lock()
+	s.verifications[id] = persisted
+	s.mu.Unlock()
+	return persisted, true
 }
 
 // startTemporalWorkflow starts a KYB verification workflow via Temporal
@@ -745,6 +816,20 @@ func (s *KYBService) handleCreateVerification(w http.ResponseWriter, r *http.Req
 	s.verifications[verificationID] = verification
 	s.mu.Unlock()
 
+	// Persist the verification result durably — FAIL CLOSED: if durable state
+	// is unavailable a restart would silently lose this verification, so the
+	// creation is rejected and the in-memory record rolled back.
+	if err := s.persistVerification(verification); err != nil {
+		s.mu.Lock()
+		delete(s.verifications, verificationID)
+		s.mu.Unlock()
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "persistence unavailable — KYB verification NOT started (fail-closed)",
+		})
+		return
+	}
+
 	// Fire-and-forget middleware integrations
 	go func() {
 		// 1. Start Temporal workflow
@@ -765,8 +850,11 @@ func (s *KYBService) handleCreateVerification(w http.ResponseWriter, r *http.Req
 		s.verifications[verificationID].KeycloakClientID = kcClient
 		s.mu.Unlock()
 
-		// 4. Store in Dapr state (Redis)
-		s.storeInDaprState(fmt.Sprintf("kyb:%s", verificationID), verification)
+		// 4. Refresh Dapr state (Redis) with integration IDs (durable store was
+		// already written synchronously above)
+		if err := s.storeInDaprState(fmt.Sprintf("kyb:%s", verificationID), verification); err != nil {
+			log.Printf("[Dapr/Redis] async state refresh failed for %s: %v", verificationID, err)
+		}
 
 		// 5. Publish Kafka event
 		s.publishKafkaEvent("kyb-events", map[string]any{
@@ -806,9 +894,8 @@ func (s *KYBService) handleGetVerification(w http.ResponseWriter, r *http.Reques
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	s.mu.RLock()
-	v, ok := s.verifications[id]
-	s.mu.RUnlock()
+	// Memory first, persisted store as read-repair (survives restarts)
+	v, ok := s.getVerificationByID(id)
 
 	if !ok {
 		atomic.AddInt64(&s.requestsFailed, 1)
@@ -878,14 +965,25 @@ func (s *KYBService) handleUploadDocument(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	s.mu.Lock()
-	v, ok := s.verifications[id]
+	v, ok := s.getVerificationByID(id)
 	if !ok {
-		s.mu.Unlock()
 		atomic.AddInt64(&s.requestsFailed, 1)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "verification not found"})
 		return
 	}
+
+	// Transition guard: documents cannot be attached to a terminal-state
+	// verification (approved/rejected/suspended/expired).
+	if v.Status == StatusApproved || v.Status == StatusRejected ||
+		v.Status == StatusSuspended || v.Status == StatusExpired {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": fmt.Sprintf("cannot upload documents to a verification in status '%s'", v.Status),
+		})
+		return
+	}
+
+	s.mu.Lock()
 
 	now := time.Now()
 	docHash := sha256.Sum256([]byte(req.DocURL + req.DocType + now.String()))
@@ -898,10 +996,23 @@ func (s *KYBService) handleUploadDocument(w http.ResponseWriter, r *http.Request
 		Hash:       hex.EncodeToString(docHash[:]),
 		UploadedAt: now,
 	}
+	prevStatus := v.Status
 	v.Documents = append(v.Documents, doc)
 	v.UpdatedAt = now
 	if v.Status == StatusPending {
 		v.Status = StatusDocCollection
+	}
+
+	// Persist synchronously — FAIL CLOSED and roll back on store failure.
+	if err := s.persistVerification(v); err != nil {
+		v.Documents = v.Documents[:len(v.Documents)-1]
+		v.Status = prevStatus
+		s.mu.Unlock()
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "persistence unavailable — document NOT recorded (fail-closed)",
+		})
+		return
 	}
 	s.mu.Unlock()
 
@@ -925,22 +1036,35 @@ func (s *KYBService) handleScreenUBOs(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	s.mu.Lock()
-	v, ok := s.verifications[id]
+	v, ok := s.getVerificationByID(id)
 	if !ok {
-		s.mu.Unlock()
 		atomic.AddInt64(&s.requestsFailed, 1)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "verification not found"})
 		return
 	}
 
+	// Transition guard: screening only makes sense in pre-decision states.
+	if v.Status == StatusApproved || v.Status == StatusRejected ||
+		v.Status == StatusSuspended || v.Status == StatusExpired {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": fmt.Sprintf("cannot screen UBOs for a verification in status '%s'", v.Status),
+		})
+		return
+	}
+
+	s.mu.Lock()
+
 	now := time.Now()
+	screeningIncomplete := false
 	results := make([]map[string]any, len(v.BeneficialOwners))
 	for i := range v.BeneficialOwners {
 		bo := &v.BeneficialOwners[i]
-		bo.PEPStatus = "clear"
-		bo.SanctionsStatus = "clear"
-		bo.RiskScore = 15.0
+		// FAIL-CLOSED: a UBO is NOT "clear" until the risk engine explicitly
+		// confirms it. Provider errors leave the UBO in review_required.
+		bo.PEPStatus = "review_required"
+		bo.SanctionsStatus = "review_required"
+		bo.RiskScore = 50.0
 		bo.ScreenedAt = &now
 
 		// Forward to Rust risk engine for deep screening
@@ -959,6 +1083,10 @@ func (s *KYBService) handleScreenUBOs(w http.ResponseWriter, r *http.Request) {
 			var pepResult map[string]any
 			json.NewDecoder(pepResp.Body).Decode(&pepResult)
 			pepResp.Body.Close()
+			// Engine responded successfully — explicit verdicts only
+			bo.PEPStatus = "clear"
+			bo.SanctionsStatus = "clear"
+			bo.RiskScore = 15.0
 			if matched, ok := pepResult["is_pep"].(bool); ok && matched {
 				bo.PEPStatus = "positive"
 				bo.RiskScore = 75.0
@@ -967,6 +1095,13 @@ func (s *KYBService) handleScreenUBOs(w http.ResponseWriter, r *http.Request) {
 				bo.SanctionsStatus = "match"
 				bo.RiskScore = 95.0
 			}
+		} else {
+			// Screening provider unreachable/errored — fail closed
+			screeningIncomplete = true
+			if pepResp != nil {
+				pepResp.Body.Close()
+			}
+			log.Printf("[KYB] UBO screening provider error for %s %s — marked review_required (fail-closed)", bo.FirstName, bo.LastName)
 		}
 
 		results[i] = map[string]any{
@@ -976,10 +1111,14 @@ func (s *KYBService) handleScreenUBOs(w http.ResponseWriter, r *http.Request) {
 			"risk_score":       bo.RiskScore,
 		}
 
+		checkStatus := bo.PEPStatus
+		if bo.PEPStatus == "review_required" || bo.SanctionsStatus == "review_required" {
+			checkStatus = "error"
+		}
 		v.ComplianceChecks = append(v.ComplianceChecks, ComplianceCheck{
 			ID:        fmt.Sprintf("chk-%d-%d", now.UnixNano(), i),
 			CheckType: "ubo_screening",
-			Status:    bo.PEPStatus,
+			Status:    checkStatus,
 			Score:     bo.RiskScore,
 			Details:   fmt.Sprintf("PEP: %s, Sanctions: %s", bo.PEPStatus, bo.SanctionsStatus),
 			Source:    "kyb-risk-engine",
@@ -987,11 +1126,27 @@ func (s *KYBService) handleScreenUBOs(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	v.Status = StatusUBOScreening
+	// Incomplete screening routes to compliance_review (fail-closed) instead of
+	// progressing as if screening succeeded.
+	if screeningIncomplete {
+		v.Status = StatusComplianceReview
+	} else {
+		v.Status = StatusUBOScreening
+	}
 	riskScore, riskLevel := s.calculateRiskScore(v)
 	v.RiskScore = riskScore
 	v.RiskLevel = riskLevel
 	v.UpdatedAt = now
+
+	// Persist synchronously — FAIL CLOSED on store failure.
+	if err := s.persistVerification(v); err != nil {
+		s.mu.Unlock()
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "persistence unavailable — screening result NOT recorded (fail-closed)",
+		})
+		return
+	}
 	s.mu.Unlock()
 
 	go func() {
@@ -1028,20 +1183,62 @@ func (s *KYBService) handleApprove(w http.ResponseWriter, r *http.Request) {
 
 	var req ApproveRejectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		req.ActorID = "system"
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
 	}
 
-	s.mu.Lock()
-	v, ok := s.verifications[id]
+	// Approvals must carry a real actor identity — never null/"system".
+	if strings.TrimSpace(req.ActorID) == "" || req.ActorID == "system" {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "actor_id is required and must identify the approving admin (fail-closed)",
+		})
+		return
+	}
+
+	v, ok := s.getVerificationByID(id)
 	if !ok {
-		s.mu.Unlock()
 		atomic.AddInt64(&s.requestsFailed, 1)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "verification not found"})
 		return
 	}
 
+	// Transition guard: only pre-decision states may be approved (no
+	// double-approval, no approval after rejection).
+	switch v.Status {
+	case StatusPending, StatusDocCollection, StatusUBOScreening, StatusRiskAssessment, StatusComplianceReview:
+		// allowed
+	default:
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": fmt.Sprintf("cannot approve a verification in status '%s'", v.Status),
+		})
+		return
+	}
+
+	// Precondition: at least one business document must have been uploaded.
+	if len(v.Documents) == 0 {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusPreconditionFailed, map[string]string{
+			"error": "cannot approve without any uploaded business documents",
+		})
+		return
+	}
+
+	// Precondition: UBO screening must not be incomplete (fail-closed).
+	for _, bo := range v.BeneficialOwners {
+		if bo.PEPStatus == "review_required" || bo.SanctionsStatus == "review_required" ||
+			bo.PEPStatus == "pending" || bo.SanctionsStatus == "pending" {
+			atomic.AddInt64(&s.requestsFailed, 1)
+			writeJSON(w, http.StatusPreconditionFailed, map[string]string{
+				"error": "cannot approve — UBO screening incomplete (fail-closed)",
+			})
+			return
+		}
+	}
+
 	if v.RiskLevel == "critical" {
-		s.mu.Unlock()
 		atomic.AddInt64(&s.requestsFailed, 1)
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"error": "cannot approve verification with critical risk level — manual escalation required",
@@ -1049,6 +1246,7 @@ func (s *KYBService) handleApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.mu.Lock()
 	now := time.Now()
 	expiry := now.AddDate(1, 0, 0)
 	v.Status = StatusApproved
@@ -1056,6 +1254,20 @@ func (s *KYBService) handleApprove(w http.ResponseWriter, r *http.Request) {
 	v.ApprovedBy = req.ActorID
 	v.ExpiresAt = &expiry
 	v.UpdatedAt = now
+
+	// Persist the decision durably — FAIL CLOSED and roll back on failure.
+	if err := s.persistVerification(v); err != nil {
+		v.Status = StatusComplianceReview
+		v.ApprovedAt = nil
+		v.ApprovedBy = ""
+		v.ExpiresAt = nil
+		s.mu.Unlock()
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "persistence unavailable — approval NOT recorded (fail-closed)",
+		})
+		return
+	}
 	s.mu.Unlock()
 
 	go func() {
@@ -1085,21 +1297,71 @@ func (s *KYBService) handleReject(w http.ResponseWriter, r *http.Request) {
 	id := vars["id"]
 
 	var req ApproveRejectRequest
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
 
-	s.mu.Lock()
-	v, ok := s.verifications[id]
+	// Rejections must carry a real actor identity — never null/"system".
+	if strings.TrimSpace(req.ActorID) == "" || req.ActorID == "system" {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "actor_id is required and must identify the rejecting admin (fail-closed)",
+		})
+		return
+	}
+
+	v, ok := s.getVerificationByID(id)
 	if !ok {
-		s.mu.Unlock()
 		atomic.AddInt64(&s.requestsFailed, 1)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "verification not found"})
 		return
 	}
+
+	// Transition guard: only pre-decision states may be rejected (no
+	// double-rejection, no rejection after approval).
+	switch v.Status {
+	case StatusPending, StatusDocCollection, StatusUBOScreening, StatusRiskAssessment, StatusComplianceReview:
+		// allowed
+	default:
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": fmt.Sprintf("cannot reject a verification in status '%s'", v.Status),
+		})
+		return
+	}
+
+	s.mu.Lock()
+	prevStatus := v.Status
+	prevReason, hadReason := v.Metadata["rejection_reason"]
+	prevRejectedBy, hadRejectedBy := v.Metadata["rejected_by"]
 	now := time.Now()
 	v.Status = StatusRejected
 	v.UpdatedAt = now
 	v.Metadata["rejection_reason"] = req.Reason
 	v.Metadata["rejected_by"] = req.ActorID
+
+	// Persist the decision durably — FAIL CLOSED and roll back on failure.
+	if err := s.persistVerification(v); err != nil {
+		v.Status = prevStatus
+		if hadReason {
+			v.Metadata["rejection_reason"] = prevReason
+		} else {
+			delete(v.Metadata, "rejection_reason")
+		}
+		if hadRejectedBy {
+			v.Metadata["rejected_by"] = prevRejectedBy
+		} else {
+			delete(v.Metadata, "rejected_by")
+		}
+		s.mu.Unlock()
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "persistence unavailable — rejection NOT recorded (fail-closed)",
+		})
+		return
+	}
 	s.mu.Unlock()
 
 	go func() {
@@ -1122,19 +1384,70 @@ func (s *KYBService) handleRiskAssessment(w http.ResponseWriter, r *http.Request
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	s.mu.Lock()
-	v, ok := s.verifications[id]
+	var req ApproveRejectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	// Risk assessments must carry a real actor identity — never null/"system".
+	if strings.TrimSpace(req.ActorID) == "" || req.ActorID == "system" {
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "actor_id is required and must identify the assessing admin (fail-closed)",
+		})
+		return
+	}
+
+	v, ok := s.getVerificationByID(id)
 	if !ok {
-		s.mu.Unlock()
+		atomic.AddInt64(&s.requestsFailed, 1)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "verification not found"})
 		return
 	}
+
+	// Transition guard: risk assessment only applies to pre-decision states.
+	switch v.Status {
+	case StatusPending, StatusDocCollection, StatusUBOScreening, StatusRiskAssessment, StatusComplianceReview:
+		// allowed
+	default:
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": fmt.Sprintf("cannot assess risk for a verification in status '%s'", v.Status),
+		})
+		return
+	}
+
+	s.mu.Lock()
+	prevStatus := v.Status
+	prevRiskScore := v.RiskScore
+	prevRiskLevel := v.RiskLevel
+	now := time.Now()
 
 	riskScore, riskLevel := s.calculateRiskScore(v)
 	v.RiskScore = riskScore
 	v.RiskLevel = riskLevel
 	v.Status = StatusRiskAssessment
-	v.UpdatedAt = time.Now()
+	v.UpdatedAt = now
+	if v.Metadata == nil {
+		v.Metadata = map[string]any{}
+	}
+	v.Metadata["risk_assessed_by"] = req.ActorID
+
+	// Persist synchronously — FAIL CLOSED and roll back on store failure.
+	if err := s.persistVerification(v); err != nil {
+		v.Status = prevStatus
+		v.RiskScore = prevRiskScore
+		v.RiskLevel = prevRiskLevel
+		delete(v.Metadata, "risk_assessed_by")
+		s.mu.Unlock()
+		atomic.AddInt64(&s.requestsFailed, 1)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "persistence unavailable — risk assessment NOT recorded (fail-closed)",
+		})
+		return
+	}
 	s.mu.Unlock()
 
 	go func() {
@@ -1153,9 +1466,9 @@ func (s *KYBService) handleRiskAssessment(w http.ResponseWriter, r *http.Request
 		})
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		req, _ := http.NewRequestWithContext(ctx, "POST", riskURL, bytes.NewReader(payload))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
+		riskReq, _ := http.NewRequestWithContext(ctx, "POST", riskURL, bytes.NewReader(payload))
+		riskReq.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(riskReq)
 		if err == nil {
 			defer resp.Body.Close()
 			var riskResult map[string]any
@@ -1169,6 +1482,11 @@ func (s *KYBService) handleRiskAssessment(w http.ResponseWriter, r *http.Request
 					v.RiskLevel = "high"
 				}
 				s.mu.Unlock()
+				// Refresh durable state with the merged ML score (base
+				// assessment was already persisted synchronously above)
+				if err := s.storeInDaprState(fmt.Sprintf("kyb:%s", id), v); err != nil {
+					log.Printf("[Dapr/Redis] async state refresh failed for %s: %v", id, err)
+				}
 			}
 		}
 		s.publishKafkaEvent("kyb-events", map[string]any{
@@ -1176,6 +1494,7 @@ func (s *KYBService) handleRiskAssessment(w http.ResponseWriter, r *http.Request
 			"verification_id": id,
 			"risk_score":      riskScore,
 			"risk_level":      riskLevel,
+			"assessed_by":     req.ActorID,
 		})
 		s.indexToOpenSearch(v)
 	}()

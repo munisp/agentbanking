@@ -339,7 +339,7 @@ const _txPatterns = {
     typeof withTransaction === "function"
       ? (withTransaction as Function)(...args)
       : Promise.resolve(args),
-  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+  atomicBatch: async <T,>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
       for (const op of ops) results.push(await op());
@@ -375,6 +375,7 @@ const _constraints = {
 export const platformHealthScorecardRouter = router({
   getOverallScore,
   getSubsystemScores,
+  list: getSubsystemScores, // alias of getSubsystemScores (broken-call fix)
   getScoreHistory,
   getAlerts,
   acknowledgeAlert,

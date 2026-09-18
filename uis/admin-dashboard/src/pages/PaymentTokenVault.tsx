@@ -12,7 +12,7 @@ export default function PaymentTokenVault() {
   // @ts-ignore Sprint 85
   const stats = trpc.paymentTokenVault.getStats.useQuery();
   // @ts-ignore Sprint 85
-  const list = trpc.paymentTokenVault.listTokens.useQuery({
+  const list = trpc.paymentTokenVault.list.useQuery({
     status: undefined,
   });
   // @ts-ignore Sprint 85
@@ -100,7 +100,7 @@ export default function PaymentTokenVault() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(list.data?.tokens ?? [])
+                  {(list.data?.data ?? [])
                     .filter(
                       (item: any) =>
                         !search ||

@@ -175,6 +175,7 @@ func initDatabase() error {
 
 func registerRoutes(router *gin.Engine) {
 	router.GET("/health", healthCheck)
+	router.GET("/ready", readinessCheck)
 
 	api := router.Group("/api/v1/loans")
 	{
@@ -193,6 +194,22 @@ func registerRoutes(router *gin.Engine) {
 
 func healthCheck(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "healthy", "service": "loan-service"})
+}
+
+// readinessCheck is the readiness probe — distinct from /health: it fails
+// with 503 unless the PostgreSQL database answers a ping within 2 seconds.
+func readinessCheck(c *gin.Context) {
+	if db == nil {
+		c.JSON(503, gin.H{"status": "not_ready", "database": "not initialized"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		c.JSON(503, gin.H{"status": "not_ready", "database": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"status": "ready", "service": "loan-service"})
 }
 
 func createLoanApplication(c *gin.Context) {

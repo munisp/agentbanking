@@ -2,7 +2,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
-import { connectivityLog, auditLog } from "../../drizzle/schema";
+import { connectivityLog, auditLog, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import {
   validateAmount,
@@ -406,4 +406,41 @@ export const carrierCostRouter = router({
         procedure: "alerts",
       };
     }),
+
+  // Distinct countries present in the `carrier_rate_%` systemConfig store
+  // (same store carrierLivePricing.listRates reads).
+  listCountries: protectedProcedure.query(async () => {
+    const COUNTRY_NAMES: Record<string, string> = {
+      NG: "Nigeria",
+      GH: "Ghana",
+      KE: "Kenya",
+      ZA: "South Africa",
+      EG: "Egypt",
+      TZ: "Tanzania",
+      UG: "Uganda",
+      RW: "Rwanda",
+      CI: "Côte d'Ivoire",
+      SN: "Senegal",
+    };
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db
+      .select()
+      .from(systemConfig)
+      .where(sql`${systemConfig.key} LIKE 'carrier_rate_%'`)
+      .limit(200);
+    const codes = new Set<string>();
+    for (const r of rows) {
+      try {
+        const parsed = JSON.parse(String(r.value ?? "{}"));
+        if (typeof parsed.country === "string" && parsed.country)
+          codes.add(parsed.country);
+      } catch {
+        // skip malformed rows
+      }
+    }
+    return Array.from(codes)
+      .sort()
+      .map(code => ({ code, name: COUNTRY_NAMES[code] ?? code }));
+  }),
 });

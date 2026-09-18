@@ -306,4 +306,133 @@ export const aiChatSupportRouter = router({
           : 0,
     };
   }),
+
+  // Start a new AI support chat session (persisted in chatSessions)
+  createSession: protectedProcedure
+    .input(z.object({ context: z.string().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) throw new Error("Database unavailable");
+        const sessionRef = `AI-${Date.now()}-${Math.floor(
+          Math.random() * 100000
+        )}`.slice(0, 32);
+        const [session] = await db
+          .insert(chatSessions)
+          .values({
+            sessionRef,
+            agentId: ctx.user?.id ?? 0,
+            category: "ai_support",
+            subject: input.context ?? "AI Support Chat",
+            status: "open",
+          })
+          .returning();
+        const welcomeContent =
+          "Hello! I'm your AI support assistant. How can I help you today?";
+        const [welcome] = await db
+          .insert(chatMessages)
+          .values({
+            sessionId: session.id,
+            senderType: "support",
+            senderName: "AI Assistant",
+            content: welcomeContent,
+          })
+          .returning();
+        await db.insert(auditLog).values({
+          agentId: ctx.user?.id ?? null,
+          action: "ai_chat_session_created",
+          resource: "chat_sessions",
+          resourceId: String(session.id),
+          status: "success",
+          metadata: { context: input.context ?? null, sessionRef },
+        });
+        return {
+          session: { ...session, id: String(session.id) },
+          welcomeMessage: {
+            id: String(welcome.id),
+            role: "assistant",
+            content: welcomeContent,
+            timestamp: welcome.createdAt.toISOString(),
+          },
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  // Escalate a session to human support
+  escalate: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.union([z.string(), z.number()]),
+        reason: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) throw new Error("Database unavailable");
+        const numericId = Number(input.sessionId);
+        if (!Number.isFinite(numericId))
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Invalid sessionId",
+          });
+        const [session] = await db
+          .select()
+          .from(chatSessions)
+          .where(eq(chatSessions.id, numericId))
+          .limit(1);
+        if (!session)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `Chat session ${input.sessionId} not found`,
+          });
+        await db
+          .update(chatSessions)
+          .set({ status: "escalated" })
+          .where(eq(chatSessions.id, numericId));
+        const content =
+          "This chat has been escalated to a human support agent. Someone will join shortly.";
+        const [msg] = await db
+          .insert(chatMessages)
+          .values({
+            sessionId: numericId,
+            senderType: "system",
+            senderName: "System",
+            content,
+          })
+          .returning();
+        await db.insert(auditLog).values({
+          agentId: ctx.user?.id ?? null,
+          action: "ai_chat_session_escalated",
+          resource: "chat_sessions",
+          resourceId: String(numericId),
+          status: "success",
+          metadata: { reason: input.reason ?? null },
+        });
+        return {
+          success: true,
+          message: {
+            id: String(msg.id),
+            role: "system",
+            content,
+            timestamp: msg.createdAt.toISOString(),
+            metadata: { type: "escalation" },
+          },
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
 });

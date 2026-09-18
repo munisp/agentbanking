@@ -448,4 +448,71 @@ export const dynamicFeeEngineRouter = router({
         });
       }
     }),
+
+  // Delete (deactivate + remove) a fee rule, mirroring updateRule's audit pattern
+  deleteRule: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) throw new Error("Database unavailable");
+        const [oldRule] = await db
+          .select()
+          .from(feeRules)
+          .where(eq(feeRules.id, input.id))
+          .limit(1);
+        if (!oldRule)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `Fee rule ${input.id} not found`,
+          });
+        await db.delete(feeRules).where(eq(feeRules.id, input.id));
+        await db.insert(feeAuditTrail).values({
+          feeRuleId: input.id,
+          action: "deleted",
+          changedBy: ctx.user?.id,
+          previousValues: JSON.stringify(oldRule),
+          newValues: JSON.stringify({ deleted: true }),
+        } as any);
+        return { success: true, id: input.id };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  // Aggregate stats over feeRules
+  getStats: protectedProcedure.query(async () => {
+    const db = (await getDb())!;
+    if (!db)
+      return { totalRules: 0, activeRules: 0, txTypes: 0, avgFeeRate: 0 };
+    const [total] = await db.select({ value: count() }).from(feeRules);
+    const [active] = await db
+      .select({ value: count() })
+      .from(feeRules)
+      .where(eq(feeRules.isActive, true));
+    const txTypeRows = await db
+      .select({ txType: feeRules.txType })
+      .from(feeRules)
+      .groupBy(feeRules.txType);
+    const rateRows = await db
+      .select({ feeValue: feeRules.feeValue })
+      .from(feeRules)
+      .where(eq(feeRules.isActive, true));
+    const avgFeeRate =
+      rateRows.length > 0
+        ? rateRows.reduce((a: number, r) => a + Number(r.feeValue ?? 0), 0) /
+          rateRows.length
+        : 0;
+    return {
+      totalRules: Number(total.value),
+      activeRules: Number(active.value),
+      txTypes: txTypeRows.length,
+      avgFeeRate: Math.round(avgFeeRate * 100) / 100,
+    };
+  }),
 });

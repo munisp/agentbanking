@@ -335,7 +335,7 @@ const _txPatterns = {
     typeof withTransaction === "function"
       ? (withTransaction as Function)(...args)
       : Promise.resolve(args),
-  atomicBatch: async <T>(ops: (() => Promise<T>)[]): Promise<T[]> => {
+  atomicBatch: async <T,>(ops: (() => Promise<T>)[]): Promise<T[]> => {
     return withTransaction(async () => {
       const results: T[] = [];
       for (const op of ops) results.push(await op());
@@ -348,6 +348,7 @@ export const agentTerritoryHeatmapRouter = router({
   getHeatmapData,
   getTerritoryStats,
   getAgentLocations,
+  list: getAgentLocations, // alias of getAgentLocations (broken-call fix)
   getOptimalCoverage,
   assignTerritory,
 });

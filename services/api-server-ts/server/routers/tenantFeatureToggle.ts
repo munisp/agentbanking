@@ -346,6 +346,39 @@ export const tenantFeatureToggleRouter = router({
       }
     }),
 
+  getStats: protectedProcedure.query(async () => {
+    try {
+      const db = (await getDb())!;
+      if (!db) return { totalToggles: 0, enabled: 0, disabled: 0 };
+      const [total] = await db
+        .select({ value: count() })
+        .from(tenantFeatureToggles)
+        .limit(100);
+      const [enabled] = await db
+        .select({ value: count() })
+        .from(tenantFeatureToggles)
+        .where(eq(tenantFeatureToggles.enabled, true))
+        .limit(100);
+      const [disabled] = await db
+        .select({ value: count() })
+        .from(tenantFeatureToggles)
+        .where(eq(tenantFeatureToggles.enabled, false))
+        .limit(100);
+      return {
+        totalToggles: Number(total?.value ?? 0),
+        enabled: Number(enabled?.value ?? 0),
+        disabled: Number(disabled?.value ?? 0),
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }),
+
   // Kill switch — disable feature globally
   killSwitch: protectedProcedure
     .input(z.object({ featureName: z.string() }))

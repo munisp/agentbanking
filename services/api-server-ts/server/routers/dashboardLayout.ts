@@ -441,4 +441,55 @@ export const dashboardLayoutRouter = router({
       ],
     };
   }),
+
+  // Apply a preset layout and persist it to systemConfig `dashboard_layout_<userId>`
+  applyPreset: protectedProcedure
+    .input(z.object({ userId: z.string(), presetId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const PRESETS: Record<
+        string,
+        { id: string; name: string; widgets: string[] }
+      > = {
+        default: { id: "default", name: "Default", widgets: [] },
+        financial: { id: "financial", name: "Financial", widgets: [] },
+      };
+      const preset = PRESETS[input.presetId];
+      if (!preset)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Preset ${input.presetId} not found`,
+        });
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — preset not applied",
+        });
+      const layout = {
+        widgets: preset.widgets,
+        columns: 3,
+        theme: "default",
+        presetId: preset.id,
+      };
+      await db
+        .insert(systemConfig)
+        .values({
+          key: "dashboard_layout_" + input.userId,
+          value: JSON.stringify(layout),
+          updatedBy: ctx.user?.id != null ? String(ctx.user.id) : "system",
+        })
+        .onConflictDoUpdate({
+          target: systemConfig.key,
+          set: { value: JSON.stringify(layout), updatedAt: new Date() },
+        });
+      await db.insert(auditLog).values({
+        agentId: ctx.user?.id ?? null,
+        action: "dashboard_layout_preset_applied",
+        resource: "system_config",
+        resourceId: "dashboard_layout_" + input.userId,
+        status: "success",
+        metadata: { userId: input.userId, presetId: input.presetId },
+      });
+      return { success: true, presetId: preset.id, layout };
+    }),
 });

@@ -1,6 +1,7 @@
 // TypeScript enabled — Sprint 96 security audit
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import crypto from "crypto";
 import { eq, desc, and, isNull, lt, gt, sql } from "drizzle-orm";
 import {
   agents,
@@ -329,27 +330,48 @@ export async function updateAgentFloat(
   }
 }
 
+/**
+ * FF-5: Atomically adjust an agent's commission balance.
+ *
+ * Mirrors updateAgentFloat (FF-4): replaces the previous unlocked
+ * read-modify-write (SELECT then UPDATE inside a transaction but with no row
+ * guard, JS float arithmetic via Number()+toFixed(2), and silent no-op on DB
+ * outage) with a single guarded UPDATE — the balance change and the
+ * non-negative-balance check are one atomic statement, and 0 affected rows
+ * (insufficient commission balance, unknown agent, or DB outage) THROWS —
+ * callers must handle the error; money movement is never silently dropped.
+ *
+ * Numeric safety: the delta is passed as a string and cast to PG numeric, so
+ * arithmetic is exact decimal — never JS float.
+ */
 export async function updateAgentCommission(
   id: number,
-  delta: number
+  delta: number | string
 ): Promise<void> {
   const db = await getDb();
-  if (!db) return;
-  if ((db as any)._isNoop) return;
-  await (db as any).transaction(async (tx: any) => {
-    const result = await tx
-      .select()
-      .from(agents)
-      .where(eq(agents.id, id))
-      .limit(1);
-    const agent = result[0];
-    if (!agent) return;
-    const newBalance = (Number(agent.commissionBalance) + delta).toFixed(2);
-    await tx
-      .update(agents)
-      .set({ commissionBalance: newBalance, updatedAt: new Date() })
-      .where(eq(agents.id, id));
-  });
+  if (!db || (db as any)._isNoop) {
+    // Fail closed: previously this returned silently, losing the commission movement.
+    throw new Error("updateAgentCommission: database not available");
+  }
+  const deltaStr = typeof delta === "string" ? delta : delta.toFixed(2);
+  const result = await db
+    .update(agents)
+    .set({
+      commissionBalance: sql`"commissionBalance" + ${deltaStr}::numeric`,
+      updatedAt: new Date(),
+    } as any)
+    .where(
+      and(
+        eq(agents.id, id),
+        sql`"commissionBalance" + ${deltaStr}::numeric >= 0`
+      )
+    )
+    .returning({ id: agents.id });
+  if (result.length === 0) {
+    throw new Error(
+      `updateAgentCommission: commission update rejected for agent ${id} (delta ${deltaStr}) — insufficient commission balance or agent not found`
+    );
+  }
 }
 
 // ─── Transactions ─────────────────────────────────────────────────────────────
@@ -601,20 +623,51 @@ export async function getChatMessages(sessionId: number) {
 }
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────
-export async function writeAuditLog(data: {
-  agentId?: number;
-  agentCode?: string;
-  action: string;
-  resource: string;
-  resourceId?: string;
-  ipAddress?: string;
-  status: "success" | "failure" | "warning";
-  metadata?: Record<string, unknown>;
-}) {
+/**
+ * Hash-chained, tamper-evident audit log writer.
+ *
+ * Each entry stores:
+ *  - prevHash:  the entryHash of the previous row (null for the first row)
+ *  - entryHash: sha256((prevHash ?? "") + canonical JSON of the row's
+ *               auditable fields)
+ *
+ * Modifying or deleting a historical row breaks the chain and is detectable
+ * by re-walking the table and recomputing hashes.
+ *
+ * options.critical: for money-movement audit records. When true, a write
+ * failure THROWS instead of being logged-and-swallowed, so a money op can
+ * never succeed without its audit trail.
+ */
+export async function writeAuditLog(
+  data: {
+    agentId?: number;
+    agentCode?: string;
+    action: string;
+    resource: string;
+    resourceId?: string;
+    ipAddress?: string;
+    status: "success" | "failure" | "warning";
+    metadata?: Record<string, unknown>;
+  },
+  options?: { critical?: boolean }
+) {
   const db = await getDb();
-  if (!db) return;
+  if (!db) {
+    if (options?.critical) {
+      throw new Error(
+        "[AuditLog] Critical audit write failed: database unavailable"
+      );
+    }
+    return;
+  }
   try {
-    await db.insert(auditLog).values({
+    const [last] = await db
+      .select({ entryHash: auditLog.entryHash })
+      .from(auditLog)
+      .orderBy(desc(auditLog.id))
+      .limit(1);
+    const prevHash: string | null = last?.entryHash ?? null;
+    const row = {
       agentId: data.agentId ?? null,
       agentCode: data.agentCode ?? null,
       action: data.action,
@@ -623,9 +676,22 @@ export async function writeAuditLog(data: {
       ipAddress: data.ipAddress ?? null,
       status: data.status,
       metadata: data.metadata ?? null,
+    };
+    // Canonical JSON: fixed key order from the object literal above.
+    const entryHash = crypto
+      .createHash("sha256")
+      .update((prevHash ?? "") + JSON.stringify(row))
+      .digest("hex");
+    await db.insert(auditLog).values({
+      ...row,
+      prevHash,
+      entryHash,
     });
   } catch (err) {
     console.error("[AuditLog] Failed to write:", err);
+    if (options?.critical) {
+      throw err instanceof Error ? err : new Error(String(err));
+    }
   }
 }
 

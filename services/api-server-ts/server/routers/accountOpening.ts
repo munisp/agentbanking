@@ -9,13 +9,18 @@ import {
   count,
   sum,
   isNull,
+  gt,
   gte,
   lte,
   or,
   asc,
 } from "drizzle-orm";
-import { customers, auditLog } from "../../drizzle/schema";
+import { customers, auditLog, otpTokens } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+import { encryptField, blindIndex } from "../lib/fieldEncryption";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
+import { sendSms } from "../termii";
 import {
   validateAmount,
   validateStatusTransition,
@@ -39,6 +44,90 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   rejected: [],
   archived: [],
 };
+
+// ── Tier-1 Phone OTP Verification (fail-closed) ─────────────────────────────
+// Tier-1 accounts (no BVN/NIN) must verify the customer's phone via OTP before
+// the account record may be created. OTPs are stored bcrypt-hashed in the
+// otp_tokens table under a dedicated purpose, are single-use, expire, and are
+// rate-limited (resend cooldown + max verification attempts).
+const TIER1_OTP_PURPOSE = "tier1_account_opening";
+const TIER1_OTP_EXPIRY_MINUTES = 10;
+const TIER1_OTP_RESEND_COOLDOWN_SECONDS = 60;
+const TIER1_OTP_MAX_ATTEMPTS = 5;
+
+function generateTier1Otp(): string {
+  // CSPRNG 6-digit OTP (crypto.randomInt is uniform in [100000, 999999])
+  return crypto.randomInt(100000, 1000000).toString();
+}
+
+/**
+ * Verify a tier-1 account-opening OTP for the requesting user. FAIL-CLOSED:
+ * any missing/expired/over-attempted/mismatched token throws; the token is
+ * marked used on success (single-use).
+ */
+async function verifyTier1Otp(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  userId: number,
+  otp: string
+): Promise<void> {
+  const tokenRows = await db
+    .select()
+    .from(otpTokens)
+    .where(
+      and(
+        eq(otpTokens.agentId, userId),
+        eq(otpTokens.purpose, TIER1_OTP_PURPOSE),
+        eq(otpTokens.used, false),
+        gt(otpTokens.expiresAt, new Date())
+      )
+    )
+    .orderBy(desc(otpTokens.createdAt))
+    .limit(1);
+
+  if (tokenRows.length === 0) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message:
+        "Phone OTP verification required for tier-1 account opening — request an OTP via accountOpening.sendTier1Otp first (fail-closed).",
+    });
+  }
+
+  const token = tokenRows[0];
+
+  // Max-attempts guard (attempts column created by migration 0053; COALESCE
+  // keeps pre-existing rows at 0).
+  const attemptRows = await db.execute(
+    sql`SELECT COALESCE(attempts, 0) AS attempts FROM otp_tokens WHERE id = ${token.id}`
+  );
+  const currentAttempts = Number((attemptRows as any).rows?.[0]?.attempts ?? 0);
+  if (currentAttempts >= TIER1_OTP_MAX_ATTEMPTS) {
+    await db
+      .update(otpTokens)
+      .set({ used: true })
+      .where(eq(otpTokens.id, token.id));
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "Too many failed OTP attempts. Please request a new OTP.",
+    });
+  }
+
+  const valid = await bcrypt.compare(otp, token.hashedOtp);
+  if (!valid) {
+    await db.execute(
+      sql`UPDATE otp_tokens SET attempts = COALESCE(attempts, 0) + 1 WHERE id = ${token.id}`
+    );
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "Invalid OTP — tier-1 account opening BLOCKED (fail-closed).",
+    });
+  }
+
+  // Single-use: mark consumed before proceeding
+  await db
+    .update(otpTokens)
+    .set({ used: true, usedAt: new Date() })
+    .where(eq(otpTokens.id, token.id));
+}
 
 // ── Data Integrity Helpers ─────────────────────────────────────────────────
 function validateAccountopeningInput(data: Record<string, unknown>): boolean {
@@ -272,7 +361,13 @@ export const accountOpeningRouter = router({
           .from(customers)
           .orderBy(desc(customers.createdAt))
           .limit(input?.limit ?? 20);
-        return { accounts: rows, total: rows.length };
+        // Never expose stored BVN/NIN (now encrypted ciphertext) over the API.
+        const accounts = rows.map(r => ({
+          ...r,
+          bvn: r.bvn ? "***" : null,
+          nin: r.nin ? "***" : null,
+        }));
+        return { accounts, total: accounts.length };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -282,6 +377,87 @@ export const accountOpeningRouter = router({
         });
       }
     }),
+  /**
+   * Step 1 (tier-1): send a phone verification OTP for tier-1 account opening.
+   * Resend is throttled (60s cooldown); previous tier-1 OTPs are invalidated.
+   */
+  sendTier1Otp: protectedProcedure
+    .input(z.object({ phone: z.string().min(10).max(15) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable — cannot issue OTP (fail-closed)",
+        });
+      const userId = Number((ctx.user as any)?.id);
+      if (!Number.isFinite(userId) || userId <= 0)
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid user" });
+
+      // Resend cooldown: refuse if a tier-1 OTP was issued within the window
+      const recent = await db
+        .select({ id: otpTokens.id })
+        .from(otpTokens)
+        .where(
+          and(
+            eq(otpTokens.agentId, userId),
+            eq(otpTokens.purpose, TIER1_OTP_PURPOSE),
+            gt(
+              otpTokens.createdAt,
+              new Date(Date.now() - TIER1_OTP_RESEND_COOLDOWN_SECONDS * 1000)
+            )
+          )
+        )
+        .limit(1);
+      if (recent.length > 0) {
+        // Generic response — do not leak token state
+        return {
+          success: true,
+          message: "If the details match, an OTP has been sent.",
+        };
+      }
+
+      // Invalidate any existing tier-1 OTPs for this user
+      await db
+        .delete(otpTokens)
+        .where(
+          and(
+            eq(otpTokens.agentId, userId),
+            eq(otpTokens.purpose, TIER1_OTP_PURPOSE)
+          )
+        );
+
+      const otp = generateTier1Otp();
+      const hashedOtp = await bcrypt.hash(otp, 10);
+      const expiresAt = new Date(
+        Date.now() + TIER1_OTP_EXPIRY_MINUTES * 60 * 1000
+      );
+      await db.insert(otpTokens).values({
+        agentId: userId,
+        hashedOtp,
+        purpose: TIER1_OTP_PURPOSE,
+        expiresAt,
+        used: false,
+      });
+
+      const smsResult = await sendSms(
+        input.phone,
+        `Your account opening verification code is: ${otp}. Valid for ${TIER1_OTP_EXPIRY_MINUTES} minutes. Do not share this code.`
+      );
+      if (!smsResult.success) {
+        const maskedPhone =
+          input.phone.slice(0, 4) + "****" + input.phone.slice(-3);
+        console.error(
+          `[accountOpening] OTP SMS delivery failed for ${maskedPhone}: ${smsResult.error}`
+        );
+      }
+
+      return {
+        success: true,
+        message: "If the details match, an OTP has been sent.",
+      };
+    }),
+
   openAccount: protectedProcedure
     .input(
       z.object({
@@ -292,6 +468,8 @@ export const accountOpeningRouter = router({
         bvn: z.string().optional(),
         nin: z.string().optional(),
         address: z.string().optional(),
+        // Tier-1 (no BVN/NIN) requires a verified phone OTP
+        otp: z.string().length(6).optional(),
         idempotencyKey: z.string().optional(),
       })
     )
@@ -386,14 +564,39 @@ export const accountOpeningRouter = router({
                 "KYC enforcement gateway unreachable — account opening BLOCKED (fail-closed design prevents unverified account creation)",
             });
           }
+        } else {
+          // ══ TIER-1 PHONE OTP ENFORCEMENT (FAIL-CLOSED) ══
+          // Tier-1 accounts (no BVN/NIN) must present a verified phone OTP.
+          // If the OTP store is unreachable or the OTP is missing/invalid,
+          // BLOCK the operation.
+          if (!input.otp) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message:
+                "Tier-1 account opening requires phone OTP verification — call accountOpening.sendTier1Otp and supply the OTP (fail-closed).",
+            });
+          }
+          const otpUserId = Number((ctx.user as any)?.id);
+          if (!Number.isFinite(otpUserId) || otpUserId <= 0) {
+            throw new TRPCError({
+              code: "UNAUTHORIZED",
+              message: "Invalid user context for OTP verification",
+            });
+          }
+          await verifyTier1Otp(db, otpUserId, input.otp);
         }
 
-        // Duplicate BVN/NIN pre-checks — CONFLICT on match
-        if (input.bvn) {
+        // Duplicate BVN/NIN pre-checks — CONFLICT on match.
+        // Values are stored encrypted with a random IV, so the pre-check runs
+        // against the deterministic blind-index columns (sha256+salt) instead
+        // of plaintext equality.
+        const bvnHash = input.bvn ? blindIndex(input.bvn) : null;
+        const ninHash = input.nin ? blindIndex(input.nin) : null;
+        if (bvnHash) {
           const [dupBvn] = await db
             .select({ id: customers.id })
             .from(customers)
-            .where(eq(customers.bvn, input.bvn))
+            .where(eq(customers.bvnHash, bvnHash))
             .limit(1);
           if (dupBvn)
             throw new TRPCError({
@@ -401,11 +604,11 @@ export const accountOpeningRouter = router({
               message: "A customer with this BVN already exists",
             });
         }
-        if (input.nin) {
+        if (ninHash) {
           const [dupNin] = await db
             .select({ id: customers.id })
             .from(customers)
-            .where(eq(customers.nin, input.nin))
+            .where(eq(customers.ninHash, ninHash))
             .limit(1);
           if (dupNin)
             throw new TRPCError({
@@ -421,8 +624,11 @@ export const accountOpeningRouter = router({
             lastName: input.lastName,
             phone: input.phone,
             email: input.email,
-            bvn: input.bvn,
-            nin: input.nin,
+            // PII at rest: AES-256-GCM ciphertext + blind index (migration 0057)
+            bvn: input.bvn ? encryptField(input.bvn) : undefined,
+            nin: input.nin ? encryptField(input.nin) : undefined,
+            bvnHash,
+            ninHash,
             address: input.address,
             status: "pending_kyc",
             tenantId: (ctx.user as any)?.tenantId ?? null,
@@ -433,9 +639,22 @@ export const accountOpeningRouter = router({
           resource: "customers",
           resourceId: String(customer.id),
           status: "success",
-          metadata: { firstName: input.firstName, lastName: input.lastName },
+          metadata: {
+            firstName: input.firstName,
+            lastName: input.lastName,
+            tier: requiresKYC ? (input.nin ? 3 : 2) : 1,
+            phoneOtpVerified: requiresKYC ? undefined : true,
+          },
         });
-        return { success: true, customer };
+        // Redact stored PII from the response (bvn/nin are ciphertext at rest).
+        return {
+          success: true,
+          customer: {
+            ...customer,
+            bvn: customer.bvn ? "***" : null,
+            nin: customer.nin ? "***" : null,
+          },
+        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

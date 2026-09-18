@@ -90,7 +90,7 @@ function parseCookies(cookieHeader: string): Map<string, string> {
   return map;
 }
 
-async function requireAuth(req: Request, res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
     // 1. Platform session cookie (agent dashboard / PWA browser sessions)
     const cookies = parseCookies(req.headers.cookie ?? "");

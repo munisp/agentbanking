@@ -18,10 +18,12 @@
  */
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { and, count, desc, eq } from "drizzle-orm";
+import crypto from "crypto";
+import { and, count, desc, eq, or, sql } from "drizzle-orm";
 import { getDb, writeAuditLog } from "../db";
 import {
   agents,
+  users,
   transactions,
   auditLog,
   loyaltyHistory,
@@ -55,6 +57,122 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   rejected: [],
   archived: [],
 };
+
+// ── GDPR Erasure: Anonymization ─────────────────────────────────────────────
+/**
+ * Execute NDPR/GDPR erasure by ANONYMIZING PII in place (hard deletes would
+ * break the CBN-mandated 7-year financial audit trail). Runs inside the
+ * caller's transaction. Overwrites:
+ *  - customers / agents / users: name → 'REDACTED', phone → per-row surrogate,
+ *    email → salted hash address, BVN/NIN (and their blind indexes) → null
+ *  - kyc_sessions: BVN/NIN + blind indexes → null, extracted document PII
+ *    (name, DOB, ID number) and document URLs → null/'REDACTED'
+ */
+async function anonymizePersonalData(
+  tx: any,
+  request: {
+    requesterType: string;
+    requesterId: number | null;
+    requesterEmail: string;
+  }
+): Promise<string[]> {
+  const anonymized: string[] = [];
+  const emailHash = crypto
+    .createHash("sha256")
+    .update(request.requesterEmail.toLowerCase().trim())
+    .digest("hex");
+  const redactedEmail = `redacted-${emailHash.slice(0, 16)}@anonymized.invalid`;
+  // customers.phone is UNIQUE — use a per-row surrogate derived from the id.
+  const surrogatePhone = sql`('X' || lpad(id::text, 18, '0'))`;
+
+  // ── customers (match by id and/or email) ──────────────────────────────────
+  const customerConds = [] as any[];
+  if (request.requesterId != null)
+    customerConds.push(eq(customers.id, request.requesterId));
+  if (request.requesterEmail)
+    customerConds.push(eq(customers.email, request.requesterEmail));
+  if (customerConds.length > 0) {
+    await tx
+      .update(customers)
+      .set({
+        firstName: "REDACTED",
+        lastName: "REDACTED",
+        phone: surrogatePhone,
+        email: redactedEmail,
+        bvn: null,
+        nin: null,
+        bvnHash: null,
+        ninHash: null,
+        address: null,
+        dateOfBirth: null,
+        updatedAt: new Date(),
+      })
+      .where(or(...customerConds));
+    anonymized.push("customers");
+  }
+
+  // ── users (requesterType "user") ──────────────────────────────────────────
+  if (request.requesterType === "user") {
+    const userConds = [] as any[];
+    if (request.requesterId != null)
+      userConds.push(eq(users.id, request.requesterId));
+    if (request.requesterEmail)
+      userConds.push(eq(users.email, request.requesterEmail));
+    if (userConds.length > 0) {
+      await tx
+        .update(users)
+        .set({
+          name: "REDACTED",
+          email: redactedEmail,
+          updatedAt: new Date(),
+        })
+        .where(or(...userConds));
+      anonymized.push("users");
+    }
+  }
+
+  // ── agents (requesterType "agent") ────────────────────────────────────────
+  if (request.requesterType === "agent" && request.requesterId != null) {
+    await tx
+      .update(agents)
+      .set({
+        name: "REDACTED",
+        phone: "",
+        email: redactedEmail,
+        location: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(agents.id, request.requesterId));
+    anonymized.push("agents");
+  }
+
+  // ── kyc_sessions (documents & extracted PII) ──────────────────────────────
+  const kycConds = [] as any[];
+  if (request.requesterType === "customer" && request.requesterId != null)
+    kycConds.push(eq(kycSessions.customerId, request.requesterId));
+  if (request.requesterType === "agent" && request.requesterId != null)
+    kycConds.push(eq(kycSessions.agentId, request.requesterId));
+  if (kycConds.length > 0) {
+    await tx
+      .update(kycSessions)
+      .set({
+        bvn: null,
+        nin: null,
+        bvnHash: null,
+        ninHash: null,
+        selfieUrl: null,
+        idDocUrl: null,
+        docExtractedName: null,
+        docExtractedDob: null,
+        docExtractedIdNumber: null,
+        updatedAt: new Date(),
+      })
+      .where(or(...kycConds));
+    anonymized.push("kyc_sessions");
+  }
+
+  return anonymized;
+}
 
 // ── Transaction Safety ─────────────────────────────────────────────────────
 async function executeInTransaction<T>(fn: () => Promise<T>): Promise<T> {
@@ -430,6 +548,55 @@ export const gdprRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        // Fetch the request first: approving/completing an ERASURE request
+        // executes the actual PII anonymization atomically with the status
+        // flip (previously the status was flipped with no data change).
+        const [request] = await db
+          .select()
+          .from(dataRightsRequests)
+          .where(eq(dataRightsRequests.id, input.id))
+          .limit(1);
+        if (!request) throw new TRPCError({ code: "NOT_FOUND" });
+
+        const shouldAnonymize =
+          request.requestType === "erasure" &&
+          request.status !== "completed" &&
+          (input.status === "approved" || input.status === "completed");
+
+        if (shouldAnonymize) {
+          const row = await withTransaction(async (tx: any) => {
+            const anonymized = await anonymizePersonalData(tx, request);
+            const [updated] = await tx
+              .update(dataRightsRequests)
+              .set({
+                // Anonymization ran — the request is completed, not merely approved.
+                status: "completed",
+                exportFileUrl: input.exportFileUrl,
+                notes: input.notes,
+                processedBy: String(ctx.user.id),
+                processedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(dataRightsRequests.id, input.id))
+              .returning();
+            await writeAuditLog({
+              action: "GDPR_ERASURE_EXECUTED",
+              resource: "data_rights_requests",
+              resourceId: String(input.id),
+              status: "success",
+              metadata: {
+                requesterType: request.requesterType,
+                requesterId: request.requesterId,
+                anonymizedTables: anonymized,
+                processedBy: String(ctx.user.id),
+              },
+            });
+            return updated;
+          });
+          return row;
+        }
+
         const [row] = await db
           .update(dataRightsRequests)
           .set({

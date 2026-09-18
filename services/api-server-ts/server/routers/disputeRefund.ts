@@ -553,4 +553,169 @@ export const disputeRefundRouter = router({
         timestamp: new Date().toISOString(),
       };
     }),
+
+  // Approve a pending refund (ref = refunds.ref, or numeric id as string)
+  approveRefund: protectedProcedure
+    .input(z.object({ ref: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — refund not approved",
+        });
+      const [existing] = /^\d+$/.test(input.ref)
+        ? await database
+            .select()
+            .from(refunds)
+            .where(eq(refunds.id, Number(input.ref)))
+            .limit(1)
+        : await database
+            .select()
+            .from(refunds)
+            .where(eq(refunds.ref, input.ref))
+            .limit(1);
+      if (!existing)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Refund ${input.ref} not found`,
+        });
+      if (existing.status !== "pending")
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Refund ${input.ref} is ${existing.status}, not pending`,
+        });
+      const approver = (ctx as any).user?.name ?? "system";
+      const [updated] = await database
+        .update(refunds)
+        .set({
+          status: "approved",
+          approvedBy: approver,
+          approvedAt: new Date(),
+        })
+        .where(eq(refunds.id, existing.id))
+        .returning();
+      await writeAuditLog({
+        agentId: (ctx as any).user?.id ?? 0,
+        agentCode: (ctx as any).user?.agentCode ?? "system",
+        action: "refund_approved",
+        resource: "refunds",
+        resourceId: String(existing.id),
+        status: "success",
+        metadata: { ref: existing.ref },
+      });
+      return { success: true, refund: updated };
+    }),
+
+  // Reject a pending refund with a reason
+  rejectRefund: protectedProcedure
+    .input(z.object({ ref: z.string(), reason: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — refund not rejected",
+        });
+      const [existing] = /^\d+$/.test(input.ref)
+        ? await database
+            .select()
+            .from(refunds)
+            .where(eq(refunds.id, Number(input.ref)))
+            .limit(1)
+        : await database
+            .select()
+            .from(refunds)
+            .where(eq(refunds.ref, input.ref))
+            .limit(1);
+      if (!existing)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Refund ${input.ref} not found`,
+        });
+      if (existing.status !== "pending")
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Refund ${input.ref} is ${existing.status}, not pending`,
+        });
+      const [updated] = await database
+        .update(refunds)
+        .set({
+          status: "rejected",
+          rejectedBy: (ctx as any).user?.name ?? "system",
+          rejectedAt: new Date(),
+          rejectionReason: input.reason,
+        })
+        .where(eq(refunds.id, existing.id))
+        .returning();
+      await writeAuditLog({
+        agentId: (ctx as any).user?.id ?? 0,
+        agentCode: (ctx as any).user?.agentCode ?? "system",
+        action: "refund_rejected",
+        resource: "refunds",
+        resourceId: String(existing.id),
+        status: "success",
+        metadata: { ref: existing.ref, reason: input.reason },
+      });
+      return { success: true, refund: updated };
+    }),
+
+  // Process (pay out) an approved refund
+  processRefund: protectedProcedure
+    .input(
+      z.object({
+        ref: z.string(),
+        method: z
+          .enum(["cash", "bank_transfer", "original_method", "wallet_credit"])
+          .default("original_method"),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database unavailable — refund not processed",
+        });
+      const [existing] = /^\d+$/.test(input.ref)
+        ? await database
+            .select()
+            .from(refunds)
+            .where(eq(refunds.id, Number(input.ref)))
+            .limit(1)
+        : await database
+            .select()
+            .from(refunds)
+            .where(eq(refunds.ref, input.ref))
+            .limit(1);
+      if (!existing)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Refund ${input.ref} not found`,
+        });
+      if (existing.status !== "approved")
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Refund ${input.ref} is ${existing.status}; only approved refunds can be processed`,
+        });
+      const [updated] = await database
+        .update(refunds)
+        .set({
+          status: "processed",
+          method: input.method,
+          processedAt: new Date(),
+        })
+        .where(eq(refunds.id, existing.id))
+        .returning();
+      await writeAuditLog({
+        agentId: (ctx as any).user?.id ?? 0,
+        agentCode: (ctx as any).user?.agentCode ?? "system",
+        action: "refund_processed",
+        resource: "refunds",
+        resourceId: String(existing.id),
+        status: "success",
+        metadata: { ref: existing.ref, method: input.method },
+      });
+      return { success: true, refund: updated };
+    }),
 });

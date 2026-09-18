@@ -50,13 +50,33 @@ async def get_db_pool():
         _db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
     return _db_pool
 
-async def verify_token(authorization: str = Header(...)):
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-    token = authorization[7:]
-    if not token or len(token) < 10:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    return token
+# --- Internal service-to-service auth (fail-closed) ---
+# Mirrors the kyc-enforcement-go internalAuthMiddleware pattern (commit
+# 8253351e): all /api/v1/* routes require the shared internal gateway token.
+# If INTERNAL_GATEWAY_TOKEN is not configured, protected requests are rejected
+# with 503 rather than allowed through unauthenticated. /health stays public.
+import hmac as _hmac
+
+_INTERNAL_GATEWAY_TOKEN = os.getenv("INTERNAL_GATEWAY_TOKEN", "")
+
+
+async def verify_token(
+    authorization: Optional[str] = Header(None),
+    x_internal_gateway_token: Optional[str] = Header(None),
+):
+    if not _INTERNAL_GATEWAY_TOKEN:
+        # Fail closed: auth secret unset -> service unavailable, NOT open.
+        raise HTTPException(
+            status_code=503, detail="internal_gateway_token_not_configured"
+        )
+    provided = None
+    if x_internal_gateway_token:
+        provided = x_internal_gateway_token
+    elif authorization and authorization.startswith("Bearer "):
+        provided = authorization[7:]
+    if not provided or not _hmac.compare_digest(provided, _INTERNAL_GATEWAY_TOKEN):
+        raise HTTPException(status_code=401, detail="unauthorized")
+    return provided
 
 app = FastAPI(title="Onboarding Service", description="Onboarding Service for Remittance Platform", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])

@@ -744,10 +744,54 @@ export const transactionsRouter = router({
             });
           }
         } catch (brErr) {
+          // Advisory scoring (commission, fraud score, AML flagging) remains
+          // fail-open; hard limit enforcement below is fail-closed.
           console.warn(
-            "[BusinessRules] Engine error (fail-open):",
+            "[BusinessRules] Advisory engine error (fail-open):",
             (brErr as Error).message
           );
+        }
+
+        // T16: hard transaction-limit enforcement — fail CLOSED. An engine
+        // error here rejects the transaction rather than letting it through
+        // unchecked (compliance gate).
+        try {
+          const { checkTransactionLimits } = await import(
+            "../lib/businessRulesEngine"
+          );
+          const limitResult = checkTransactionLimits(
+            // @ts-expect-error middleware type mismatch
+            agentRecord.tier ?? "bronze",
+            input.amount,
+            0,
+            0,
+            0,
+            0
+          );
+          if (!limitResult.allowed) {
+            await writeAuditLog({
+              agentId: agent.id,
+              agentCode: agent.agentCode,
+              action: "LIMIT_VIOLATION",
+              resource: "transaction",
+              status: "blocked" as any,
+              metadata: {
+                reason: limitResult.reason,
+                amount: input.amount,
+                type: input.type,
+              },
+            });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: limitResult.reason ?? "Transaction limit exceeded",
+            });
+          }
+        } catch (limitErr) {
+          if (limitErr instanceof TRPCError) throw limitErr;
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Transaction limit check failed",
+          });
         }
         const fee =
           input.type === "Transfer" ? Math.min(input.amount * 0.001, 100) : 0;
@@ -1474,20 +1518,37 @@ export const transactionsRouter = router({
           });
         }
 
-        await db
-          .update(transactions)
-          .set({
-            status: "reversed",
-            approvedBy: agent.agentCode,
-            approvedAt: new Date(),
-            approvalRequired: false,
-          })
-          .where(eq(transactions.id, tx.id));
-
+        // F20: status flip + float restore must be atomic. The conditional
+        // UPDATE (guard on status) makes double-approval impossible (TOCTOU),
+        // matching the immediate-reversal path.
         const amount = Number(tx.amount);
-        if (tx.type === "Cash In") await updateAgentFloat(tx.agentId, -amount);
-        if (FLOAT_DEBIT_TYPES.has(tx.type))
-          await updateAgentFloat(tx.agentId, amount);
+        await withTransaction(async () => {
+          const flipped = await db
+            .update(transactions)
+            .set({
+              status: "reversed",
+              approvedBy: agent.agentCode,
+              approvedAt: new Date(),
+              approvalRequired: false,
+            })
+            .where(
+              and(
+                eq(transactions.id, tx.id),
+                eq(transactions.status, "pending_reversal_approval")
+              )
+            )
+            .returning({ id: transactions.id });
+          if (flipped.length === 0) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Reversal already approved or status changed",
+            });
+          }
+
+          if (tx.type === "Cash In") await updateAgentFloat(tx.agentId, -amount);
+          if (FLOAT_DEBIT_TYPES.has(tx.type))
+            await updateAgentFloat(tx.agentId, amount);
+        });
 
         const reversalRef = generateRef();
         await writeAuditLog({

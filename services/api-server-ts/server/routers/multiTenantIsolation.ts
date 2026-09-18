@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, sql, count, gte, lte } from "drizzle-orm";
 import {
@@ -163,7 +163,7 @@ const _txPatterns = {
 };
 
 export const multiTenantIsolationRouter = router({
-  listTenants: protectedProcedure
+  listTenants: adminProcedure
     .input(z.object({ limit: z.number().default(50) }).optional())
     .query(async ({ input }) => {
       try {
@@ -183,7 +183,7 @@ export const multiTenantIsolationRouter = router({
         });
       }
     }),
-  getTenant: protectedProcedure
+  getTenant: adminProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       try {
@@ -209,7 +209,7 @@ export const multiTenantIsolationRouter = router({
         });
       }
     }),
-  createTenant: protectedProcedure
+  createTenant: adminProcedure
     .input(
       z.object({
         name: z.string(),

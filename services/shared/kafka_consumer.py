@@ -249,7 +249,7 @@ class KafkaEventConsumer:
         """
         if not self._is_started:
             raise RuntimeError("Consumer not started. Call start() first.")
-         
+        
         self._is_consuming = True
         logger.info(f"🔄 Starting batch consumption (batch_size={batch_size})...")
         
@@ -418,3 +418,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+

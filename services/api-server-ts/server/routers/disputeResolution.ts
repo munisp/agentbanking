@@ -7,7 +7,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { disputes, disputeMessages, sla_breaches } from "../../drizzle/schema";
-import { eq, desc, count, sql, gte, lte } from "drizzle-orm";
+import { eq, and, desc, count, sql, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { publishDisputeEvent } from "../middleware/disputeMiddleware";
 import logger from "../_core/logger";
@@ -318,17 +318,56 @@ export const disputeResolutionRouter = router({
       }
     }),
 
+  // Valid dispute lifecycle transitions (from -> allowed targets).
   updateStatus: protectedProcedure
     .input(
       z.object({
         disputeId: z.number(),
-        status: z.string(),
+        status: z.enum([
+          "open",
+          "under_review",
+          "awaiting_evidence",
+          "escalated",
+          "resolved",
+          "closed",
+          "rejected",
+        ]),
         resolution: z.string().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
+
+        // Fetch current status to enforce the transition state machine.
+        const [current] = await db
+          .select({ status: disputes.status })
+          .from(disputes)
+          .where(eq(disputes.id, input.disputeId))
+          .limit(1);
+        if (!current)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Dispute not found",
+          });
+
+        const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+          open: ["under_review", "awaiting_evidence", "escalated", "resolved", "rejected"],
+          under_review: ["awaiting_evidence", "escalated", "resolved", "rejected"],
+          awaiting_evidence: ["under_review", "escalated", "resolved", "rejected"],
+          escalated: ["under_review", "resolved", "rejected"],
+          resolved: ["closed"],
+          rejected: ["closed"],
+          closed: [],
+        };
+        const allowed = ALLOWED_TRANSITIONS[current.status] ?? [];
+        if (current.status !== input.status && !allowed.includes(input.status)) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Invalid dispute status transition: ${current.status} -> ${input.status}`,
+          });
+        }
+
         const updates: any = { status: input.status, updatedAt: new Date() };
         if (input.resolution) {
           updates.resolution = input.resolution;
@@ -338,12 +377,17 @@ export const disputeResolutionRouter = router({
         const [u] = await db
           .update(disputes)
           .set(updates)
-          .where(eq(disputes.id, input.disputeId))
+          .where(
+            and(
+              eq(disputes.id, input.disputeId),
+              eq(disputes.status, current.status)
+            )
+          )
           .returning();
         if (!u)
           throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Dispute not found",
+            code: "CONFLICT",
+            message: "Dispute status changed concurrently; retry",
           });
         await db.insert(disputeMessages).values({
           disputeId: input.disputeId,

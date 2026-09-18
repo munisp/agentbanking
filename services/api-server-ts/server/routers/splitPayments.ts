@@ -6,7 +6,7 @@
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb, writeAuditLog } from "../db";
+import { getDb, writeAuditLog, updateAgentFloat } from "../db";
 import { transactions, agents } from "../../drizzle/schema";
 import { eq, sql, and, gte, lte, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -16,6 +16,7 @@ import {
   validateStatusTransition,
   auditFinancialAction,
   withTransaction,
+  withIdempotency,
 } from "../lib/transactionHelper";
 import {
   calculateFee,
@@ -237,6 +238,7 @@ export const splitPaymentsRouter = router({
         totalAmount: z.number().positive().max(10_000_000),
         splits: z.array(splitItemSchema).min(2).max(10),
         narration: z.string().max(256).optional(),
+        idempotencyKey: z.string().min(8).max(128).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -273,58 +275,63 @@ export const splitPaymentsRouter = router({
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
-          .from(agents)
-          .where(eq(agents.id, session.id))
-          .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.totalAmount)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Insufficient float balance",
+        const executeSplit = async () => {
+          // F16: guarded debit + all split rows in ONE transaction.
+          // updateAgentFloat performs a single conditional UPDATE
+          // (floatBalance >= amount, fail-closed, exact numeric strings),
+          // eliminating the stale-read TOCTOU balance check and the
+          // unguarded decrement. If any insert fails, the debit rolls back.
+          return await withTransaction(async () => {
+            await updateAgentFloat(session.id, -input.totalAmount);
+
+            const groupRef = `SPL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+            const results = [];
+
+            for (let i = 0; i < input.splits.length; i++) {
+              const split = input.splits[i];
+              const ref = `${groupRef}-${i + 1}`;
+
+              const [tx] = await db
+                .insert(transactions)
+                .values({
+                  ref,
+                  agentId: session.id,
+                  type: "Transfer",
+                  amount: String(split.amount),
+                  status: "success",
+                  channel: "App",
+                  customerPhone: split.recipientPhone ?? null,
+                  customerName: split.recipientName ?? null,
+                  metadata: {
+                    splitGroupRef: groupRef,
+                    splitIndex: i,
+                    splitMethod: split.method,
+                    narration: input.narration,
+                  },
+                })
+                .returning();
+
+              results.push({
+                ref,
+                amount: split.amount,
+                method: split.method,
+                transactionId: tx.id,
+              });
+            }
+
+            return { groupRef, results };
           });
+        };
 
-        const groupRef = `SPL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-        const results = [];
-
-        for (let i = 0; i < input.splits.length; i++) {
-          const split = input.splits[i];
-          const ref = `${groupRef}-${i + 1}`;
-
-          const [tx] = await db
-            .insert(transactions)
-            .values({
-              ref,
-              agentId: session.id,
-              type: "Transfer",
-              amount: String(split.amount),
-              status: "success",
-              channel: "App",
-              customerPhone: split.recipientPhone ?? null,
-              customerName: split.recipientName ?? null,
-              metadata: {
-                splitGroupRef: groupRef,
-                splitIndex: i,
-                splitMethod: split.method,
-                narration: input.narration,
-              },
-            })
-            .returning();
-
-          results.push({
-            ref,
-            amount: split.amount,
-            method: split.method,
-            transactionId: tx.id,
-          });
-        }
-
-        await db
-          .update(agents)
-          .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.totalAmount)}`,
-          })
-          .where(eq(agents.id, session.id));
+        // F16: idempotency — retry with the same key replays the stored result
+        // instead of double-debiting float and duplicating split rows.
+        const { groupRef, results } = input.idempotencyKey
+          ? await withIdempotency(
+              `splitPayments:${session.id}:${input.idempotencyKey}`,
+              executeSplit,
+              { payload: input }
+            )
+          : await executeSplit();
 
         await writeAuditLog({
           agentId: session.id,

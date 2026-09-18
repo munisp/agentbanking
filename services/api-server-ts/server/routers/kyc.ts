@@ -718,8 +718,10 @@ export const kycRouter = router({
         }
 
         // Determine final session status
+        // OCR pass never self-completes — a human review (agentKyc.approveSession)
+        // is required to reach "completed".
         const finalStatus =
-          docPassed && session.livenessPassed ? "completed" : newStatus;
+          docPassed && session.livenessPassed ? "pending_review" : newStatus;
 
         await db
           .update(kycSessions)

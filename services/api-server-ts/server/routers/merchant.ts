@@ -18,6 +18,7 @@ import {
   transactions,
   merchantSettlements,
   disputes,
+  auditLog,
 } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import crypto from "crypto";
@@ -563,7 +564,7 @@ export const merchantRouter = router({
         settlementBankName: z.string().min(2).max(64),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db)
@@ -584,6 +585,39 @@ export const merchantRouter = router({
             code: "CONFLICT",
             message: "A merchant account with this email already exists",
           });
+        }
+        // Check for duplicate phone
+        const existingPhone = await db
+          .select({ id: merchants.id })
+          .from(merchants)
+          .where(
+            and(eq(merchants.phone, input.phone), isNull(merchants.deletedAt))
+          )
+          .limit(1);
+        if (existingPhone.length > 0) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "A merchant account with this phone number already exists",
+          });
+        }
+        // Check for duplicate RC number (when provided)
+        if (input.rcNumber) {
+          const existingRc = await db
+            .select({ id: merchants.id })
+            .from(merchants)
+            .where(
+              and(
+                eq(merchants.rcNumber, input.rcNumber),
+                isNull(merchants.deletedAt)
+              )
+            )
+            .limit(1);
+          if (existingRc.length > 0) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "A merchant account with this RC number already exists",
+            });
+          }
         }
         // Generate unique merchant code: MC + 8 random hex chars
         const merchantCode = `MC${crypto.randomBytes(10).toString("hex").slice(0, 10).toUpperCase()}`;
@@ -606,6 +640,7 @@ export const merchantRouter = router({
             walletBalance: "0.00",
             totalVolume: "0.00",
             totalTransactions: 0,
+            tenantId: (ctx.user as any)?.tenantId ?? null,
           })
           .returning({
             id: merchants.id,
@@ -613,6 +648,16 @@ export const merchantRouter = router({
             businessName: merchants.businessName,
             status: merchants.status,
           });
+        await db.insert(auditLog).values({
+          action: "merchant_registered",
+          resource: "merchants",
+          resourceId: String(merchant.id),
+          status: "success",
+          metadata: {
+            merchantCode: merchant.merchantCode,
+            registeredBy: ctx.user.id,
+          },
+        });
         return {
           success: true,
           merchantCode: merchant.merchantCode,
@@ -634,13 +679,26 @@ export const merchantRouter = router({
    */
   checkRegistrationStatus: protectedProcedure
     .input(z.object({ email: z.string().email() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db)
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
             message: "DB unavailable",
+          });
+        // Access control — only admins/supervisors or the applicant themselves
+        // (matching account email) may query a registration status.
+        const role = (ctx.user as any)?.role;
+        const callerEmail = ((ctx.user as any)?.email ?? "").toLowerCase();
+        if (
+          role !== "admin" &&
+          role !== "supervisor" &&
+          callerEmail !== input.email.toLowerCase()
+        )
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Not authorized to view this registration status",
           });
         const [merchant] = await db
           .select({

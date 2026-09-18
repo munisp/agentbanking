@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   eq,
@@ -310,17 +310,25 @@ export const whiteLabelOnboardingRouter = router({
         });
       }
     }),
-  approveApplication: protectedProcedure
+  approveApplication: adminProcedure
     .input(z.object({ tenantId: z.number(), notes: z.string().optional() }))
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
+        // Conditional update — only a pending application can be approved (0 rows → CONFLICT)
         const [updated] = await db
           .update(tenants)
           .set({ status: "active", updatedAt: new Date() })
-          .where(eq(tenants.id, input.tenantId))
+          .where(
+            and(eq(tenants.id, input.tenantId), eq(tenants.status, "pending"))
+          )
           .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Application is not in pending status — cannot approve",
+          });
         await db.insert(auditLog).values({
           action: "whitelabel_approved",
           resource: "tenants",

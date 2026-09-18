@@ -12,8 +12,10 @@ import {
   agents,
   kycSessions,
   floatTopUpRequests,
+  devices,
 } from "../../drizzle/schema";
 import { eq, desc, count, and } from "drizzle-orm";
+import { getAgentFromCookie } from "../middleware/agentAuth";
 import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
 import {
   validateAmount,
@@ -80,6 +82,28 @@ const _txPatterns = {
     });
   },
 };
+
+// ── Ownership/Admin Gate ───────────────────────────────────────────────────
+// Step mutations keyed on caller-supplied agentCode/agentId require the caller
+// to be the agent themselves (agent_session cookie) or an admin/supervisor.
+async function assertCanActForAgent(
+  ctx: { req: any; user: any },
+  target: { agentCode?: string; agentId?: number }
+): Promise<void> {
+  const role = (ctx.user as any)?.role;
+  if (role === "admin" || role === "supervisor") return;
+  const session = await getAgentFromCookie(ctx.req);
+  const isSelf =
+    !!session &&
+    ((target.agentId !== undefined && session.id === target.agentId) ||
+      (target.agentCode !== undefined &&
+        session.agentCode === target.agentCode));
+  if (!isSelf)
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Not authorized to act for this agent",
+    });
+}
 
 export const agentOnboardingRouter = router({
   // ── Get onboarding progress for an agent ─────────────────────────────────
@@ -158,6 +182,8 @@ export const agentOnboardingRouter = router({
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
+        await assertCanActForAgent(ctx, { agentCode: input.agentCode });
+
         const [agent] = await db
           .select()
           .from(agents)
@@ -211,10 +237,12 @@ export const agentOnboardingRouter = router({
   // ── Complete KYC step ─────────────────────────────────────────────────────
   completeKyc: protectedProcedure
     .input(z.object({ agentCode: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        await assertCanActForAgent(ctx, { agentCode: input.agentCode });
 
         const [agent] = await db
           .select()
@@ -266,10 +294,12 @@ export const agentOnboardingRouter = router({
   // ── Complete float funding step ───────────────────────────────────────────
   completeFloat: protectedProcedure
     .input(z.object({ agentCode: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        await assertCanActForAgent(ctx, { agentCode: input.agentCode });
 
         const [agent] = await db
           .select()
@@ -316,10 +346,31 @@ export const agentOnboardingRouter = router({
         terminalModel: z.string().max(64).optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        await assertCanActForAgent(ctx, { agentCode: input.agentCode });
+
+        const [agent] = await db
+          .select()
+          .from(agents)
+          .where(eq(agents.agentCode, input.agentCode))
+          .limit(1);
+        if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
+
+        // Terminal serial uniqueness — CONFLICT if already assigned to a different agent
+        const [existingDevice] = await db
+          .select({ id: devices.id, agentId: devices.agentId })
+          .from(devices)
+          .where(eq(devices.serialNumber, input.terminalSerial))
+          .limit(1);
+        if (existingDevice && existingDevice.agentId !== agent.id)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Terminal serial already assigned to another agent",
+          });
 
         await db
           .update(agents)
@@ -355,10 +406,12 @@ export const agentOnboardingRouter = router({
   // ── Complete training step and activate agent ─────────────────────────────
   completeTraining: protectedProcedure
     .input(z.object({ agentCode: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        await assertCanActForAgent(ctx, { agentCode: input.agentCode });
 
         const [agent] = await db
           .select()
@@ -367,12 +420,8 @@ export const agentOnboardingRouter = router({
           .limit(1);
         if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
 
-        // Activate the agent
-        await db
-          .update(agents)
-          .set({ isActive: true, updatedAt: new Date() })
-          .where(eq(agents.agentCode, input.agentCode));
-
+        // Ordered state machine — training may only complete (and the agent be
+        // activated) when ALL prior step flags are true (0 rows → CONFLICT).
         const [progress] = await db
           .update(agentOnboardingProgress)
           .set({
@@ -381,8 +430,27 @@ export const agentOnboardingRouter = router({
             activatedAt: new Date(),
             updatedAt: new Date(),
           })
-          .where(eq(agentOnboardingProgress.agentCode, input.agentCode))
+          .where(
+            and(
+              eq(agentOnboardingProgress.agentCode, input.agentCode),
+              eq(agentOnboardingProgress.profileComplete, true),
+              eq(agentOnboardingProgress.kycComplete, true),
+              eq(agentOnboardingProgress.floatFunded, true),
+              eq(agentOnboardingProgress.terminalAssigned, true)
+            )
+          )
           .returning();
+        if (!progress)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Prior onboarding steps incomplete — cannot activate",
+          });
+
+        // Activate the agent
+        await db
+          .update(agents)
+          .set({ isActive: true, updatedAt: new Date() })
+          .where(eq(agents.agentCode, input.agentCode));
 
         // Send activation email
         if (agent.email) {
@@ -653,10 +721,13 @@ export const agentOnboardingRouter = router({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        await assertCanActForAgent(ctx, { agentId: input.agentId });
+
         const stepFields: Record<
           number,
           Partial<typeof agentOnboardingProgress.$inferInsert>
@@ -675,11 +746,27 @@ export const agentOnboardingRouter = router({
           });
         if (input.notes) update.notes = input.notes;
         update.updatedAt = new Date();
+        // Ordered state machine — step N may only complete if steps 1..N-1 are done
+        const conditions = [eq(agentOnboardingProgress.agentId, input.agentId)];
+        if (input.stepNumber >= 2)
+          conditions.push(eq(agentOnboardingProgress.profileComplete, true));
+        if (input.stepNumber >= 3)
+          conditions.push(eq(agentOnboardingProgress.kycComplete, true));
+        if (input.stepNumber >= 4)
+          conditions.push(eq(agentOnboardingProgress.floatFunded, true));
+        if (input.stepNumber >= 5)
+          conditions.push(eq(agentOnboardingProgress.terminalAssigned, true));
         const [updated] = await db
           .update(agentOnboardingProgress)
           .set(update)
-          .where(eq(agentOnboardingProgress.agentId, input.agentId))
+          .where(and(...conditions))
           .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "Prior onboarding steps incomplete — steps must be completed in order",
+          });
         return updated;
       } catch (error) {
         if (error instanceof TRPCError) throw error;

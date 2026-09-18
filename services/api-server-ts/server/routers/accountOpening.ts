@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   eq,
@@ -292,6 +292,7 @@ export const accountOpeningRouter = router({
         bvn: z.string().optional(),
         nin: z.string().optional(),
         address: z.string().optional(),
+        idempotencyKey: z.string().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -310,6 +311,7 @@ export const accountOpeningRouter = router({
         "Executed accountOpening mutation"
       );
 
+      const createAccount = async () => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -354,6 +356,27 @@ export const accountOpeningRouter = router({
                   "KYC verification service unreachable — account opening BLOCKED (fail-closed). Retry when service is available.",
               });
             }
+            if (!kycResp.ok) {
+              // Any 4xx/5xx from the KYC gateway is treated as a denial — FAIL CLOSED
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: `KYC enforcement gateway returned HTTP ${kycResp.status} — account opening BLOCKED (fail-closed).`,
+              });
+            }
+            // Gateway returns 202 with body {allowed:false} on denial — block unless explicitly allowed
+            let kycDecision: { allowed?: boolean } | null = null;
+            try {
+              kycDecision = (await kycResp.json()) as { allowed?: boolean };
+            } catch {
+              kycDecision = null;
+            }
+            if (kycDecision?.allowed !== true) {
+              throw new TRPCError({
+                code: "FORBIDDEN",
+                message:
+                  "KYC enforcement denied account opening — verification not satisfied (fail-closed).",
+              });
+            }
           } catch (kycError) {
             if (kycError instanceof TRPCError) throw kycError;
             // Network error reaching KYC gateway — FAIL CLOSED
@@ -363,6 +386,32 @@ export const accountOpeningRouter = router({
                 "KYC enforcement gateway unreachable — account opening BLOCKED (fail-closed design prevents unverified account creation)",
             });
           }
+        }
+
+        // Duplicate BVN/NIN pre-checks — CONFLICT on match
+        if (input.bvn) {
+          const [dupBvn] = await db
+            .select({ id: customers.id })
+            .from(customers)
+            .where(eq(customers.bvn, input.bvn))
+            .limit(1);
+          if (dupBvn)
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "A customer with this BVN already exists",
+            });
+        }
+        if (input.nin) {
+          const [dupNin] = await db
+            .select({ id: customers.id })
+            .from(customers)
+            .where(eq(customers.nin, input.nin))
+            .limit(1);
+          if (dupNin)
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "A customer with this NIN already exists",
+            });
         }
 
         const [customer] = await db
@@ -376,6 +425,7 @@ export const accountOpeningRouter = router({
             nin: input.nin,
             address: input.address,
             status: "pending_kyc",
+            tenantId: (ctx.user as any)?.tenantId ?? null,
           })
           .returning();
         await db.insert(auditLog).values({
@@ -394,18 +444,38 @@ export const accountOpeningRouter = router({
             error instanceof Error ? error.message : "Internal server error",
         });
       }
+      };
+      if (input.idempotencyKey) {
+        return withIdempotency(
+          `accountOpening:${input.idempotencyKey}`,
+          createAccount,
+          { payload: input }
+        );
+      }
+      return createAccount();
     }),
-  approveAccount: protectedProcedure
+  approveAccount: adminProcedure
     .input(z.object({ customerId: z.number() }))
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
+        // Conditional update — only a pending_kyc account can be approved (0 rows → CONFLICT)
         const [updated] = await db
           .update(customers)
           .set({ status: "active" })
-          .where(eq(customers.id, input.customerId))
+          .where(
+            and(
+              eq(customers.id, input.customerId),
+              eq(customers.status, "pending_kyc")
+            )
+          )
           .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Account is not in pending_kyc status — cannot approve",
+          });
         await db.insert(auditLog).values({
           action: "account_approved",
           resource: "customers",

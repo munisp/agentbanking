@@ -11,7 +11,7 @@
  */
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getDb } from "../db";
 import { agents, otpTokens } from "../../drizzle/schema";
@@ -42,6 +42,9 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   archived: [],
 };
 const OTP_EXPIRY_MINUTES = 10;
+// F9: anti-abuse controls
+const OTP_REQUEST_THROTTLE_SECONDS = 60; // min interval between OTP sends per agent
+const OTP_MAX_ATTEMPTS = 5; // failed guesses before the token is invalidated
 // SECURITY: Use crypto.randomInt for cryptographically secure OTP generation
 function generateOtp(): string {
   // Generates a 6-digit OTP using CSPRNG (crypto.randomInt is uniform in [100000, 999999])
@@ -257,6 +260,28 @@ export const pinResetRouter = router({
           };
         }
 
+        // F9 throttle: if an OTP was issued very recently, do not send another
+        // SMS. Return the same generic response to avoid enumeration.
+        const recentTokens = await db
+          .select()
+          .from(otpTokens)
+          .where(
+            and(
+              eq(otpTokens.agentId, agent.id),
+              gt(
+                otpTokens.createdAt,
+                new Date(Date.now() - OTP_REQUEST_THROTTLE_SECONDS * 1000)
+              )
+            )
+          )
+          .limit(1);
+        if (recentTokens.length > 0) {
+          return {
+            success: true,
+            message: "If the details match, an OTP has been sent.",
+          };
+        }
+
         // Invalidate any existing OTPs for this agent
         await db.delete(otpTokens).where(eq(otpTokens.agentId, agent.id));
 
@@ -364,9 +389,34 @@ export const pinResetRouter = router({
 
         const token = tokenRows[0];
 
+        // F9: failed-attempt accounting via raw SQL so this fix does not
+        // require a drizzle schema regeneration (migration 0053 creates the
+        // "attempts" column; COALESCE keeps pre-existing rows at 0).
+        const attemptRows = await db.execute(
+          sql`SELECT COALESCE(attempts, 0) AS attempts FROM otp_tokens WHERE id = ${token.id}`
+        );
+        const currentAttempts = Number(
+          (attemptRows as any).rows?.[0]?.attempts ?? 0
+        );
+
+        // F9: lock tokens with too many failed attempts
+        if (currentAttempts >= OTP_MAX_ATTEMPTS) {
+          await db
+            .update(otpTokens)
+            .set({ used: true })
+            .where(eq(otpTokens.id, token.id));
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Too many failed attempts. Please request a new OTP.",
+          });
+        }
+
         // Verify OTP
         const valid = await bcrypt.compare(input.otp, token.hashedOtp);
         if (!valid) {
+          await db.execute(
+            sql`UPDATE otp_tokens SET attempts = COALESCE(attempts, 0) + 1 WHERE id = ${token.id}`
+          );
           throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid OTP" });
         }
 

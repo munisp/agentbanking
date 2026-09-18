@@ -21,7 +21,7 @@ import logging
 from typing import Dict, Any, Optional, List, Callable, Awaitable
 from datetime import datetime
 import asyncio
-from aiokafka import AIOKafkaConsumer
+from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from aiokafka.errors import KafkaError
 
 
@@ -55,9 +55,11 @@ class KafkaEventConsumer:
         handler: Callable[[Dict[str, Any]], Awaitable[None]],
         bootstrap_servers: Optional[str] = None,
         auto_offset_reset: str = "earliest",
-        enable_auto_commit: bool = True,
+        enable_auto_commit: bool = False,
         max_poll_records: int = 500,
-        session_timeout_ms: int = 30000
+        session_timeout_ms: int = 30000,
+        dlq_enabled: bool = True,
+        dlq_topic_suffix: str = ".dlq"
     ):
         """
         Initialize Kafka consumer.
@@ -68,9 +70,15 @@ class KafkaEventConsumer:
             handler: Async function to handle each message
             bootstrap_servers: Kafka bootstrap servers (comma-separated)
             auto_offset_reset: Where to start reading (earliest, latest)
-            enable_auto_commit: Auto-commit offsets
+            enable_auto_commit: Auto-commit offsets (default False — offsets are
+                committed manually only after the handler succeeds or the message
+                has been dead-lettered, so handler failures are never silently
+                skipped)
             max_poll_records: Max records per poll
             session_timeout_ms: Session timeout in milliseconds
+            dlq_enabled: Publish failed messages to a dead-letter topic
+            dlq_topic_suffix: Suffix appended to the source topic to form the
+                dead-letter topic name (default ".dlq")
         """
         self.topics = topics
         self.group_id = group_id
@@ -143,6 +151,41 @@ class KafkaEventConsumer:
         logger.info(f"  Messages failed: {self.messages_failed}")
         logger.info(f"  Bytes consumed: {self.bytes_consumed}")
     
+    async def _publish_to_dlq(self, message, error: Exception) -> bool:
+        """Publish a failed message to the dead-letter topic.
+
+        Returns True when the message was successfully dead-lettered (or DLQ is
+        disabled), False when DLQ publication itself failed.
+        """
+        if not self.dlq_enabled:
+            return True
+        dlq_topic = f"{message.topic}{self.dlq_topic_suffix}"
+        envelope = {
+            "original_topic": message.topic,
+            "original_partition": message.partition,
+            "original_offset": message.offset,
+            "failed_at": datetime.utcnow().isoformat() + "Z",
+            "error": str(error),
+            "consumer_group": self.group_id,
+            "payload": message.value,
+        }
+        try:
+            if self._producer is None:
+                raise RuntimeError("DLQ producer not started")
+            await self._producer.send_and_wait(dlq_topic, envelope)
+            logger.warning(f"📮 Message dead-lettered to {dlq_topic} "
+                           f"(offset={message.offset})")
+            return True
+        except Exception as dlq_error:
+            logger.error(f"❌ Failed to publish to DLQ {dlq_topic}: {dlq_error}",
+                         exc_info=True)
+            return False
+
+    async def _commit_offsets(self):
+        """Commit offsets manually when auto-commit is disabled."""
+        if not self.enable_auto_commit and self.consumer is not None:
+            await self.consumer.commit()
+
     async def consume(self):
         """
         Start consuming messages (runs forever).

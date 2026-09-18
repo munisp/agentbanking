@@ -364,6 +364,57 @@ export const disputesRouter = router({
           message: "Unauthorized — admin or supervisor role required",
         });
       }
+
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "DB unavailable",
+        });
+
+      // Persist the resolution atomically with a conditional UPDATE so a
+      // dispute cannot be resolved twice (TOCTOU-safe).
+      const updated = await db
+        .update(disputes)
+        .set({
+          status: "resolved",
+          resolution: input.resolution,
+          resolvedBy: String(ctx.user.id),
+          resolvedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(disputes.ref, input.disputeRef),
+            sql`${disputes.status} <> 'resolved'`
+          )
+        )
+        .returning({ id: disputes.id, status: disputes.status });
+
+      if (updated.length === 0) {
+        const existing = await db
+          .select({ id: disputes.id, status: disputes.status })
+          .from(disputes)
+          .where(eq(disputes.ref, input.disputeRef))
+          .limit(1);
+        if (existing.length === 0) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Dispute not found",
+          });
+        }
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Dispute is already resolved",
+        });
+      }
+
+      auditFinancialAction(
+        "UPDATE",
+        "disputes",
+        "resolve",
+        `Dispute ${input.disputeRef} resolved by user ${ctx.user.id}: ${input.resolution.slice(0, 100)}`
+      );
+
       return { disputeRef: input.disputeRef, resolved: true };
     }),
   myDisputes: protectedProcedure.query(async () => {

@@ -6,11 +6,13 @@ Handles webhook notifications from payment gateways for transaction status updat
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Header, status
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, Dict, Any, List
+from datetime import datetime
 import logging
 import hmac
 import hashlib
 import json
+import os
 
 from ..models.payment_models import PaymentTransaction, PaymentWebhook, TransactionStatus
 from ..schemas.payment_schemas import WebhookEventSchema, PaymentStatusEnum
@@ -24,14 +26,43 @@ router = APIRouter(prefix="/api/v1/webhooks", tags=["webhooks"])
 
 # Dependency to get gateway factory
 def get_gateway_factory() -> GatewayFactory:
-    """Get gateway factory instance."""
-    # Production: Load gateway configs from database or config file
+    """Get gateway factory instance.
+
+    Webhook secrets are loaded exclusively from environment variables.
+    A gateway whose secret is not configured is registered as inactive, and
+    signature verification fails closed for missing secrets.
+    """
     gateway_configs = {
-        "paystack": {"is_active": True, "webhook_secret": "your_paystack_secret"},
-        "flutterwave": {"is_active": True, "webhook_secret": "your_flutterwave_secret"},
-        # ... other gateways
+        "paystack": {
+            "is_active": bool(os.getenv("PAYSTACK_WEBHOOK_SECRET")),
+            "webhook_secret": os.getenv("PAYSTACK_WEBHOOK_SECRET", ""),
+        },
+        "flutterwave": {
+            "is_active": bool(os.getenv("FLUTTERWAVE_WEBHOOK_SECRET")),
+            "webhook_secret": os.getenv("FLUTTERWAVE_WEBHOOK_SECRET", ""),
+        },
+        "stripe": {
+            "is_active": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
+            "webhook_secret": os.getenv("STRIPE_WEBHOOK_SECRET", ""),
+        },
     }
     return GatewayFactory(gateway_configs)
+
+
+# Keycloak-backed admin auth for the webhook event management endpoints.
+from ...shared.keycloak_auth import KeycloakAuth
+
+_keycloak_auth = KeycloakAuth()
+
+
+async def require_admin_user(user: dict = Depends(_keycloak_auth.get_current_user)) -> dict:
+    """Require an authenticated user with the admin role."""
+    if not _keycloak_auth.has_role(user, "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required",
+        )
+    return user
 
 
 async def verify_webhook_signature(
@@ -311,7 +342,8 @@ async def receive_webhook(
 )
 async def list_webhook_events(
     limit: int = 50,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin_user: dict = Depends(require_admin_user)
 ) -> List[WebhookEventSchema]:
     """
     List recent webhook events.
@@ -346,7 +378,8 @@ async def list_webhook_events(
 )
 async def reprocess_webhook_event(
     event_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin_user: dict = Depends(require_admin_user)
 ) -> Dict[str, Any]:
     """
     Reprocess a webhook event.
@@ -384,7 +417,3 @@ async def reprocess_webhook_event(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to reprocess webhook event"
         )
-
-
-# Import datetime at the top
-from datetime import datetime

@@ -1469,6 +1469,9 @@ export const mdmRouter = router({
         releaseId: z.number(),
         toVersion: z.string(),
         fromVersion: z.string().optional(),
+        // NF-SEC-2: per-device credential issued by enrollWithToken; required so
+        // arbitrary callers cannot forge OTA status for a device they do not hold.
+        deviceToken: z.string().min(1),
         status: z.enum([
           "pending",
           "downloading",
@@ -1482,6 +1485,31 @@ export const mdmRouter = router({
     .mutation(async ({ input }) => {
       try {
         const db = await requireDb();
+
+        // NF-SEC-2: validate the per-device token before accepting OTA status.
+        const [otaDevice] = await db
+          .select()
+          .from(devices)
+          .where(eq(devices.id, input.deviceId));
+        if (!otaDevice) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Unknown device",
+          });
+        }
+        const presentedOtaToken = Buffer.from(input.deviceToken);
+        const storedOtaToken = Buffer.from(otaDevice.deviceToken ?? "");
+        const otaTokenValid =
+          storedOtaToken.length > 0 &&
+          presentedOtaToken.length === storedOtaToken.length &&
+          timingSafeEqual(presentedOtaToken, storedOtaToken);
+        if (!otaTokenValid) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Invalid device token",
+          });
+        }
+
         const existing = await db
           .select({ id: otaUpdateLog.id })
           .from(otaUpdateLog)

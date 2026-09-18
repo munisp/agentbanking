@@ -1,3 +1,12 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SUPERSEDED (round 5 notice): this is a LEGACY profile configuration still used
+# by its own compose path. The canonical observability stack is
+#   infra/observability/  (otel-collector + prometheus v3 + alertmanager + tempo
+#   + loki + grafana + ntfy; see OBSERVABILITY.md and docs/observability/).
+# If you edit this file, keep alert rule names/labels consistent with
+# infra/observability/prometheus/rules/ or migrate the compose path to the
+# canonical stack. Do not add new scrape targets only here.
+# ─────────────────────────────────────────────────────────────────────────────
 ###############################################################################
 # Prometheus Configuration — POS-54Link Full Stack Monitoring
 ###############################################################################

@@ -9,7 +9,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions, fraudAlerts } from "../../drizzle/schema";
+import { transactions, fraudAlerts, complianceReports } from "../../drizzle/schema";
+import { cbnReportsTotal } from "../metrics";
 import { sql, eq, gte, lte, desc, count } from "drizzle-orm";
 import {
   validateAmount,
@@ -393,6 +394,7 @@ export const cbnReportingRouter = router({
             code: "INTERNAL_SERVER_ERROR",
             message: "Failed to generate report",
           });
+        cbnReportsTotal.inc({ type: "monthly_report" });
         return result;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -424,7 +426,10 @@ export const cbnReportingRouter = router({
             institution_code: input.institutionCode,
           }
         );
-        if (svc) return svc;
+        if (svc) {
+          cbnReportsTotal.inc({ type: "quarterly_fraud" });
+          return svc;
+        }
         const result = await generateQuarterlyFraudReportFromDb(
           input.year,
           input.quarter,
@@ -435,6 +440,7 @@ export const cbnReportingRouter = router({
             code: "INTERNAL_SERVER_ERROR",
             message: "Failed to generate report",
           });
+        cbnReportsTotal.inc({ type: "quarterly_fraud" });
         return result;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -468,9 +474,34 @@ export const cbnReportingRouter = router({
           description: input.description,
           customer_details: input.customerDetails ?? {},
         });
-        if (svc) return svc;
+        if (svc) {
+          cbnReportsTotal.inc({ type: "sar" });
+          return svc;
+        }
+
+        // T20: persist the SAR locally when the CBN service is unavailable,
+        // so the filing is never silently lost.
+        const sarRef = `SAR-${Date.now()}-${input.agentId}`;
+        const db = await getDb();
+        if (db) {
+          await db.insert(complianceReports).values({
+            reportType: "sar",
+            period: new Date().toISOString().slice(0, 7),
+            status: "filed_locally",
+            summary: {
+              sarRef,
+              agentId: input.agentId,
+              transactionIds: input.transactionIds,
+              totalAmount: input.totalAmount,
+              reason: input.reason,
+              description: input.description,
+              customerDetails: input.customerDetails ?? {},
+            } as any,
+          });
+        }
+        cbnReportsTotal.inc({ type: "sar" });
         return {
-          sarRef: `SAR-${Date.now()}-${input.agentId}`,
+          sarRef,
           agentId: input.agentId,
           transactionIds: input.transactionIds,
           totalAmount: input.totalAmount,

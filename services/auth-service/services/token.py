@@ -1,3 +1,5 @@
+import os
+import time
 import jwt
 import requests
 import base64
@@ -54,9 +56,36 @@ class TokenService:
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
 
+    # F10: process-local JWKS cache (realm URL -> (fetched_at_epoch, jwks_dict))
+    _jwks_cache = {}
+    _JWKS_CACHE_TTL_SECONDS = int(os.getenv("JWKS_CACHE_TTL_SECONDS", "3600"))
+    _JWKS_FETCH_TIMEOUT_SECONDS = float(os.getenv("JWKS_FETCH_TIMEOUT_SECONDS", "5"))
+
+    def _fetch_jwks(self, jwks_url: str) -> dict:
+        """Fetch JWKS with a bounded timeout and a TTL cache.
+
+        Fails closed: a fetch error with no cached keys raises, rather than
+        silently accepting tokens.
+        """
+        cached = self._jwks_cache.get(jwks_url)
+        now = time.time()
+        if cached and (now - cached[0]) < self._JWKS_CACHE_TTL_SECONDS:
+            return cached[1]
+        resp = requests.get(jwks_url, timeout=self._JWKS_FETCH_TIMEOUT_SECONDS)
+        resp.raise_for_status()
+        jwks = resp.json()
+        self._jwks_cache[jwks_url] = (now, jwks)
+        return jwks
+
     def validate_token(self, token: str, context: Context):
-        jwks_url = f"https://keycloak.servers.upi.dev/realms/{context.keycloak_realm}/protocol/openid-connect/certs"
-        jwks = requests.get(jwks_url).json()
+        keycloak_base_url = os.getenv(
+            "KEYCLOAK_SERVER_URL", "https://keycloak.servers.upi.dev"
+        ).rstrip("/")
+        realm = context.keycloak_realm
+        jwks_url = (
+            f"{keycloak_base_url}/realms/{realm}/protocol/openid-connect/certs"
+        )
+        jwks = self._fetch_jwks(jwks_url)
 
         headers = jwt.get_unverified_header(token)
         kid = headers["kid"]
@@ -64,8 +93,23 @@ class TokenService:
         key_data = next(k for k in jwks["keys"] if k["kid"] == kid)
         pem_key = self.jwk_to_pem(key_data)
 
+        # F10: verify issuer and (when configured) audience, not just expiry.
+        expected_issuer = f"{keycloak_base_url}/realms/{realm}"
+        expected_audience = os.getenv("KEYCLOAK_CLIENT_ID", "")
+        decode_options = {"verify_exp": True, "verify_iss": True}
+        decode_kwargs = {"issuer": expected_issuer}
+        if expected_audience:
+            decode_options["verify_aud"] = True
+            decode_kwargs["audience"] = expected_audience
+        else:
+            decode_options["verify_aud"] = False
+
         decoded_token = jwt.decode(
-            token, key=pem_key, algorithms=["RS256"], options={"verify_exp": True}
+            token,
+            key=pem_key,
+            algorithms=["RS256"],
+            options=decode_options,
+            **decode_kwargs,
         )
         return decoded_token
 

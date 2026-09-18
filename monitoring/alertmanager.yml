@@ -1,4 +1,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
+# SUPERSEDED (round 5 notice): this is a LEGACY profile configuration still used
+# by its own compose path. The canonical observability stack is
+#   infra/observability/  (otel-collector + prometheus v3 + alertmanager + tempo
+#   + loki + grafana + ntfy; see OBSERVABILITY.md and docs/observability/).
+# If you edit this file, keep alert rule names/labels consistent with
+# infra/observability/prometheus/rules/ or migrate the compose path to the
+# canonical stack. Do not add new scrape targets only here.
+# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 # Alertmanager Configuration — 54Link POS Shell
 # ─────────────────────────────────────────────────────────────────────────────
 # Incident escalation stack (all open-source):
@@ -21,7 +30,7 @@ global:
   smtp_smarthost: "smtp.54link.io:587"
   smtp_from: "alerts@54link.io"
   smtp_auth_username: "alerts@54link.io"
-  smtp_auth_password: "smtp-password-change-in-production"
+  smtp_auth_password: "${SMTP_PASSWORD}"  # fail-closed: no default (round 5)
   smtp_require_tls: true
 
 # ── Routing tree ──────────────────────────────────────────────────────────────

@@ -124,14 +124,17 @@ export async function permifyCheck(params: {
     void persistCheckLog({ ...params, result: allowed ? "allowed" : "denied", latencyMs });
     return allowed;
   } catch (err) {
-    // Fail-open: when Permify is unavailable (e.g. dev without Docker), allow access.
-    // In production, Permify is always running via docker-compose.production.yml.
+    // Round-6 fix: fail CLOSED. The previous fail-open behavior meant a Permify
+    // outage (or DNS failure) silently disabled authorization platform-wide for
+    // every protectedProcedure/adminProcedure. Override only for local dev via
+    // PERMIFY_FAIL_OPEN=true (never set this in production).
+    const failOpen = process.env.PERMIFY_FAIL_OPEN === "true" && process.env.NODE_ENV !== "production";
     logger.warn(
-      { err },
-      "[Permify] Service unavailable — failing open (allow)"
+      { err, failOpen },
+      "[Permify] Service unavailable — " + (failOpen ? "failing open (DEV override)" : "failing closed (deny)")
     );
-    void persistCheckLog({ ...params, result: "fallback_open", latencyMs: Date.now() - startMs, errorMessage: String(err) });
-    return true;
+    void persistCheckLog({ ...params, result: failOpen ? "fallback_open" : "fallback_closed", latencyMs: Date.now() - startMs, errorMessage: String(err) });
+    return failOpen;
   }
 }
 

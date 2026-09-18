@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Data export: transactionsCsv, agentsCsv, disputesCsv, ledgerCsv formats
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   transactions,
@@ -221,7 +221,7 @@ const _txPatterns = {
 };
 
 export const dataExportRouter = router({
-  exportTransactions: protectedProcedure
+  exportTransactions: adminProcedure
     .input(
       z.object({
         format: z.enum(["csv", "json"]).default("csv"),
@@ -230,12 +230,15 @@ export const dataExportRouter = router({
         limit: z.number().max(10000).default(1000),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       try {
         const db = await getDb();
         if (!db) return { data: "", count: 0 };
 
         const conditions = [];
+        const exportTenantId = (ctx.user as any)?.tenantId;
+        if (exportTenantId != null)
+          conditions.push(eq(transactions.tenantId, exportTenantId));
         if (input.startDate)
           conditions.push(
             gte(transactions.createdAt, new Date(input.startDate))
@@ -285,18 +288,23 @@ export const dataExportRouter = router({
       }
     }),
 
-  exportAgents: protectedProcedure
+  exportAgents: adminProcedure
     .input(
       z.object({
         format: z.enum(["csv", "json"]).default("csv"),
         limit: z.number().max(5000).default(500),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       try {
         const db = await getDb();
         if (!db) return { data: "", count: 0 };
-        const rows = await db.select().from(agents).limit(input.limit);
+        const agentTenantId = (ctx.user as any)?.tenantId;
+        const rows = await db
+          .select()
+          .from(agents)
+          .where(agentTenantId != null ? eq(agents.tenantId, agentTenantId) : undefined)
+          .limit(input.limit);
         if (input.format === "json")
           return {
             data: JSON.stringify(rows, null, 2),
@@ -329,20 +337,22 @@ export const dataExportRouter = router({
       }
     }),
 
-  exportAuditLog: protectedProcedure
+  exportAuditLog: adminProcedure
     .input(
       z.object({
         format: z.enum(["csv", "json"]).default("json"),
         limit: z.number().max(10000).default(1000),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       try {
         const db = await getDb();
         if (!db) return { data: "", count: 0 };
+        const auditTenantId = (ctx.user as any)?.tenantId;
         const rows = await db
           .select()
           .from(auditLog)
+          .where(auditTenantId != null ? eq(auditLog.tenantId, auditTenantId) : undefined)
           .orderBy(desc(auditLog.createdAt))
           .limit(input.limit);
         return {

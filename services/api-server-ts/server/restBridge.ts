@@ -66,8 +66,17 @@ import {
 } from "../drizzle/schema";
 import { eq, desc, count, sql } from "drizzle-orm";
 import { verifySessionJwt, KC_SESSION_COOKIE } from "./_core/keycloakAuth";
+import { verifyKeycloakToken } from "./_core/keycloak";
 
 const router = Router();
+
+// Auth gate for every bridge route (round-6 fix: requireAuth was defined but
+// never mounted, leaving all /api/v1/* reads unauthenticated). /health stays
+// public for load-balancer probes.
+router.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.path === "/health") return next();
+  return requireAuth(req, res, next);
+});
 
 // ── Auth middleware ────────────────────────────────────────────────────────────
 function parseCookies(cookieHeader: string): Map<string, string> {
@@ -81,26 +90,42 @@ function parseCookies(cookieHeader: string): Map<string, string> {
 
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
-    // Accept platform auth (agent dashboard sends x-keycloak-id via APISIX)
+    // 1. Platform session cookie (agent dashboard / PWA browser sessions)
+    const cookies = parseCookies(req.headers.cookie ?? "");
+    const sessionToken = cookies.get(KC_SESSION_COOKIE);
+    if (sessionToken) {
+      const payload = await verifySessionJwt(sessionToken);
+      if (payload) {
+        (req as any).user = payload;
+        return next();
+      }
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // 2. Bearer token — verified against Keycloak JWKS (issuer + audience).
+    const authHeader = req.headers["authorization"] as string;
+    if (authHeader?.startsWith("Bearer ")) {
+      const payload = await verifyKeycloakToken(authHeader.slice(7));
+      (req as any).user = {
+        sub: payload.sub,
+        name: (payload as any).preferred_username ?? payload.sub,
+        role: (payload as any).platform_role ?? "agent",
+      };
+      return next();
+    }
+
+    // 3. Internal gateway identity header — only honored when the request also
+    //    carries the shared internal gateway token. In production the token
+    //    MUST be configured; if it is not, this path is disabled (fail closed).
     const keycloakId = req.headers["x-keycloak-id"] as string;
-    if (keycloakId) {
+    const gatewayToken = req.headers["x-internal-gateway-token"] as string;
+    const expectedToken = process.env.INTERNAL_GATEWAY_TOKEN;
+    if (keycloakId && expectedToken && gatewayToken === expectedToken) {
       (req as any).user = { sub: keycloakId, name: keycloakId, role: "agent" };
       return next();
     }
-    // Accept Bearer token from platform auth
-    const authHeader = req.headers["authorization"] as string;
-    if (authHeader?.startsWith("Bearer ")) {
-      (req as any).user = { sub: "bearer-user", role: "agent" };
-      return next();
-    }
-    // Fall back to pos-shell session cookie
-    const cookies = parseCookies(req.headers.cookie ?? "");
-    const token = cookies.get(KC_SESSION_COOKIE);
-    if (!token) return res.status(401).json({ error: "Unauthorized" });
-    const payload = await verifySessionJwt(token);
-    if (!payload) return res.status(401).json({ error: "Unauthorized" });
-    (req as any).user = payload;
-    next();
+
+    return res.status(401).json({ error: "Unauthorized" });
   } catch {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -114,7 +139,6 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-// requireAuth disabled — service is internal, auth handled by APISIX gateway
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function paginate(query: Record<string, any>) {

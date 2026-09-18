@@ -258,19 +258,8 @@ export const commissionPayoutsRouter = router({
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [payout] = await db
-          .select()
-          .from(commissionPayouts)
-          .where(eq(commissionPayouts.id, input.id))
-          .limit(1);
-        if (!payout) throw new TRPCError({ code: "NOT_FOUND" });
-        if (payout.status !== "pending") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Payout is not in pending state",
-          });
-        }
-
+        // F17: conditional UPDATE — approval flips pending -> approved
+        // atomically; concurrent approvals cannot both succeed.
         const [updated] = await db
           .update(commissionPayouts)
           .set({
@@ -278,8 +267,25 @@ export const commissionPayoutsRouter = router({
             approvedBy: ctx.user.id,
             updatedAt: new Date(),
           })
-          .where(eq(commissionPayouts.id, input.id))
+          .where(
+            and(
+              eq(commissionPayouts.id, input.id),
+              eq(commissionPayouts.status, "pending")
+            )
+          )
           .returning();
+        if (!updated) {
+          const [existing] = await db
+            .select({ status: commissionPayouts.status })
+            .from(commissionPayouts)
+            .where(eq(commissionPayouts.id, input.id))
+            .limit(1);
+          if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Payout is not in pending state",
+          });
+        }
 
         await dispatchWebhookEvent("commission.payout.approved", {
           payoutId: updated.id,
@@ -349,25 +355,53 @@ export const commissionPayoutsRouter = router({
           });
         }
 
-        // Deduct from agent commission balance
-        await db
-          .update(agents)
-          .set({
-            commissionBalance: sql`${agents.commissionBalance} - ${payout.amount}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(agents.id, payout.agentId));
+        // F17: guarded commission debit (cannot go negative) + conditional
+        // status flip in ONE transaction — a mid-flow failure rolls both back,
+        // and concurrent processing cannot double-pay.
+        const [updated] = await withTransaction(async () => {
+          const debited = await db
+            .update(agents)
+            .set({
+              commissionBalance: sql`${agents.commissionBalance} - ${payout.amount}`,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(agents.id, payout.agentId),
+                sql`CAST(${agents.commissionBalance} AS numeric) >= CAST(${payout.amount} AS numeric)`
+              )
+            )
+            .returning({ id: agents.id });
+          if (debited.length === 0) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Insufficient commission balance",
+            });
+          }
 
-        const [updated] = await db
-          .update(commissionPayouts)
-          .set({
-            status: "completed",
-            nubanRef: input.nubanRef,
-            processedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(commissionPayouts.id, input.id))
-          .returning();
+          const [u] = await db
+            .update(commissionPayouts)
+            .set({
+              status: "completed",
+              nubanRef: input.nubanRef,
+              processedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(commissionPayouts.id, input.id),
+                eq(commissionPayouts.status, "approved")
+              )
+            )
+            .returning();
+          if (!u) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Payout already processed or status changed",
+            });
+          }
+          return [u];
+        });
 
         await dispatchWebhookEvent("commission.payout.completed", {
           payoutId: updated.id,

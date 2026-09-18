@@ -171,3 +171,70 @@ Verdict legend: **HANDLED** (working end-to-end with evidence) · **PARTIAL** (e
 | c0af6b91f4bd | services/api-server-ts/server/routers/cbnReporting.ts | T20+T21 |
 
 **Counts:** 81 cataloged scenarios — HANDLED 19 · PARTIAL 21 · GAP 41 → 20 gaps fixed in round 6 (22 files); remaining GAPs documented OPEN with owner classes identified (Go/Python service rework, schema migrations, external rail integrations, outbox/TB-contra architecture work scheduled next round).
+
+---
+
+## 8. Onboarding workflows — merchants, individuals, agents (round-6b extension audit)
+
+Dedicated onboarding audit: 50 findings across account opening, KYC/KYB, agent onboarding chain, merchant onboarding, tenant onboarding, OTP, and orchestrator provisioning. Fixed in PR #128 (squash `8dbd8b19`).
+
+| # | Scenario | Verdict (pre-fix) | Fix |
+|---|----------|-------------------|-----|
+| 8.1 | Orchestrator KYC callback authenticity | GAP (critical) — unauthenticated POST could complete KYC + create accounts (postKycCallback.ts) | FIXED: HMAC-SHA256 signature (fail-closed), score threshold, faceVerificationResult required |
+| 8.2 | kyc-enforcement-go endpoint auth | GAP (critical) — zero auth; forgable verify-callback auto-approvals (main.go:643-687, 997-1005) | FIXED: internalAuthMiddleware on all /api/v1/* (fail-closed), crypto/rand IDs; live-binary verified |
+| 8.3 | Agent onboarding step ordering/ownership | GAP (critical) — anyone could activate any agent, steps skippable (agentOnboarding.ts) | FIXED: self-or-admin gate + ordered conditional-UPDATE state machine |
+| 8.4 | Account opening KYC denial handling | GAP (critical) — only HTTP 503 blocked; 202 {allowed:false} passed | FIXED: fail-closed unless allowed===true; 4xx/5xx deny |
+| 8.5 | agentKyc.approveSession | GAP — non-admin, no precondition, status vocab mismatch | FIXED: adminProcedure + conditional + unified `completed` |
+| 8.6 | Customer duplicate BVN/NIN | GAP | FIXED: pre-checks → CONFLICT (unique indexes remain as migration follow-up) |
+| 8.7 | Account-opening idempotency | GAP | FIXED: withIdempotency |
+| 8.8 | Customer tenantId stamping | GAP (RLS NULL rows visible cross-tenant) | FIXED: tenantId from ctx |
+| 8.9 | approveAccount role gate | GAP | FIXED: adminProcedure + conditional |
+| 8.10 | KYC doc OCR self-approval | GAP — verifyDocument auto-completed sessions | FIXED: OCR pass → pending_review (human gate) |
+| 8.11 | kycDocuments verify/reject | GAP — non-admin, forged verifiedBy | FIXED: adminProcedure + server-set verifiedBy |
+| 8.12 | whiteLabelOnboarding.approveApplication | GAP | FIXED: adminProcedure + pending-only conditional |
+| 8.13 | Merchant registration dup/audit/tenant | PARTIAL→GAP | FIXED: phone/rcNumber pre-checks, auditLog, tenantId |
+| 8.14 | checkRegistrationStatus enumeration | GAP | FIXED: admin/supervisor or owner-email gate |
+| 8.15 | merchantKycOnboarding.uploadDoc | GAP — arbitrary merchantId, dup-spam | FIXED: ownership/admin + pending-dup guard |
+| 8.16 | rejectMerchant status semantics | BUG — set `suspended` | FIXED: terminal `closed` (pgEnum-compatible; `rejected` needs enum migration follow-up) |
+| 8.17 | restBridge POST /agents mass assignment | GAP — pinHash/floatBalance/isActive accepted from body | FIXED: field whitelist + server-side bcrypt PIN |
+| 8.18 | mdm.enrollWithToken 100-device scan | GAP | FIXED: direct indexed enrollment-token query |
+| 8.19 | Tier-1 OTP proof at account opening | PARTIAL | OPEN (next round) |
+| 8.20 | startLiveness fail-open hint | PARTIAL | OPEN |
+| 8.21 | KYB audit actor attribution | PARTIAL | OPEN |
+| 8.22 | kyb-engine in-memory state + dup CAC | GAP | OPEN (Go service rework) |
+| 8.23 | KYB approve preconditions | GAP | OPEN |
+| 8.24 | Merchant email TOCTOU / unique constraints | PARTIAL | OPEN (migration follow-up) |
+| 8.25 | Terminal serial uniqueness + MDM binding | PARTIAL (dup check fixed; MDM binding OPEN) | partial FIXED |
+| 8.26 | Customer pipeline stage persistence | GAP — advanceStage persisted nothing; metrics hardcoded | OPEN |
+| 8.27 | Orchestrator workflowId idempotency + schema strictness | PARTIAL | OPEN |
+| 8.28 | Tenant onboarding-service (FastAPI) auth | GAP | OPEN |
+| 8.29 | Tenant billing provisioning gate | PARTIAL | OPEN |
+| 8.30 | OTP resend throttle + verify-otp token return | GAP | OPEN (auth-service) |
+| 8.31 | BVN/NIN real verification (NIBSS/NIMC) | GAP | OPEN (needs vendor integration) |
+| 8.32 | Frontend contracts: sprint23.kycVerification nested router | GAP | OPEN |
+| 8.33 | KycWorkflow admin actions missing | GAP | OPEN |
+| 8.34 | AccountOpeningPage mock data / no submit | GAP | OPEN |
+| 8.35 | MerchantKycOnboardingPage dead wiring | GAP | OPEN |
+| 8.36 | KYB form contract mismatch (54link_admin) | GAP | OPEN |
+| 8.37 | Flutter/RN placeholder onboarding screens | GAP | OPEN |
+| 8.38 | CustomerOnboardingPipeline field mismatch | PARTIAL | OPEN |
+
+Positive controls confirmed: float top-up approval (admin + transactional + audit), merchant doc decision (admin + pending-only conditional), OTP core store (TTL/attempt cap/constant-time/replay-safe), liveness cooldown + session ownership, agent.register dev fail-closed gate.
+
+### Round-6b fix ledger (sha → file)
+| sha | file |
+|-----|------|
+| dc3465049ccc | services/api-server-ts/server/routers/accountOpening.ts |
+| 83adae3e75de | services/api-server-ts/server/routers/agentKyc.ts |
+| b9fb0d4aa920 | services/api-server-ts/server/routers/agentOnboarding.ts |
+| 50744b026509 | services/api-server-ts/server/routers/agentOnboardingWizard.ts |
+| 80f3e0d4ff08 | services/api-server-ts/server/routers/kycDocumentsCrud.ts |
+| bad3981cdddb | services/api-server-ts/server/routers/kyc.ts |
+| c11502d4bfda | services/api-server-ts/server/routers/whiteLabelOnboarding.ts |
+| b06f70306643 | services/api-server-ts/server/routers/merchant.ts |
+| ecffe6498fe1 | services/api-server-ts/server/routers/merchantKycOnboarding.ts |
+| 9b70bd2c2de3 | services/api-server-ts/server/routers/merchantOnboardingPortal.ts |
+| 066d853d9f47 | services/api-server-ts/server/restBridge.ts |
+| 6a6234857c42 | services/api-server-ts/server/routers/mdm.ts |
+| c1d8800efb71 | services/orchestrator-service/src/controllers/kyc/postKycCallback.ts |
+| 8253351e3c36 | services/kyc-enforcement-go/main.go |

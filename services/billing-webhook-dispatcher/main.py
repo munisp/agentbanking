@@ -17,6 +17,8 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
 from collections import defaultdict
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import urllib.request
+import urllib.error
 
 # --- Production: Graceful Shutdown ---
 import signal
@@ -90,18 +92,32 @@ class WebhookDispatcher:
         logger.info(f"[WebhookDispatcher] Initialized with {len(self.configs)} tenant configs")
 
     def _load_default_configs(self):
-        """Load webhook configs from database (simulated)"""
-        self.configs[1] = [
-            WebhookConfig(tenant_id=1, endpoint_url="https://tenant1.example.com/webhooks/billing",
-                         secret_key="whsec_tenant1_secret_key_abc123", is_active=True,
-                         events=["billing.invoice.generated", "billing.settlement.completed",
-                                "billing.config.updated", "billing.alert.triggered"]),
-        ]
-        self.configs[2] = [
-            WebhookConfig(tenant_id=2, endpoint_url="https://tenant2.example.com/api/webhooks",
-                         secret_key="whsec_tenant2_secret_key_def456", is_active=True,
-                         events=["billing.invoice.generated", "billing.settlement.completed"]),
-        ]
+        """Load webhook configs from WEBHOOK_CONFIGS_JSON (env-provided JSON array).
+
+        No webhook endpoint URLs or HMAC secrets are hardcoded in source. Each
+        config entry must supply: tenant_id, endpoint_url, secret_key, events,
+        and optionally is_active, max_retries, timeout_ms.
+        """
+        raw = os.getenv("WEBHOOK_CONFIGS_JSON", "")
+        if not raw:
+            logger.warning("[WebhookDispatcher] WEBHOOK_CONFIGS_JSON not set; no tenant webhook configs loaded")
+            return
+        try:
+            entries = json.loads(raw)
+        except json.JSONDecodeError as e:
+            logger.error(f"[WebhookDispatcher] Invalid WEBHOOK_CONFIGS_JSON: {e}")
+            return
+        for entry in entries:
+            cfg = WebhookConfig(
+                tenant_id=int(entry["tenant_id"]),
+                endpoint_url=entry["endpoint_url"],
+                secret_key=entry["secret_key"],
+                events=list(entry.get("events", [])),
+                is_active=bool(entry.get("is_active", True)),
+                max_retries=int(entry.get("max_retries", 5)),
+                timeout_ms=int(entry.get("timeout_ms", 10000)),
+            )
+            self.configs.setdefault(cfg.tenant_id, []).append(cfg)
 
     def dispatch_event(self, tenant_id: int, event_type: str, payload: Dict) -> List[WebhookDelivery]:
         """Dispatch a billing event to all configured webhooks for the tenant"""
@@ -152,10 +168,35 @@ class WebhookDispatcher:
         return hmac.new(secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
 
     def _attempt_delivery(self, delivery: WebhookDelivery, config: WebhookConfig, signature: str) -> bool:
-        """Attempt to deliver webhook (simulated HTTP POST)"""
+        """Attempt real HTTP delivery of the webhook with a configured timeout."""
         logger.info(f"[HTTP] POST {config.endpoint_url} (attempt {delivery.attempts + 1})")
-        # In production: uses httpx/aiohttp with timeout
-        return True  # Simulated success
+        body = json.dumps(delivery.payload, default=str).encode()
+        req = urllib.request.Request(
+            config.endpoint_url,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Webhook-Signature": signature,
+                "X-Webhook-Event": delivery.event_type,
+                "X-Webhook-Delivery-Id": delivery.delivery_id,
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=config.timeout_ms / 1000.0) as resp:
+                delivery.response_code = resp.status
+                delivery.response_body = resp.read(4096).decode(errors="replace")
+                return 200 <= resp.status < 300
+        except urllib.error.HTTPError as e:
+            delivery.response_code = e.code
+            delivery.response_body = str(e)[:500]
+            logger.warning(f"[HTTP] Delivery failed: HTTP {e.code} for {delivery.delivery_id}")
+            return False
+        except Exception as e:
+            delivery.response_code = None
+            delivery.response_body = str(e)[:500]
+            logger.warning(f"[HTTP] Delivery error for {delivery.delivery_id}: {e}")
+            return False
 
     def _calculate_next_retry(self, attempts: int) -> str:
         """Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, 512s"""
@@ -200,10 +241,30 @@ class WebhookDispatcher:
 dispatcher = WebhookDispatcher()
 
 class Handler(BaseHTTPRequestHandler):
+    def _require_internal_auth(self) -> bool:
+        """Require the internal gateway token on all /api/v1/* endpoints.
+
+        Fail-closed: if INTERNAL_GATEWAY_TOKEN is not configured, every
+        authenticated endpoint responds 503 rather than allowing open access.
+        """
+        expected = os.getenv("INTERNAL_GATEWAY_TOKEN", "")
+        if not expected:
+            logger.error("[Auth] INTERNAL_GATEWAY_TOKEN not configured; denying request (fail-closed)")
+            self._respond(503, {"error": "service authentication not configured"})
+            return False
+        provided = self.headers.get("x-internal-gateway-token", "")
+        if not provided or not hmac.compare_digest(provided, expected):
+            self._respond(401, {"error": "unauthorized"})
+            return False
+        return True
+
     def do_GET(self):
         if self.path == "/health":
             self._respond(200, dispatcher.health_check())
-        elif self.path == "/api/v1/stats":
+            return
+        if not self._require_internal_auth():
+            return
+        if self.path == "/api/v1/stats":
             self._respond(200, dispatcher.get_delivery_stats())
         elif self.path == "/api/v1/deliveries":
             self._respond(200, {"deliveries": [asdict(d) for d in dispatcher.deliveries[-50:]]})
@@ -213,6 +274,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404); self.end_headers()
 
     def do_POST(self):
+        if not self._require_internal_auth():
+            return
         content_length = int(self.headers.get('Content-Length', 0))
         body = json.loads(self.rfile.read(content_length)) if content_length > 0 else {}
         if self.path == "/api/v1/dispatch":

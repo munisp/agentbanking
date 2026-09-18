@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   eq,
@@ -236,7 +236,7 @@ export const tenantAdminRouter = router({
         });
       }
     }),
-  createTenant: protectedProcedure
+  createTenant: adminProcedure
     .input(
       z.object({
         name: z.string(),

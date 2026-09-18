@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count, gte } from "drizzle-orm";
 import {
@@ -255,7 +255,7 @@ export const agentOnboardingWizardRouter = router({
           : 0,
     };
   }),
-  approveAgent: protectedProcedure
+  approveAgent: adminProcedure
     .input(z.object({ agentId: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const _fees = calculateFee(
@@ -275,16 +275,39 @@ export const agentOnboardingWizardRouter = router({
 
       try {
         const db = (await getDb())!;
-        await db
+        // Require a completed KYC session before activation
+        const [completedSession] = await db
+          .select({ id: kycSessions.id })
+          .from(kycSessions)
+          .where(
+            and(
+              eq(kycSessions.agentId, input.agentId),
+              eq(kycSessions.status, "completed")
+            )
+          )
+          .limit(1);
+        if (!completedSession)
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Agent has no completed KYC session — cannot approve",
+          });
+        // Conditional update — prevents double-activation (0 rows → CONFLICT)
+        const [activated] = await db
           .update(agents)
           .set({ isActive: true })
-          .where(eq(agents.id, input.agentId));
+          .where(and(eq(agents.id, input.agentId), eq(agents.isActive, false)))
+          .returning();
+        if (!activated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Agent is already activated or does not exist",
+          });
         await db.insert(auditLog).values({
           action: "agent_onboarding_approved",
           resource: "agents",
           resourceId: String(input.agentId),
           status: "success",
-          metadata: {},
+          metadata: { approvedBy: String(ctx.user?.id ?? "") },
         });
         return { success: true, agentId: input.agentId };
       } catch (error) {

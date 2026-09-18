@@ -1,6 +1,6 @@
 // Sprint 87: Full domain logic — document verification workflow, expiry tracking, compliance scoring
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { kycDocuments } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
@@ -271,35 +271,40 @@ export const kycDocumentsRouter = router({
         });
       }
     }),
-  verify: protectedProcedure
-    .input(z.object({ id: z.number(), verifiedBy: z.number() }))
-    .mutation(async ({ input }) => {
+  verify: adminProcedure
+    .input(z.object({ id: z.number(), verifiedBy: z.number().optional() }))
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
-        const [doc] = await db
-          .select()
-          .from(kycDocuments)
-          .where(eq(kycDocuments.id, input.id))
-          .limit(100);
-        if (!doc)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Document not found",
-          });
-        if (doc.status !== "pending")
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: `Cannot verify a document with status: ${doc.status}`,
-          });
+        // Conditional update — only a pending document can be verified (0 rows → CONFLICT).
+        // verifiedBy is always the authenticated reviewer, never caller-supplied.
         const [row] = await db
           .update(kycDocuments)
           .set({
             status: "verified",
-            verifiedBy: input.verifiedBy,
+            verifiedBy: Number(ctx.user.id),
             verifiedAt: new Date(),
           })
-          .where(eq(kycDocuments.id, input.id))
+          .where(
+            and(eq(kycDocuments.id, input.id), eq(kycDocuments.status, "pending"))
+          )
           .returning();
+        if (!row) {
+          const [doc] = await db
+            .select({ id: kycDocuments.id, status: kycDocuments.status })
+            .from(kycDocuments)
+            .where(eq(kycDocuments.id, input.id))
+            .limit(1);
+          if (!doc)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Document not found",
+            });
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Cannot verify a document with status: ${doc.status}`,
+          });
+        }
         return { ...row, message: "Document verified" };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -310,42 +315,47 @@ export const kycDocumentsRouter = router({
         });
       }
     }),
-  reject: protectedProcedure
+  reject: adminProcedure
     .input(
       z.object({
         id: z.number(),
-        verifiedBy: z.number(),
+        verifiedBy: z.number().optional(),
         rejectionReason: z.string().min(10),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
-        const [doc] = await db
-          .select()
-          .from(kycDocuments)
-          .where(eq(kycDocuments.id, input.id))
-          .limit(100);
-        if (!doc)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Document not found",
-          });
-        if (doc.status !== "pending")
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: `Cannot reject a document with status: ${doc.status}`,
-          });
+        // Conditional update — only a pending document can be rejected (0 rows → CONFLICT).
+        // verifiedBy is always the authenticated reviewer, never caller-supplied.
         const [row] = await db
           .update(kycDocuments)
           .set({
             status: "rejected",
-            verifiedBy: input.verifiedBy,
+            verifiedBy: Number(ctx.user.id),
             verifiedAt: new Date(),
             rejectionReason: input.rejectionReason,
           })
-          .where(eq(kycDocuments.id, input.id))
+          .where(
+            and(eq(kycDocuments.id, input.id), eq(kycDocuments.status, "pending"))
+          )
           .returning();
+        if (!row) {
+          const [doc] = await db
+            .select({ id: kycDocuments.id, status: kycDocuments.status })
+            .from(kycDocuments)
+            .where(eq(kycDocuments.id, input.id))
+            .limit(1);
+          if (!doc)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Document not found",
+            });
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Cannot reject a document with status: ${doc.status}`,
+          });
+        }
         return { ...row, message: "Document rejected" };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

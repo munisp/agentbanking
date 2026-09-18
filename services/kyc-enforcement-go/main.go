@@ -1,10 +1,11 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -980,9 +981,37 @@ func (s *AppState) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// internalAuthMiddleware restricts internal routes to callers presenting the
+// shared gateway token in the X-Internal-Gateway-Token header. Fails closed:
+// if INTERNAL_GATEWAY_TOKEN is not configured, protected requests are
+// rejected with 503 rather than allowed through unauthenticated.
+func internalAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := os.Getenv("INTERNAL_GATEWAY_TOKEN")
+		if token == "" {
+			http.Error(w, `{"error":"internal_gateway_token_not_configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		provided := r.Header.Get("X-Internal-Gateway-Token")
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
 func generateID() string {
 	b := make([]byte, 12)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand should never fail on supported platforms; if it does,
+		// derive bytes from nanosecond time so IDs stay unique and the
+		// 24-hex-char format is preserved.
+		n := time.Now().UnixNano()
+		for i := 0; i < len(b); i++ {
+			b[i] = byte(n >> (8 * (uint(i) % 8)))
+		}
+	}
 	return fmt.Sprintf("%x", b)
 }
 
@@ -994,14 +1023,16 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/api/v1/enforce/account-opening", state.handleAccountOpening)
-	mux.HandleFunc("/api/v1/enforce/loan", state.handleLoanEnforcement)
-	mux.HandleFunc("/api/v1/enforce/check", state.handleKYCCheck)
-	mux.HandleFunc("/api/v1/enforce/verify-callback", state.handleVerifyCallback)
-	mux.HandleFunc("/api/v1/enforce/approve-gate", state.handleApproveGate)
-	mux.HandleFunc("/api/v1/bureau/verify", state.handleBureauVerify)
-	mux.HandleFunc("/api/v1/bureau/status/", state.handleBureauStatus)
-	mux.HandleFunc("/api/v1/tiers/requirements", state.handleTierRequirements)
+	// All /api/v1/* routes are internal service-to-service endpoints and
+	// require the shared internal gateway token. /health stays public.
+	mux.HandleFunc("/api/v1/enforce/account-opening", internalAuthMiddleware(state.handleAccountOpening))
+	mux.HandleFunc("/api/v1/enforce/loan", internalAuthMiddleware(state.handleLoanEnforcement))
+	mux.HandleFunc("/api/v1/enforce/check", internalAuthMiddleware(state.handleKYCCheck))
+	mux.HandleFunc("/api/v1/enforce/verify-callback", internalAuthMiddleware(state.handleVerifyCallback))
+	mux.HandleFunc("/api/v1/enforce/approve-gate", internalAuthMiddleware(state.handleApproveGate))
+	mux.HandleFunc("/api/v1/bureau/verify", internalAuthMiddleware(state.handleBureauVerify))
+	mux.HandleFunc("/api/v1/bureau/status/", internalAuthMiddleware(state.handleBureauStatus))
+	mux.HandleFunc("/api/v1/tiers/requirements", internalAuthMiddleware(state.handleTierRequirements))
 	mux.HandleFunc("/health", state.handleHealth)
 
 	addr := ":" + cfg.Port

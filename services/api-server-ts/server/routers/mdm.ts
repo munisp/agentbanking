@@ -26,7 +26,7 @@ import {
   otaReleases,
   otaUpdateLog,
 } from "../../drizzle/schema";
-import { eq, desc, and, sql, count } from "drizzle-orm";
+import { eq, desc, and, sql, count, gt } from "drizzle-orm";
 import { randomBytes, timingSafeEqual } from "crypto";
 import { getIO } from "../socketSingleton";
 import {
@@ -907,14 +907,18 @@ export const mdmRouter = router({
         const db = await requireDb();
         const now = new Date();
 
-        // Find device by token
-        const allDevices = await db.select().from(devices).limit(100);
-        const device = allDevices.find(
-          d =>
-            d.enrollmentToken === input.token &&
-            d.enrollmentExpiresAt &&
-            d.enrollmentExpiresAt > now
-        );
+        // Find device by token — direct indexed WHERE on the enrollment token
+        // column (no full-table scan + JS filter).
+        const [device] = await db
+          .select()
+          .from(devices)
+          .where(
+            and(
+              eq(devices.enrollmentToken, input.token),
+              gt(devices.enrollmentExpiresAt, now)
+            )
+          )
+          .limit(1);
 
         if (!device) {
           throw new TRPCError({

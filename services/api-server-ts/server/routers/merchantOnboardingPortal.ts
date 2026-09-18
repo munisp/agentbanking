@@ -255,10 +255,14 @@ export const merchantOnboardingPortalRouter = router({
       try {
         const db = (await getDb())!;
         // NF-FF-31: admin-only rejection; conditional UPDATE — only a pending
-        // application may be rejected/suspended. 0 rows => wrong state.
+        // application may be rejected. 0 rows => wrong state.
+        // NOTE: merchant_status enum has no "rejected" value
+        // (pending|active|suspended|closed) — a rejected application is moved
+        // to the terminal "closed" state instead of "suspended" (which implies
+        // a re-activatable active merchant).
         const [updated] = await db
           .update(merchants)
-          .set({ status: "suspended" })
+          .set({ status: "closed" })
           .where(and(eq(merchants.id, input.id), eq(merchants.status, "pending")))
           .returning({ id: merchants.id });
         if (!updated)

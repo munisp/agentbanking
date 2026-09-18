@@ -4,6 +4,7 @@ import {
   router,
   publicProcedure as openProcedure,
   protectedProcedure,
+  adminProcedure,
 } from "../_core/trpc";
 import { getDb } from "../db";
 import {
@@ -338,7 +339,7 @@ export const agentKycRouter = router({
         });
       }
     }),
-  approveSession: protectedProcedure
+  approveSession: adminProcedure
     .input(
       z.object({ sessionId: z.number(), reviewNotes: z.string().optional() })
     )
@@ -346,11 +347,27 @@ export const agentKycRouter = router({
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
+        // Conditional update — only an open session can be approved (0 rows → CONFLICT).
+        // Terminal status is "completed" — agentOnboarding.completeKyc gates on it.
         const [updated] = await db
           .update(kycSessions)
-          .set({ status: "approved", reviewedAt: new Date() })
-          .where(eq(kycSessions.id, input.sessionId))
+          .set({ status: "completed", reviewedAt: new Date() })
+          .where(
+            and(
+              eq(kycSessions.id, input.sessionId),
+              or(
+                eq(kycSessions.status, "pending"),
+                eq(kycSessions.status, "under_review"),
+                eq(kycSessions.status, "pending_review")
+              )
+            )
+          )
           .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "KYC session is not awaiting review — cannot approve",
+          });
         await db.insert(auditLog).values({
           action: "kyc_approved",
           resource: "kyc_sessions",

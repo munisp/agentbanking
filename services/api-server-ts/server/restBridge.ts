@@ -65,6 +65,8 @@ import {
   auditLog,
 } from "../drizzle/schema";
 import { eq, desc, count, sql } from "drizzle-orm";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { verifySessionJwt, KC_SESSION_COOKIE } from "./_core/keycloakAuth";
 import { verifyKeycloakToken } from "./_core/keycloak";
 
@@ -270,8 +272,42 @@ router.post("/agents", requireAdmin, async (req, res) => {
   try {
     const db = await getDb();
     if (!db) return err(res, "DB unavailable");
-    const [row] = await db.insert(agents).values(req.body).returning();
-    ok(res, row);
+    // Whitelisted insert — req.body is NEVER inserted verbatim. Sensitive /
+    // privileged columns (pinHash, floatBalance, isActive, commissionBalance,
+    // role, hierarchyLevel, ...) cannot be set by the client.
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const agentCode = String(body.agentCode ?? "").trim();
+    const name = String(body.name ?? body.fullName ?? "").trim();
+    const phone = String(body.phone ?? "").trim();
+    if (!agentCode || !name || !phone) {
+      return res
+        .status(400)
+        .json({ error: "agentCode, name and phone are required" });
+    }
+    // PIN is hashed server-side (bcrypt); if none supplied, store a hash of a
+    // random unguessable secret — the agent must use PIN reset to set one.
+    const pin =
+      typeof body.pin === "string" && body.pin.length >= 4 ? body.pin : null;
+    const pinHash = await bcrypt.hash(
+      pin ?? crypto.randomBytes(16).toString("hex"),
+      12
+    );
+    const values: Record<string, unknown> = {
+      agentCode,
+      name,
+      phone,
+      email: body.email ? String(body.email).trim() : null,
+      location: body.location ?? body.state ?? body.lga ?? null,
+      tier: typeof body.tier === "string" ? body.tier : undefined,
+      pinHash,
+      isActive: false, // new agents are inactive until onboarding completes
+    };
+    // Strip undefined so drizzle column defaults apply.
+    for (const key of Object.keys(values)) {
+      if (values[key] === undefined) delete values[key];
+    }
+    const [row] = await db.insert(agents).values(values).returning();
+    ok(res, { ...row, pinHash: undefined });
   } catch (e) {
     err(res, e);
   }

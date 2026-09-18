@@ -7,7 +7,7 @@ import { z } from "zod";
 import { router, adminProcedure, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { merchantKycDocs } from "../../drizzle/schema";
+import { merchantKycDocs, merchants } from "../../drizzle/schema";
 import { eq, desc, and, count, sql, gte, lte } from "drizzle-orm";
 import {
   validateAmount,
@@ -300,6 +300,50 @@ export const merchantKycOnboardingRouter = router({
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
+
+        // Ownership check — caller must own the merchant record (merchants
+        // table has no userId; ownership is via keycloakSub) or be admin/supervisor.
+        const role = (ctx.user as any)?.role;
+        if (role !== "admin" && role !== "supervisor") {
+          const [merchant] = await db
+            .select({ id: merchants.id, keycloakSub: merchants.keycloakSub })
+            .from(merchants)
+            .where(eq(merchants.id, input.merchantId))
+            .limit(1);
+          if (!merchant)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Merchant not found",
+            });
+          if (
+            !merchant.keycloakSub ||
+            merchant.keycloakSub !== (ctx.user as any)?.keycloakSub
+          )
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Not authorized to upload documents for this merchant",
+            });
+        }
+
+        // Duplicate pending-doc guard — same merchantId + docType already pending
+        const [pendingDoc] = await db
+          .select({ id: merchantKycDocs.id })
+          .from(merchantKycDocs)
+          .where(
+            and(
+              eq(merchantKycDocs.merchantId, input.merchantId),
+              eq(merchantKycDocs.docType, input.docType),
+              eq(merchantKycDocs.status, "pending")
+            )
+          )
+          .limit(1);
+        if (pendingDoc)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "A pending document of this type already exists for this merchant",
+          });
+
         const [doc] = await db
           .insert(merchantKycDocs)
           .values({

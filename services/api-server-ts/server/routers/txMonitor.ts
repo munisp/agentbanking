@@ -381,7 +381,7 @@ export const txMonitorRouter = router({
     }),
 
   // ── Sprint 78 domain-specific procedures ──────────────────────────────────
-  getRules: openProcedure.query(async () => {
+  getRules: protectedProcedure.query(async () => {
     try {
       const db = await getDb();
       if (!db) throw new Error("DB not available");
@@ -409,7 +409,7 @@ export const txMonitorRouter = router({
     }
   }),
 
-  getAlerts: openProcedure
+  getAlerts: protectedProcedure
     .input(z.object({ severity: z.string().optional() }).optional())
     .query(async ({ input }) => {
       try {
@@ -446,7 +446,7 @@ export const txMonitorRouter = router({
       }
     }),
 
-  acknowledgeAlert: openProcedure
+  acknowledgeAlert: protectedProcedure
     .input(z.object({ alertId: z.string() }))
     .mutation(async () => {
       throw new TRPCError({
@@ -455,7 +455,7 @@ export const txMonitorRouter = router({
       });
     }),
 
-  resolveAlert: openProcedure
+  resolveAlert: protectedProcedure
     .input(z.object({ alertId: z.string(), resolution: z.string() }))
     .mutation(async () => {
       throw new TRPCError({
@@ -464,7 +464,7 @@ export const txMonitorRouter = router({
       });
     }),
 
-  getDashboard: openProcedure.query(async () => {
+  getDashboard: protectedProcedure.query(async () => {
     try {
       const db = await getDb();
       if (!db) throw new Error("DB not available");

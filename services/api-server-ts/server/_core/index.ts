@@ -17,6 +17,7 @@
 // installed before express / pg / etc. are loaded. telemetry.ts self-gates on
 // OTEL_EXPORTER_OTLP_ENDPOINT (no-op when unset).
 import "./telemetry";
+import { tenantTelemetryMiddleware } from "../middleware/tenantTelemetry";
 import "dotenv/config";
 import crypto from "crypto";
 import express from "express";
@@ -242,6 +243,12 @@ async function startServer() {
   } catch (e) {
     console.warn("[ETag] Setup failed:", (e as any).message);
   }
+
+  // ── Tenant telemetry (round-5 fix: closes dead-code gap) ─────────
+  // Attaches W3C baggage tenant.id (from the x-tenant-id header) and stamps it
+  // on the active span so traces/metrics carry per-tenant slicing end-to-end.
+  // Must run before rate limiting and route handlers so they inherit context.
+  app.use(tenantTelemetryMiddleware);
 
   // ── Rate limiting ────────────────────────────────────────────────────────────
   // Use Redis store in production for distributed rate limiting across replicas.

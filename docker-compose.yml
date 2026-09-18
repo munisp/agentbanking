@@ -325,12 +325,35 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # round-5 fix: prometheus.yml references /etc/prometheus/rules/pos-shell-rules.yml
+      # but it was never mounted (rule loading silently failed). Mount the repo's
+      # existing monitoring/prometheus-rules.yml at that exact container path.
+      - ./monitoring/prometheus-rules.yml:/etc/prometheus/rules/pos-shell-rules.yml:ro
       - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=30d"
       - "--web.enable-lifecycle"
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    networks:
+      - 54link-network
+
+  # ── Alertmanager — Alert routing (monitoring profile) ────────────────────────
+  # round-5 fix: monitoring/prometheus.yml alerts to alertmanager:9093 but no
+  # alertmanager service existed in this compose — alerts were dropped.
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    environment:
+      # required by monitoring/alertmanager.yml (${SMTP_PASSWORD}, fail-closed)
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD is required for the monitoring profile}
     restart: unless-stopped
     profiles:
       - monitoring
@@ -1140,6 +1163,8 @@ networks:
     driver: bridge
 
 volumes:
+  alertmanager-data:
+    driver: local
   prometheus-data:
     driver: local
   grafana-data:

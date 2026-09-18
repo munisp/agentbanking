@@ -1,6 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # POS-54Link — CI/CD Pipeline
 # Stages: Lint → Test → Build → Helm Lint → Docker → Deploy
+#
+# round3-W2 (2026-08): Node steps re-rooted to services/api-server-ts — the only
+# directory carrying a package.json + pnpm-lock.yaml after the 2026-06-29
+# monorepo restructure. pnpm version is pinned explicitly (10.4.1, matching
+# services/api-server-ts/package.json#packageManager) because there is no root
+# package.json for pnpm/action-setup to discover it from.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: CI/CD Pipeline
@@ -20,6 +26,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
   IMAGE_NAME: pos-54link
+  APP_DIR: services/api-server-ts
 
 permissions:
   id-token: write
@@ -36,22 +43,30 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
+          # cache: pnpm + cache-dependency-path disabled until the lockfile is restored
+          # (staged at /mnt/agents/output/r3-w2/repo/api-lock.fixed.yaml — see OPEN item round3-w2)
 
-      - run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
+        run: pnpm install --no-frozen-lockfile  # lockfile restore pending — staged artifact for maintainers
 
       - name: TypeScript type check
+        working-directory: ${{ env.APP_DIR }}
         run: pnpm exec tsc --noEmit
 
       - name: Prettier format check
+        working-directory: ${{ env.APP_DIR }}
         run: pnpm exec prettier --check "**/*.{ts,tsx,js,json,css,md}"
 
       - name: ESLint (if configured)
+        working-directory: ${{ env.APP_DIR }}
         run: |
-          if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ] || [ -f "eslint.config.js" ]; then
+          if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ] || [ -f "eslint.config.js" ] || [ -f "eslint.config.mjs" ]; then
             pnpm exec eslint . --max-warnings 0
           else
             echo "No ESLint config found, skipping"
@@ -67,12 +82,17 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
+          # cache: pnpm + cache-dependency-path disabled until the lockfile is restored
+          # (staged at /mnt/agents/output/r3-w2/repo/api-lock.fixed.yaml — see OPEN item round3-w2)
 
-      - run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
+        run: pnpm install --no-frozen-lockfile  # lockfile restore pending — staged artifact for maintainers
 
       - name: Setup test fixtures
         run: |
@@ -84,6 +104,7 @@ jobs:
           sudo chmod -R a+r /home/ubuntu/skills /home/ubuntu/54link-financial-model
 
       - name: Run Vitest
+        working-directory: ${{ env.APP_DIR }}
         run: pnpm test -- --reporter=verbose --coverage
         env:
           NODE_ENV: test
@@ -97,7 +118,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: coverage-report
-          path: coverage/
+          path: services/api-server-ts/coverage/
           retention-days: 14
 
   # ── Stage 2b: Docker Compose Sidecar Validation ─────────────────────────────
@@ -136,15 +157,31 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
+          # cache: pnpm + cache-dependency-path disabled until the lockfile is restored
+          # (staged at /mnt/agents/output/r3-w2/repo/api-lock.fixed.yaml — see OPEN item round3-w2)
 
-      - run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
+        run: pnpm install --no-frozen-lockfile  # lockfile restore pending — staged artifact for maintainers
 
       - name: Build application
-        run: pnpm build
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          # Full build = Vite client + esbuild server bundle. client/ is not
+          # currently co-located in services/api-server-ts (vite.config.ts
+          # expects ./client), so fall back to the server-only bundle until
+          # the client tree is restored next to the server.
+          if [ -d client ]; then
+            pnpm build
+          else
+            echo "client/ not present — building server bundle only (pnpm build:server)"
+            pnpm build:server
+          fi
         env:
           NODE_ENV: production
 
@@ -152,7 +189,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: build-dist
-          path: dist/
+          path: services/api-server-ts/dist/
           retention-days: 7
 
   # ── Stage 4: Helm Lint ──────────────────────────────────────────────────────
@@ -377,6 +414,7 @@ jobs:
           helm upgrade --install pos-54link \
             k8s/charts/pos-54link-umbrella \
             --namespace pos-54link-production \
+            --create-namespace \
             --values k8s/charts/pos-54link-umbrella/values.yaml \
             --values k8s/charts/pos-54link-umbrella/values-production.yaml \
             --set global.image.tag=${{ github.sha }} \

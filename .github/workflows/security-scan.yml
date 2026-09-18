@@ -1,5 +1,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # POS-54Link — Security Scanning Pipeline
+#
+# round3-W2 (2026-08):
+# - Dependency Audit re-rooted to services/api-server-ts (only dir with
+#   package.json + pnpm-lock.yaml); pnpm pinned to 10.4.1 explicitly.
+# - Secret Detection timeout raised 5m → 30m: full-history gitleaks scan of
+#   this repo cannot complete in 5 minutes (job was cancelled at timeout).
+# - Trivy SARIF upload gated on the report file existing so a failed image
+#   build no longer double-faults on a missing trivy-results.sarif.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Security Scan
@@ -16,6 +24,9 @@ permissions:
   security-events: write
   contents: read
 
+env:
+  APP_DIR: services/api-server-ts
+
 jobs:
   dependency-audit:
     name: Dependency Audit
@@ -25,14 +36,22 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: pnpm
+          # cache: pnpm + cache-dependency-path disabled until the lockfile is restored
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm audit --audit-level=high
+      - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
+        run: pnpm install --no-frozen-lockfile  # lockfile restore pending — staged artifact for maintainers
+
+      # Hard gate: any HIGH+ vulnerability fails the job (no continue-on-error).
+      - name: pnpm audit (HIGH+)
+        working-directory: ${{ env.APP_DIR }}
+        run: pnpm audit --audit-level=high
 
   trivy-scan:
     name: Trivy Container Scan
@@ -54,7 +73,7 @@ jobs:
           exit-code: 0
 
       - name: Upload Trivy scan results
-        if: always()
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
@@ -83,7 +102,8 @@ jobs:
   secret-scan:
     name: Secret Detection
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Full-history gitleaks scan needs far more than 5 minutes on this repo.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:

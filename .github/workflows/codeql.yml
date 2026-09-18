@@ -6,6 +6,14 @@ name: CodeQL Analysis
 #
 # Requires: GitHub Advanced Security (free for public repos, paid for private)
 # Docs: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors
+#
+# round3-W2 (2026-08): the JavaScript/TypeScript job no longer installs
+# dependencies or runs a build. JS/TS is an interpreted language for CodeQL —
+# extraction does not need node_modules, and the previous pnpm install step
+# died before analysis because the repo has no root package.json/lockfile
+# (the parallel CodeQL job in security-scan.yml, which never installs
+# dependencies, succeeds). Analysis scope now points at the real app tree
+# (services/api-server-ts) plus the root client.
 
 on:
   push:
@@ -42,31 +50,14 @@ jobs:
           queries: security-extended,security-and-quality
           config: |
             paths:
-              - server/
+              - services/api-server-ts/
               - client/src/
-              - shared/
             paths-ignore:
               - node_modules/
               - dist/
               - "**/*.test.ts"
               - "**/*.spec.ts"
               - "client/src/components/ui/"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - uses: pnpm/action-setup@v4
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build for analysis
-        run: pnpm build
-        continue-on-error: true
-        env:
-          NODE_ENV: production
-          JWT_SECRET: codeql-analysis-placeholder-secret-32chars
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

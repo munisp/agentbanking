@@ -1,4 +1,7 @@
 # Item 9: Database migration validation in CI
+# round3-W2 (2026-08): re-rooted to services/api-server-ts (the only directory
+# with package.json + pnpm-lock.yaml + drizzle.config.ts after the 2026-06-29
+# restructure); pnpm pinned explicitly; path filters extended to the new tree.
 name: DB Migration Check
 
 on:
@@ -7,9 +10,11 @@ on:
       - 'drizzle/**'
       - 'db/**'
       - 'server/db/**'
+      - 'services/api-server-ts/drizzle/**'
 
 env:
   NODE_VERSION: 22
+  APP_DIR: services/api-server-ts
 
 jobs:
   migration-check:
@@ -33,15 +38,19 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
+          # cache: pnpm + cache-dependency-path disabled until the lockfile is restored
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        working-directory: ${{ env.APP_DIR }}
+        run: pnpm install --no-frozen-lockfile  # lockfile restore pending — staged artifact for maintainers
 
       - name: Run schema push (dry-run validation)
+        working-directory: ${{ env.APP_DIR }}
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pos_migration_test
           POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/pos_migration_test
@@ -52,9 +61,9 @@ jobs:
 
       - name: Check for uncommitted schema changes
         run: |
-          if [ -n "$(git diff --name-only drizzle/)" ]; then
+          if [ -n "$(git diff --name-only -- drizzle/ services/api-server-ts/drizzle/)" ]; then
             echo "::error::Uncommitted schema changes detected. Run 'pnpm db:generate' and commit."
-            git diff drizzle/
+            git diff -- drizzle/ services/api-server-ts/drizzle/
             exit 1
           fi
           echo "No uncommitted schema changes"

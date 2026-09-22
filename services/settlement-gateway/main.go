@@ -89,6 +89,35 @@ func NewGateway(cfg Config, tbClient tb.Client, kafkaWriter *kafka.Writer) *Gate
 	}
 }
 
+// F15 bounds for the in-memory settlements map.
+const (
+	settlementTTL  = 24 * time.Hour
+	maxSettlements = 10000
+)
+
+// evictSettlementsLocked drops entries older than settlementTTL; if the map is
+// still at the cap, evicts oldest-first until there is headroom. Caller must
+// hold g.mu (write).
+func (g *Gateway) evictSettlementsLocked() {
+	cutoff := time.Now().Add(-settlementTTL)
+	for id, s := range g.settlements {
+		if s.SettledAt.Before(cutoff) {
+			delete(g.settlements, id)
+		}
+	}
+	for len(g.settlements) >= maxSettlements {
+		var oldestID string
+		var oldestTime time.Time
+		first := true
+		for id, s := range g.settlements {
+			if first || s.SettledAt.Before(oldestTime) {
+				oldestID, oldestTime, first = id, s.SettledAt, false
+			}
+		}
+		delete(g.settlements, oldestID)
+	}
+}
+
 // stringToUint128 converts a string ID to a deterministic tbtypes.Uint128
 // using the first 16 bytes of the string (or zero-padded if shorter).
 func stringToUint128(s string) tbtypes.Uint128 {
@@ -259,6 +288,12 @@ func (g *Gateway) handleSettle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	g.mu.Lock()
+	// F15: bound the in-memory settlements map (was insert-per-request, never
+	// evicted). Entries older than settlementTTL are evicted; the map is
+	// hard-capped at maxSettlements with oldest-first eviction.
+	if len(g.settlements) >= maxSettlements {
+		g.evictSettlementsLocked()
+	}
 	g.settlements[req.TransactionID] = result
 	g.mu.Unlock()
 
@@ -355,7 +390,17 @@ func main() {
 	mux.HandleFunc("/ready", gw.handleReady)
 	mux.HandleFunc("/metrics", gw.handleMetrics)
 
-	srv := &http.Server{Addr: ":" + cfg.Port, Handler: mux, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second}
+	// F7: add IdleTimeout/ReadHeaderTimeout, and raise WriteTimeout above the
+	// worst-case upstream budget (TB write + Mojaloop call at 15s + Kafka
+	// publish ≈ 30s) so slow-upstream responses aren't truncated mid-write.
+	srv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      45 * time.Second,
+		IdleTimeout:       90 * time.Second,
+	}
 	go func() {
 		log.Printf("[SettlementGateway] Starting on :%s", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

@@ -31,8 +31,11 @@ export function etagMiddleware() {
   return (req: Request, res: Response, next: NextFunction) => {
     if (shouldSkip(req)) return next();
 
-    const originalJson = res.json.bind(res);
     res.json = function (body: unknown) {
+      // Round-8 perf: stringify ONCE and reuse the payload for both the etag
+      // hash and the response body. Previously this stringified here and then
+      // express's res.json stringified a second time (and the now-removed
+      // responseCompressionMiddleware stringified a third time).
       const bodyStr = JSON.stringify(body);
       const etag = `"${crypto.createHash("md5").update(bodyStr).digest("hex")}"`;
 
@@ -52,7 +55,13 @@ export function etagMiddleware() {
         return res;
       }
 
-      return originalJson(body);
+      // Equivalent to res.json(body) but reuses bodyStr instead of
+      // re-serializing: set the JSON content type and send the payload.
+      if (!res.getHeader("Content-Type")) {
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+      }
+      res.send(bodyStr);
+      return res;
     };
 
     next();

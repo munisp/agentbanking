@@ -13,6 +13,14 @@
  *     This is the default in production where the POS Shell sits behind the
  *     gateway and does not have direct broker access.
  *
+ * Batching (round-8 perf): publishEvent() calls are accumulated for up to
+ * BATCH_LINGER_MS (50ms) or BATCH_MAX_MESSAGES (100) and flushed as a single
+ * producer.send({ topicMessages }) with GZIP compression. On a batch-level
+ * failure each message falls back to the legacy per-message path, so the
+ * round-7 retry/DLQ semantics below are preserved exactly for poison
+ * messages. The producer is created with idempotent: true (acks=all,
+ * maxInFlight<=5) as supported by kafkajs.
+ *
  * Delivery guarantees (mirrors services/shared/kafka_consumer.py DLQ
  * semantics — never silently drop a message):
  *  1. publishEvent() retries the publish with bounded exponential backoff
@@ -38,28 +46,48 @@ const PLATFORM_BASE_URL = ENV.platformBaseUrl;
 const PLATFORM_API_KEY = ENV.platformApiKey;
 
 // ── KafkaJS producer (optional direct mode) ───────────────────────────────────
-import type { Kafka as KafkaType, Producer } from "kafkajs";
+import type { Kafka as KafkaType, Producer, CompressionTypes as CompressionTypesType } from "kafkajs";
 import { ENV } from "./_core/env";
 let _kafka: KafkaType | null = null;
 let _producer: Producer | null = null;
+// Cold-start race guard: concurrent first publishers share ONE connect attempt.
+let _producerPromise: Promise<Producer | null> | null = null;
+// CompressionTypes enum captured from the dynamic kafkajs import (GZIP on send).
+let _compressionTypes: typeof CompressionTypesType | null = null;
 
-async function getProducer(): Promise<Producer | null> {
-  if (_producer) return _producer;
+async function connectProducer(): Promise<Producer | null> {
   try {
-    const { Kafka } = await import("kafkajs");
-    _kafka = new Kafka({
+    const kafkajs = await import("kafkajs");
+    _compressionTypes = kafkajs.CompressionTypes;
+    _kafka = new kafkajs.Kafka({
       clientId: KAFKA_CLIENT_ID,
       brokers: KAFKA_BROKERS.split(",").map(b => b.trim()),
       retry: { retries: 3 },
     });
-    _producer = _kafka.producer({ allowAutoTopicCreation: false });
+    // idempotent producer: exactly-once per partition, acks=all — supported by
+    // kafkajs >= 1.4. allowAutoTopicCreation stays false (topics are provisioned
+    // by infra/kafka/create-topics.sh; auto-creation caused per-request backoff
+    // storms for ad-hoc topic names before round-8).
+    _producer = _kafka.producer({
+      allowAutoTopicCreation: false,
+      idempotent: true,
+    });
     await _producer.connect();
     console.log("[Kafka] Producer connected →", KAFKA_BROKERS);
     return _producer;
   } catch (err) {
     console.warn("[Kafka] Could not connect producer:", (err as Error).message);
+    _producer = null;
     return null;
+  } finally {
+    _producerPromise = null;
   }
+}
+
+async function getProducer(): Promise<Producer | null> {
+  if (_producer) return _producer;
+  if (!_producerPromise) _producerPromise = connectProducer();
+  return _producerPromise;
 }
 
 // ── Proxy helper ──────────────────────────────────────────────────────────────
@@ -94,7 +122,12 @@ export type KafkaTopic =
   | "pos.kyc.rejected"
   | "pos.disputes.opened"
   | "pos.disputes.resolved"
-  | "pos.fraud.alert_raised";
+  | "pos.fraud.alert_raised"
+  // Round-8: single shared topic for tRPC observability events (was ad-hoc
+  // per-procedure topics, which failed against allowAutoTopicCreation:false and
+  // churned 4× backoff + DLQ per request). "pos.audit.trail" is an existing
+  // topic consumed by kafka-event-consumer.ts's default config.
+  | "pos.audit.trail";
 
 export interface KafkaEvent<T = unknown> {
   eventId: string;
@@ -153,6 +186,7 @@ async function publishToDeadLetter<T>(
       await producer.send({
         topic: dlqTopic,
         messages: [{ key, value: JSON.stringify(envelope) }],
+        compression: _compressionTypes?.GZIP,
       });
       console.warn(`[Kafka] Event dead-lettered → ${dlqTopic} (key=${key})`);
       return true;
@@ -169,29 +203,15 @@ async function publishToDeadLetter<T>(
   }
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
-
-/**
- * Publish a domain event to a Kafka topic.
- * Retries with bounded exponential backoff; on final failure the event is
- * dead-lettered to "<topic>.dlq". Returns true on success, false only after
- * retries were exhausted and the DLQ path was attempted (never silent).
- */
-export async function publishEvent<T>(
+// ── Legacy per-message path (retry + DLQ) ────────────────────────────────────
+// Used for proxy mode and as the fallback when a batched broker send fails, so
+// round-7 semantics (bounded backoff → DLQ → explicit false) are preserved for
+// every message that does not make it onto the broker via the fast batch path.
+async function publishOneWithRetry<T>(
   topic: KafkaTopic,
   key: string,
-  payload: T,
-  metadata?: { agentCode?: string; tenantId?: string }
+  event: KafkaEvent<T>
 ): Promise<boolean> {
-  const event: KafkaEvent<T> = {
-    eventId: crypto.randomUUID(),
-    eventType: topic,
-    timestamp: new Date().toISOString(),
-    agentCode: metadata?.agentCode,
-    tenantId: metadata?.tenantId,
-    payload,
-  };
-
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= PUBLISH_MAX_ATTEMPTS; attempt++) {
     try {
@@ -200,6 +220,7 @@ export async function publishEvent<T>(
         await producer.send({
           topic,
           messages: [{ key, value: JSON.stringify(event) }],
+          compression: _compressionTypes?.GZIP,
         });
         return true;
       }
@@ -236,11 +257,134 @@ export async function publishEvent<T>(
   return false;
 }
 
+// ── Batched send accumulator ─────────────────────────────────────────────────
+// publishEvent() enqueues; a single producer.send({ topicMessages }) flushes
+// up to BATCH_MAX_MESSAGES messages (or after BATCH_LINGER_MS). This turns
+// N broker round trips into 1 on the hot path.
+const BATCH_LINGER_MS = 50;
+const BATCH_MAX_MESSAGES = 100;
+
+interface PendingPublish {
+  topic: KafkaTopic;
+  key: string;
+  event: KafkaEvent<unknown>;
+  resolve: (ok: boolean) => void;
+}
+
+let _pendingBatch: PendingPublish[] = [];
+let _batchTimer: NodeJS.Timeout | null = null;
+let _flushing = false;
+
+async function flushPendingBatch(): Promise<void> {
+  if (_flushing) return;
+  _flushing = true;
+  const batch = _pendingBatch;
+  _pendingBatch = [];
+  if (_batchTimer) {
+    clearTimeout(_batchTimer);
+    _batchTimer = null;
+  }
+  try {
+    const producer = await getProducer();
+    if (producer && batch.length > 0) {
+      // Happy path: one send for the whole batch, grouped by topic.
+      const byTopic = new Map<string, PendingPublish[]>();
+      for (const p of batch) {
+        const list = byTopic.get(p.topic) ?? [];
+        list.push(p);
+        byTopic.set(p.topic, list);
+      }
+      try {
+        await producer.send({
+          topicMessages: [...byTopic.entries()].map(([topic, items]) => ({
+            topic,
+            messages: items.map(i => ({
+              key: i.key,
+              value: JSON.stringify(i.event),
+            })),
+          })),
+          compression: _compressionTypes?.GZIP,
+        });
+        for (const p of batch) p.resolve(true);
+        return;
+      } catch (err) {
+        console.warn(
+          `[Kafka] Batched send of ${batch.length} message(s) failed (${(err as Error).message}) — falling back to per-message retry/DLQ`
+        );
+        // Fall through to per-message handling below.
+      }
+    }
+    // Proxy mode or batch failure: preserve round-7 per-message semantics.
+    const results = await Promise.all(
+      batch.map(p => publishOneWithRetry(p.topic, p.key, p.event))
+    );
+    results.forEach((ok, i) => batch[i].resolve(ok));
+  } finally {
+    _flushing = false;
+    // Drain anything that arrived while we were flushing.
+    if (_pendingBatch.length > 0) scheduleBatchFlush();
+  }
+}
+
+function scheduleBatchFlush(): void {
+  if (_batchTimer || _flushing) return;
+  _batchTimer = setTimeout(() => {
+    _batchTimer = null;
+    void flushPendingBatch();
+  }, BATCH_LINGER_MS);
+  if (typeof _batchTimer.unref === "function") _batchTimer.unref();
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * Publish a domain event to a Kafka topic.
+ * The event joins the micro-batch accumulator (50ms / 100 messages) and is
+ * flushed as one broker send. Retries with bounded exponential backoff; on
+ * final failure the event is dead-lettered to "<topic>.dlq". Returns true on
+ * success, false only after retries were exhausted and the DLQ path was
+ * attempted (never silent).
+ */
+export function publishEvent<T>(
+  topic: KafkaTopic,
+  key: string,
+  payload: T,
+  metadata?: { agentCode?: string; tenantId?: string }
+): Promise<boolean> {
+  const event: KafkaEvent<T> = {
+    eventId: crypto.randomUUID(),
+    eventType: topic,
+    timestamp: new Date().toISOString(),
+    agentCode: metadata?.agentCode,
+    tenantId: metadata?.tenantId,
+    payload,
+  };
+
+  return new Promise<boolean>(resolve => {
+    _pendingBatch.push({
+      topic,
+      key,
+      event: event as KafkaEvent<unknown>,
+      resolve,
+    });
+    if (_pendingBatch.length >= BATCH_MAX_MESSAGES) void flushPendingBatch();
+    else scheduleBatchFlush();
+  });
+}
+
 /**
  * Gracefully disconnect the Kafka producer.
+ * Flushes any pending micro-batch first so queued events are not lost.
  * Called during graceful shutdown.
  */
 export async function disconnectKafka(): Promise<void> {
+  if (_pendingBatch.length > 0) {
+    try {
+      await flushPendingBatch();
+    } catch {
+      /* ignore */
+    }
+  }
   if (_producer) {
     try {
       await _producer.disconnect();

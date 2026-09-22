@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, responses, Header
+from fastapi import APIRouter, Depends, HTTPException, responses, Header, Query
 from sqlalchemy.orm import Session
 from database import get_session
 from utils import create_logger
@@ -69,20 +69,24 @@ def get_accounts(
     tenant_id: str = Header(..., alias="x-tenant-id"),
     keycloak_id: str = Header(..., alias="x-keycloak-id"),
     ledger_id: str = Header(..., alias="x-ledger-id"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
-    """Get account route handler."""
+    """Get account route handler (paginated)."""
 
     context = Context(tenant_id=tenant_id, keycloak_id=keycloak_id, ledger_id=ledger_id)
 
     try:
         account_service = AccountService(db)
 
-        accounts = account_service.get_accounts(context)
+        accounts = account_service.get_accounts(context, limit=limit, offset=offset)
 
         return responses.JSONResponse(
             content={
                 "message": "success",
                 "account": accounts,  # Already converted to dict in service layer
+                "limit": limit,
+                "offset": offset,
             },
             status_code=200,
         )

@@ -3,15 +3,38 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+// Shared HTTP clients (F11/F12): bounded timeouts so a hung sidecar or goAML
+// endpoint cannot pin a goroutine forever, and connection reuse via a single
+// Transport.
+var (
+	eventHTTPClient = &http.Client{Timeout: 5 * time.Second}
+	goAMLHTTPClient = &http.Client{Timeout: 30 * time.Second}
+)
+
+// postJSONFireAndForget POSTs a JSON payload without blocking the caller and
+// always drains + closes the response body so connections return to the pool
+// (F11: previously http.Post via DefaultClient, no timeout, body never closed).
+func postJSONFireAndForget(url string, payload []byte) {
+	resp, err := eventHTTPClient.Post(url, "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		log.Printf("[AML-Case] event POST %s failed: %v", url, err)
+		return
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // AML Case Management Service — Case Lifecycle & Compliance Workflow
@@ -47,16 +70,16 @@ import (
 // ══════════════════════════════════════════════════════════════════════════════
 
 type Config struct {
-	Port        string
+	Port         string
 	KafkaBrokers string
-	RedisURL    string
-	KeycloakURL string
-	TemporalURL string
-	DaprURL     string
-	FluvioURL   string
-	PermifyURL  string
-	GoAMLURL    string
-	Environment string
+	RedisURL     string
+	KeycloakURL  string
+	TemporalURL  string
+	DaprURL      string
+	FluvioURL    string
+	PermifyURL   string
+	GoAMLURL     string
+	Environment  string
 }
 
 func loadConfig() Config {
@@ -86,14 +109,14 @@ func envOr(key, fallback string) string {
 type CaseStatus string
 
 const (
-	StatusOpen              CaseStatus = "open"
-	StatusAssigned          CaseStatus = "assigned"
+	StatusOpen               CaseStatus = "open"
+	StatusAssigned           CaseStatus = "assigned"
 	StatusUnderInvestigation CaseStatus = "under_investigation"
-	StatusEscalated         CaseStatus = "escalated"
-	StatusPendingSAR        CaseStatus = "pending_sar"
-	StatusSARFiled          CaseStatus = "sar_filed"
-	StatusClosed            CaseStatus = "closed"
-	StatusFalsePositive     CaseStatus = "false_positive"
+	StatusEscalated          CaseStatus = "escalated"
+	StatusPendingSAR         CaseStatus = "pending_sar"
+	StatusSARFiled           CaseStatus = "sar_filed"
+	StatusClosed             CaseStatus = "closed"
+	StatusFalsePositive      CaseStatus = "false_positive"
 )
 
 type CasePriority string
@@ -109,37 +132,37 @@ type AlertType string
 
 const (
 	AlertTransactionSuspicious AlertType = "transaction_suspicious"
-	AlertSanctionsMatch       AlertType = "sanctions_match"
-	AlertPEPMatch             AlertType = "pep_match"
-	AlertStructuring          AlertType = "structuring"
-	AlertVelocity             AlertType = "velocity_breach"
-	AlertThresholdBreach      AlertType = "threshold_breach"
-	AlertAdverseMedia         AlertType = "adverse_media"
-	AlertUnusualPattern       AlertType = "unusual_pattern"
+	AlertSanctionsMatch        AlertType = "sanctions_match"
+	AlertPEPMatch              AlertType = "pep_match"
+	AlertStructuring           AlertType = "structuring"
+	AlertVelocity              AlertType = "velocity_breach"
+	AlertThresholdBreach       AlertType = "threshold_breach"
+	AlertAdverseMedia          AlertType = "adverse_media"
+	AlertUnusualPattern        AlertType = "unusual_pattern"
 )
 
 type AMLCase struct {
-	ID              string       `json:"id"`
-	CaseNumber      string       `json:"case_number"`
-	Status          CaseStatus   `json:"status"`
-	Priority        CasePriority `json:"priority"`
-	AlertType       AlertType    `json:"alert_type"`
-	AlertID         string       `json:"alert_id"`
-	Subject         CaseSubject  `json:"subject"`
-	AssignedTo      string       `json:"assigned_to,omitempty"`
-	EscalatedTo     string       `json:"escalated_to,omitempty"`
-	RiskScore       float64      `json:"risk_score"`
-	TotalAmount     float64      `json:"total_amount"`
-	TransactionCount int         `json:"transaction_count"`
-	SARFilingID     string       `json:"sar_filing_id,omitempty"`
-	Notes           []CaseNote   `json:"notes"`
-	Timeline        []TimelineEntry `json:"timeline"`
-	SLADeadline     time.Time    `json:"sla_deadline"`
-	SLABreached     bool         `json:"sla_breached"`
-	Resolution      string       `json:"resolution,omitempty"`
-	CreatedAt       time.Time    `json:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
-	ClosedAt        *time.Time   `json:"closed_at,omitempty"`
+	ID               string          `json:"id"`
+	CaseNumber       string          `json:"case_number"`
+	Status           CaseStatus      `json:"status"`
+	Priority         CasePriority    `json:"priority"`
+	AlertType        AlertType       `json:"alert_type"`
+	AlertID          string          `json:"alert_id"`
+	Subject          CaseSubject     `json:"subject"`
+	AssignedTo       string          `json:"assigned_to,omitempty"`
+	EscalatedTo      string          `json:"escalated_to,omitempty"`
+	RiskScore        float64         `json:"risk_score"`
+	TotalAmount      float64         `json:"total_amount"`
+	TransactionCount int             `json:"transaction_count"`
+	SARFilingID      string          `json:"sar_filing_id,omitempty"`
+	Notes            []CaseNote      `json:"notes"`
+	Timeline         []TimelineEntry `json:"timeline"`
+	SLADeadline      time.Time       `json:"sla_deadline"`
+	SLABreached      bool            `json:"sla_breached"`
+	Resolution       string          `json:"resolution,omitempty"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
+	ClosedAt         *time.Time      `json:"closed_at,omitempty"`
 }
 
 type CaseSubject struct {
@@ -195,7 +218,7 @@ func (s *AppState) publishKafka(topic string, event map[string]interface{}) {
 	if s.config.DaprURL != "" {
 		go func() {
 			url := fmt.Sprintf("%s/v1.0/publish/kafka-pubsub/%s", s.config.DaprURL, topic)
-			http.Post(url, "application/json", strings.NewReader(string(payload)))
+			postJSONFireAndForget(url, payload)
 		}()
 	}
 }
@@ -207,7 +230,7 @@ func (s *AppState) streamToFluvio(data interface{}) {
 	payload, _ := json.Marshal(data)
 	go func() {
 		url := fmt.Sprintf("%s/api/v1/produce/aml-cases", s.config.FluvioURL)
-		http.Post(url, "application/json", strings.NewReader(string(payload)))
+		postJSONFireAndForget(url, payload)
 	}()
 }
 
@@ -223,7 +246,7 @@ func (s *AppState) notifyDapr(channel, message string, metadata map[string]inter
 	})
 	go func() {
 		url := fmt.Sprintf("%s/v1.0/publish/notifications/compliance-alerts", s.config.DaprURL)
-		http.Post(url, "application/json", strings.NewReader(string(payload)))
+		postJSONFireAndForget(url, payload)
 	}()
 }
 
@@ -239,7 +262,7 @@ func (s *AppState) startTemporalTimer(caseID string, slaDeadline time.Time) {
 			"deadline":      slaDeadline.Format(time.RFC3339),
 		})
 		url := fmt.Sprintf("%s/api/v1/namespaces/default/workflows", s.config.TemporalURL)
-		http.Post(url, "application/json", strings.NewReader(string(payload)))
+		postJSONFireAndForget(url, payload)
 	}()
 }
 
@@ -277,13 +300,13 @@ func priorityFromRisk(score float64) CasePriority {
 
 func (s *AppState) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		AlertType        AlertType    `json:"alert_type"`
-		AlertID          string       `json:"alert_id"`
-		Subject          CaseSubject  `json:"subject"`
-		RiskScore        float64      `json:"risk_score"`
-		TotalAmount      float64      `json:"total_amount"`
-		TransactionCount int          `json:"transaction_count"`
-		InitialNote      string       `json:"initial_note,omitempty"`
+		AlertType        AlertType   `json:"alert_type"`
+		AlertID          string      `json:"alert_id"`
+		Subject          CaseSubject `json:"subject"`
+		RiskScore        float64     `json:"risk_score"`
+		TotalAmount      float64     `json:"total_amount"`
+		TransactionCount int         `json:"transaction_count"`
+		InitialNote      string      `json:"initial_note,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
@@ -373,8 +396,35 @@ func (s *AppState) handleListCases(w http.ResponseWriter, r *http.Request) {
 		return results[i].CreatedAt.After(results[j].CreatedAt)
 	})
 
+	// Pagination (F21): default 100, capped at 1000 — the full case map is
+	// never serialized in one response.
+	total := len(results)
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	offset := 0
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			offset = n
+		}
+	}
+	if offset > total {
+		offset = total
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	page := results[offset:end]
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"cases": results, "total": len(results)})
+	json.NewEncoder(w).Encode(map[string]interface{}{"cases": page, "total": total, "limit": limit, "offset": offset})
 }
 
 func (s *AppState) handleGetCase(w http.ResponseWriter, r *http.Request) {
@@ -435,7 +485,9 @@ func (s *AppState) handleAssign(w http.ResponseWriter, r *http.Request) {
 
 func (s *AppState) handleInvestigate(w http.ResponseWriter, r *http.Request) {
 	id := extractID(r.URL.Path, 3)
-	var req struct{ Actor string `json:"actor"` }
+	var req struct {
+		Actor string `json:"actor"`
+	}
 	json.NewDecoder(r.Body).Decode(&req)
 
 	c, err := s.transitionCase(id, StatusUnderInvestigation, req.Actor, "Investigation started", nil)
@@ -475,7 +527,9 @@ func (s *AppState) handleEscalate(w http.ResponseWriter, r *http.Request) {
 
 func (s *AppState) handleFileSAR(w http.ResponseWriter, r *http.Request) {
 	id := extractID(r.URL.Path, 3)
-	var req struct{ Actor string `json:"actor"` }
+	var req struct {
+		Actor string `json:"actor"`
+	}
 	json.NewDecoder(r.Body).Decode(&req)
 
 	c, err := s.transitionCase(id, StatusPendingSAR, req.Actor, "SAR filing initiated", nil)
@@ -497,19 +551,21 @@ func (s *AppState) handleFileSAR(w http.ResponseWriter, r *http.Request) {
 				"nationality":  "Nigeria",
 				"risk_level":   c.Subject.RiskLevel,
 			},
-			"indicators":       []string{string(c.AlertType)},
-			"narrative":        fmt.Sprintf("AML Case %s: %s alert with risk score %.1f", c.CaseNumber, c.AlertType, c.RiskScore),
-			"risk_score":       c.RiskScore,
+			"indicators":        []string{string(c.AlertType)},
+			"narrative":         fmt.Sprintf("AML Case %s: %s alert with risk score %.1f", c.CaseNumber, c.AlertType, c.RiskScore),
+			"risk_score":        c.RiskScore,
 			"reporting_officer": req.Actor,
 		}
 		payload, _ := json.Marshal(sarReq)
-		resp, err := http.Post(s.config.GoAMLURL+"/api/v1/sar/create", "application/json", strings.NewReader(string(payload)))
+		resp, err := goAMLHTTPClient.Post(s.config.GoAMLURL+"/api/v1/sar/create", "application/json", strings.NewReader(string(payload)))
 		if err != nil {
 			log.Printf("[AML-Case] Failed to create SAR via goAML: %v", err)
 			return
 		}
 		defer resp.Body.Close()
-		var sarResp struct{ ID string `json:"id"` }
+		var sarResp struct {
+			ID string `json:"id"`
+		}
 		json.NewDecoder(resp.Body).Decode(&sarResp)
 
 		s.mu.Lock()
@@ -517,15 +573,23 @@ func (s *AppState) handleFileSAR(w http.ResponseWriter, r *http.Request) {
 		c.Status = StatusSARFiled
 		c.Timeline = append(c.Timeline, TimelineEntry{
 			Action: "sar_filed", Actor: "system",
-			Details: fmt.Sprintf("SAR filed via goAML, filing ID: %s", sarResp.ID),
+			Details:   fmt.Sprintf("SAR filed via goAML, filing ID: %s", sarResp.ID),
 			OldStatus: "pending_sar", NewStatus: "sar_filed", Timestamp: time.Now(),
 		})
 		s.mu.Unlock()
 	}()
 
 	s.publishKafka("aml.case.sar_initiated", map[string]interface{}{"case_id": id})
+
+	// Encode a snapshot: the goroutine above mutates c under s.mu, so encoding
+	// c directly here would race with that write (F12).
+	s.mu.RLock()
+	snapshot := *c
+	snapshot.Timeline = append([]TimelineEntry(nil), c.Timeline...)
+	s.mu.RUnlock()
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(c)
+	json.NewEncoder(w).Encode(&snapshot)
 }
 
 func (s *AppState) handleClose(w http.ResponseWriter, r *http.Request) {
@@ -641,9 +705,9 @@ func (s *AppState) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"total_cases":   total,
-		"by_status":     stats,
-		"avg_risk_score": avgRisk,
+		"total_cases":      total,
+		"by_status":        stats,
+		"avg_risk_score":   avgRisk,
 		"sla_breach_count": stats["sla_breached"],
 	})
 }
@@ -741,7 +805,16 @@ func main() {
 
 	addr := ":" + cfg.Port
 	log.Printf("[AML-Case-Manager] Starting on %s (env=%s)", addr, cfg.Environment)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	// F4: explicit server timeouts (Slowloris protection + drain budget).
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      45 * time.Second,
+		IdleTimeout:       90 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("[AML-Case-Manager] Failed: %v", err)
 	}
 }

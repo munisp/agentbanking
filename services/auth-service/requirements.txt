@@ -68,3 +68,4 @@ websockets
 yarl
 redis
 async_timeout
+gunicorn>=21.2

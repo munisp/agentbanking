@@ -90,6 +90,39 @@ export async function tbCreateTransfer(
 }
 
 /**
+ * Submit multiple transfers to the sidecar concurrently (client-side batch).
+ *
+ * Round-8 note: the tb-sidecar exposes only POST /transfers (single transfer)
+ * at the pinned commit (services/tb-sidecar/internal/api/api.go mux routes) —
+ * there is NO server-side batch endpoint to call, so honest batching here
+ * means bounded-parallel submission under the same per-transfer timeout and
+ * fallback contract as tbCreateTransfer (null entry on failure). Results
+ * preserve input order. Callers with fail-closed semantics should check every
+ * entry for null.
+ */
+export async function tbCreateTransfers(
+  reqs: TBTransferRequest[],
+  opts?: { concurrency?: number }
+): Promise<(TBTransferResponse | null)[]> {
+  const results: (TBTransferResponse | null)[] = new Array(reqs.length).fill(
+    null
+  );
+  if (reqs.length === 0) return results;
+  const workerCount = Math.min(Math.max(1, opts?.concurrency ?? 8), reqs.length);
+  let nextIndex = 0;
+  async function worker(): Promise<void> {
+    while (nextIndex < reqs.length) {
+      const i = nextIndex++;
+      results[i] = await tbCreateTransfer(reqs[i]);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: workerCount }, () => worker())
+  );
+  return results;
+}
+
+/**
  * Ensure an agent float account exists in the sidecar ledger.
  * Called once on agent login / first transaction.
  */

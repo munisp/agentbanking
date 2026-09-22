@@ -57,10 +57,21 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> None:
     """Application lifespan manager."""
     logger.info("Payment Gateway Service starting up...")
-    # Production: Initialize gateway connections, load configurations
+    # Pre-warm the singleton GatewayFactory so the first payment request does
+    # not pay gateway/client construction cost.
+    try:
+        from .routers.payment_router import get_gateway_factory
+        get_gateway_factory()
+    except Exception as e:
+        logger.warning(f"Gateway factory pre-warm failed (lazy init will retry): {e}")
     yield
     logger.info("Payment Gateway Service shutting down...")
-    # Production: Cleanup gateway connections
+    # Close pooled shared httpx.AsyncClients
+    try:
+        from .services.base_gateway import close_shared_async_clients
+        await close_shared_async_clients()
+    except Exception as e:
+        logger.warning(f"Error closing shared HTTP clients: {e}")
 
 
 # Create FastAPI application

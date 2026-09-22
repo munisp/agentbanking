@@ -1,20 +1,38 @@
 package main
 
 import (
-	"database/sql"
-	_ "github.com/lib/pq"
-	"syscall"
-	"os/signal"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
-	"strings"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 	"time"
+
+	_ "github.com/lib/pq"
 )
+
+// eventHTTPClient is shared by all fire-and-forget middleware publishers:
+// bounded timeout so a hung sidecar cannot pin a goroutine forever, and
+// connection reuse via a single Transport (previously http.Post via
+// DefaultClient with no timeout and bodies never closed).
+var eventHTTPClient = &http.Client{Timeout: 5 * time.Second}
+
+func postJSONFireAndForget(url string, payload []byte) {
+	resp, err := eventHTTPClient.Post(url, "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		log.Printf("[settlement-batch-processor] event POST %s failed: %v", url, err)
+		return
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+}
 
 // SettlementBatchProcessor — Processes end-of-day settlement batches
 // Aggregates agent transactions, calculates net positions, generates settlement files
@@ -22,16 +40,16 @@ import (
 // Middleware: Kafka, Dapr, Fluvio, Lakehouse, TigerBeetle, OpenSearch, Mojaloop
 
 type SettlementBatch struct {
-	BatchID       string              `json:"batch_id"`
-	Status        string              `json:"status"` // pending, processing, completed, failed
-	CreatedAt     time.Time           `json:"created_at"`
-	CompletedAt   *time.Time          `json:"completed_at,omitempty"`
-	AgentCount    int                 `json:"agent_count"`
-	TotalVolume   float64             `json:"total_volume"`
-	TotalFees     float64             `json:"total_fees"`
-	TotalComm     float64             `json:"total_commission"`
-	NetSettlement float64             `json:"net_settlement"`
-	Entries       []SettlementEntry   `json:"entries"`
+	BatchID       string            `json:"batch_id"`
+	Status        string            `json:"status"` // pending, processing, completed, failed
+	CreatedAt     time.Time         `json:"created_at"`
+	CompletedAt   *time.Time        `json:"completed_at,omitempty"`
+	AgentCount    int               `json:"agent_count"`
+	TotalVolume   float64           `json:"total_volume"`
+	TotalFees     float64           `json:"total_fees"`
+	TotalComm     float64           `json:"total_commission"`
+	NetSettlement float64           `json:"net_settlement"`
+	Entries       []SettlementEntry `json:"entries"`
 }
 
 type SettlementEntry struct {
@@ -65,6 +83,8 @@ func initDB() {
 	}
 	pgDB.SetMaxOpenConns(10)
 	pgDB.SetMaxIdleConns(5)
+	pgDB.SetConnMaxLifetime(30 * time.Minute)
+	pgDB.SetConnMaxIdleTime(5 * time.Minute)
 
 	// Auto-create tables
 	_, _ = pgDB.Exec(`
@@ -143,7 +163,10 @@ func publishMiddleware(eventType string, batchID string, payload map[string]inte
 		req, _ := http.NewRequest("POST", kafkaURL+"/topics/settlement.batch."+eventType, strings.NewReader(string(body)))
 		if req != nil {
 			req.Header.Set("Content-Type", "application/vnd.kafka.json.v2+json")
-			http.DefaultClient.Do(req)
+			if resp, err := eventHTTPClient.Do(req); err == nil {
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+			}
 		}
 	}()
 
@@ -154,7 +177,7 @@ func publishMiddleware(eventType string, batchID string, payload map[string]inte
 	}
 	go func() {
 		body, _ := json.Marshal(payload)
-		http.Post(fmt.Sprintf("http://localhost:%s/v1.0/publish/pubsub/settlement.batch.%s", daprPort, eventType), "application/json", strings.NewReader(string(body)))
+		postJSONFireAndForget(fmt.Sprintf("http://localhost:%s/v1.0/publish/pubsub/settlement.batch.%s", daprPort, eventType), body)
 	}()
 
 	// Lakehouse
@@ -164,7 +187,7 @@ func publishMiddleware(eventType string, batchID string, payload map[string]inte
 	}
 	go func() {
 		body, _ := json.Marshal(map[string]interface{}{"table": "settlement_batches", "source": "settlement-batch-processor", "data": payload})
-		http.Post(lakehouseURL+"/v1/ingest", "application/json", strings.NewReader(string(body)))
+		postJSONFireAndForget(lakehouseURL+"/v1/ingest", body)
 	}()
 
 	// OpenSearch
@@ -174,7 +197,7 @@ func publishMiddleware(eventType string, batchID string, payload map[string]inte
 	}
 	go func() {
 		body, _ := json.Marshal(payload)
-		http.Post(osURL+"/settlement-batches/_doc", "application/json", strings.NewReader(string(body)))
+		postJSONFireAndForget(osURL+"/settlement-batches/_doc", body)
 	}()
 
 	// TigerBeetle (settlement ledger entry)
@@ -188,7 +211,7 @@ func publishMiddleware(eventType string, batchID string, payload map[string]inte
 				"debit_account_id": "3001", "credit_account_id": "4001",
 				"amount": payload["net_settlement"], "ledger": 1, "code": 200,
 			})
-			http.Post(tbURL+"/transfers", "application/json", strings.NewReader(string(tbPayload)))
+			postJSONFireAndForget(tbURL+"/transfers", tbPayload)
 		}()
 	}
 
@@ -203,7 +226,7 @@ func publishMiddleware(eventType string, batchID string, payload map[string]inte
 				"settlementId": batchID, "amount": payload["net_settlement"],
 				"currency": "NGN", "settlementModel": "DEFERRED_NET",
 			})
-			http.Post(mojaloopURL+"/v1/settlementWindows", "application/json", strings.NewReader(string(mjPayload)))
+			postJSONFireAndForget(mojaloopURL+"/v1/settlementWindows", mjPayload)
 		}()
 	}
 }
@@ -357,7 +380,6 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"status": "healthy", "service": "settlement-batch-processor", "batches_processed": len(batches)})
 }
 
-
 // recoverMiddleware catches panics and returns 500 instead of crashing
 func recoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -400,7 +422,6 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
 // Auth Middleware - validates Bearer token on all non-health endpoints
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -434,8 +455,23 @@ func main() {
 	http.HandleFunc("/api/v1/batch/create", handleCreateBatch)
 	http.HandleFunc("/api/v1/batch/list", handleListBatches)
 	http.HandleFunc("/health", handleHealth)
+
+	// F1: explicit server timeouts (Slowloris protection); WriteTimeout 60s
+	// because batch create performs the DB claim + posting in-request.
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           authMiddleware(http.DefaultServeMux),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       90 * time.Second,
+	}
+	setupGracefulShutdown(srv)
+
 	log.Printf("[settlement-batch-processor] Starting on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, authMiddleware(http.DefaultServeMux)))
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
 }
 
 // --- Production: Graceful Shutdown ---

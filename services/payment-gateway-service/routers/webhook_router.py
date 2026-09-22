@@ -4,6 +4,8 @@ Payment Webhook Router
 Handles webhook notifications from payment gateways for transaction status updates.
 """
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Header, status
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any, List
@@ -17,6 +19,10 @@ import os
 from ..models.payment_models import PaymentTransaction, PaymentWebhook, TransactionStatus
 from ..schemas.payment_schemas import WebhookEventSchema, PaymentStatusEnum
 from ..services.gateway_factory import GatewayFactory
+
+# NOTE: `services/shared/database.py` does not exist in the repository at this
+# commit, so this import only resolves if the module is supplied at deploy
+# time (e.g. copied into the image). Flagged for deployment verification.
 from ...shared.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -24,29 +30,37 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/webhooks", tags=["webhooks"])
 
 
-# Dependency to get gateway factory
+# Dependency to get gateway factory.
+# Module-level singleton: GatewayFactory caches gateway instances internally,
+# so per-request construction would defeat the cache.
+_webhook_gateway_factory: GatewayFactory | None = None
+
+
 def get_gateway_factory() -> GatewayFactory:
-    """Get gateway factory instance.
+    """Get the shared gateway factory instance.
 
     Webhook secrets are loaded exclusively from environment variables.
     A gateway whose secret is not configured is registered as inactive, and
     signature verification fails closed for missing secrets.
     """
-    gateway_configs = {
-        "paystack": {
-            "is_active": bool(os.getenv("PAYSTACK_WEBHOOK_SECRET")),
-            "webhook_secret": os.getenv("PAYSTACK_WEBHOOK_SECRET", ""),
-        },
-        "flutterwave": {
-            "is_active": bool(os.getenv("FLUTTERWAVE_WEBHOOK_SECRET")),
-            "webhook_secret": os.getenv("FLUTTERWAVE_WEBHOOK_SECRET", ""),
-        },
-        "stripe": {
-            "is_active": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
-            "webhook_secret": os.getenv("STRIPE_WEBHOOK_SECRET", ""),
-        },
-    }
-    return GatewayFactory(gateway_configs)
+    global _webhook_gateway_factory
+    if _webhook_gateway_factory is None:
+        gateway_configs = {
+            "paystack": {
+                "is_active": bool(os.getenv("PAYSTACK_WEBHOOK_SECRET")),
+                "webhook_secret": os.getenv("PAYSTACK_WEBHOOK_SECRET", ""),
+            },
+            "flutterwave": {
+                "is_active": bool(os.getenv("FLUTTERWAVE_WEBHOOK_SECRET")),
+                "webhook_secret": os.getenv("FLUTTERWAVE_WEBHOOK_SECRET", ""),
+            },
+            "stripe": {
+                "is_active": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
+                "webhook_secret": os.getenv("STRIPE_WEBHOOK_SECRET", ""),
+            },
+        }
+        _webhook_gateway_factory = GatewayFactory(gateway_configs)
+    return _webhook_gateway_factory
 
 
 # Keycloak-backed admin auth for the webhook event management endpoints.
@@ -135,14 +149,18 @@ async def verify_webhook_signature(
         return False
 
 
-async def process_webhook_event(
+def process_webhook_event(
     gateway_name: str,
     event_data: dict,
     db: Session
 ) -> None:
     """
     Process webhook event and update transaction status.
-    
+
+    Uses the synchronous SQLAlchemy session; callers in async endpoints must
+    invoke this via ``asyncio.to_thread`` so the blocking DB driver does not
+    stall the event loop.
+
     Args:
         gateway_name: Name of the gateway
         event_data: Event data from gateway
@@ -232,6 +250,29 @@ async def process_webhook_event(
         db.rollback()
 
 
+def _store_webhook_event(
+    db: Session, gateway_name: str, event_data: dict, signature: str
+) -> PaymentWebhook:
+    """Persist a received webhook event (sync; run via asyncio.to_thread)."""
+    webhook_event = PaymentWebhook(
+        gateway=gateway_name,
+        event_type=event_data.get("event", "unknown"),
+        payload=event_data,
+        signature=signature,
+        is_processed=False
+    )
+    db.add(webhook_event)
+    db.commit()
+    return webhook_event
+
+
+def _mark_event_processed(db: Session, webhook_event: PaymentWebhook) -> None:
+    """Mark a webhook event as processed (sync; run via asyncio.to_thread)."""
+    webhook_event.is_processed = True
+    webhook_event.processed_at = datetime.utcnow()
+    db.commit()
+
+
 @router.post(
     "/{gateway_name}",
     status_code=status.HTTP_200_OK,
@@ -294,25 +335,17 @@ async def receive_webhook(
         
         # Parse event data
         event_data = await request.json()
-        
-        # Store webhook event
-        webhook_event = PaymentWebhook(
-            gateway=gateway_name,
-            event_type=event_data.get("event", "unknown"),
-            payload=event_data,
-            signature=signature,
-            is_processed=False
+
+        # Store webhook event (sync DB work off the event loop)
+        webhook_event = await asyncio.to_thread(
+            _store_webhook_event, db, gateway_name, event_data, signature
         )
-        db.add(webhook_event)
-        db.commit()
-        
+
         # Process event
-        await process_webhook_event(gateway_name, event_data, db)
-        
+        await asyncio.to_thread(process_webhook_event, gateway_name, event_data, db)
+
         # Mark as processed
-        webhook_event.is_processed = True
-        webhook_event.processed_at = datetime.utcnow()
-        db.commit()
+        await asyncio.to_thread(_mark_event_processed, db, webhook_event)
         
         logger.info(f"Webhook processed successfully from {gateway_name}")
         
@@ -352,22 +385,26 @@ async def list_webhook_events(
     
     Returns list of webhook events.
     """
-    events = db.query(PaymentWebhook).order_by(
-        PaymentWebhook.created_at.desc()
-    ).limit(limit).all()
-    
-    return [
-        WebhookEventSchema(
-            event_type=event.event_type,
-            gateway=event.gateway,
-            transaction_id=event.payload.get("data", {}).get("reference"),
-            gateway_reference=event.payload.get("data", {}).get("reference"),
-            status=None,
-            payload=event.payload,
-            timestamp=event.created_at
-        )
-        for event in events
-    ]
+
+    def _query_events() -> List[WebhookEventSchema]:
+        events = db.query(PaymentWebhook).order_by(
+            PaymentWebhook.created_at.desc()
+        ).limit(limit).all()
+
+        return [
+            WebhookEventSchema(
+                event_type=event.event_type,
+                gateway=event.gateway,
+                transaction_id=event.payload.get("data", {}).get("reference"),
+                gateway_reference=event.payload.get("data", {}).get("reference"),
+                status=None,
+                payload=event.payload,
+                timestamp=event.created_at
+            )
+            for event in events
+        ]
+
+    return await asyncio.to_thread(_query_events)
 
 
 @router.post(
@@ -389,24 +426,24 @@ async def reprocess_webhook_event(
     Useful for handling failed webhook processing.
     """
     try:
-        event = db.query(PaymentWebhook).filter(
-            PaymentWebhook.id == event_id
-        ).first()
-        
+        event = await asyncio.to_thread(
+            lambda: db.query(PaymentWebhook).filter(
+                PaymentWebhook.id == event_id
+            ).first()
+        )
+
         if not event:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Webhook event not found"
             )
-        
+
         # Reprocess event
-        await process_webhook_event(event.gateway, event.payload, db)
-        
+        await asyncio.to_thread(process_webhook_event, event.gateway, event.payload, db)
+
         # Mark as processed
-        event.is_processed = True
-        event.processed_at = datetime.utcnow()
-        db.commit()
-        
+        await asyncio.to_thread(_mark_event_processed, db, event)
+
         return {"success": True, "message": "Event reprocessed successfully"}
     
     except HTTPException:

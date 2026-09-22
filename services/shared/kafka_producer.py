@@ -227,20 +227,59 @@ class KafkaEventProducer:
         
         if keys and len(keys) != len(events):
             raise ValueError("Keys list must have same length as events list")
-        
-        success_count = 0
-        
+
+        # Create all send futures first, then await them together. aiokafka
+        # only batches sends that are not individually awaited, so this lets
+        # the producer's accumulator group the messages into real broker
+        # batches instead of paying one broker RTT per message.
+        send_futures = []
+        enriched_events = []
         for i, event_data in enumerate(events):
             key = keys[i] if keys else None
-            success = await self.publish_event(topic, event_data, key=key)
-            if success:
+            enriched_event = {
+                **event_data,
+                "_metadata": {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "producer_id": self.client_id,
+                    "topic": topic,
+                    "version": "1.0"
+                }
+            }
+            enriched_events.append(enriched_event)
+            try:
+                future = await self.producer.send(
+                    topic=topic,
+                    value=enriched_event,
+                    key=key,
+                )
+                send_futures.append(future)
+            except Exception as e:
+                self.messages_failed += 1
+                logger.error(f"❌ Failed to enqueue batch event to {topic}: {e}")
+                send_futures.append(e)
+
+        # Wait for all acknowledgments concurrently.
+        ack_futures = [f for f in send_futures if not isinstance(f, Exception)]
+        results = await asyncio.gather(*ack_futures, return_exceptions=True)
+
+        success_count = 0
+        for enriched_event, result in zip(
+            [e for e, f in zip(enriched_events, send_futures) if not isinstance(f, Exception)],
+            results,
+        ):
+            if isinstance(result, Exception):
+                self.messages_failed += 1
+                logger.error(f"❌ Failed to publish batch event to {topic}: {result}")
+            else:
+                self.messages_sent += 1
+                self.bytes_sent += len(json.dumps(enriched_event).encode("utf-8"))
                 success_count += 1
-        
+
         logger.info(
             f"Batch publish complete: {success_count}/{len(events)} "
             f"events published to {topic}"
         )
-        
+
         return success_count
     
     async def flush(self):

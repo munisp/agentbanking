@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "license": "UNLICENSED",
-  "description": "54agent Agency Banking POS Platform — Production",
+  "description": "54agent Agency Banking POS Platform \u2014 Production",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
@@ -129,6 +129,7 @@
     "superjson": "^1.13.3",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
+    "undici": "^6.21.1",
     "vaul": "^1.1.2",
     "web-push": "^3.6.7",
     "wouter": "^3.3.5",

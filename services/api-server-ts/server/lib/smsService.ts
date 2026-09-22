@@ -188,6 +188,8 @@ async function sendViaTwilio(
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: params.toString(),
+      // 10s timeout — a hung provider must not hold the request open (A4)
+      signal: AbortSignal.timeout(10_000),
     }
   );
 
@@ -230,6 +232,8 @@ async function sendViaAfricasTalking(
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: params.toString(),
+    // 10s timeout — a hung provider must not hold the request open (A4)
+    signal: AbortSignal.timeout(10_000),
   });
 
   if (!res.ok) {
@@ -275,6 +279,8 @@ async function sendViaTermii(msg: SmsMessage): Promise<{ messageId: string }> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    // 10s timeout — a hung provider must not hold the request open (A4)
+    signal: AbortSignal.timeout(10_000),
   });
 
   if (!res.ok) {

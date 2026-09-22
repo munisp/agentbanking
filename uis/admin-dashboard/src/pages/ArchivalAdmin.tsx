@@ -28,7 +28,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import {
@@ -92,6 +92,16 @@ export default function ArchivalAdmin() {
   const [schedRetention, setSchedRetention] = useState(90);
   const [schedDelete, setSchedDelete] = useState(false);
 
+  // Tracks the post-trigger 3s status poll so it can be stopped on unmount
+  const archivalPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const archivalPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (archivalPollRef.current) clearInterval(archivalPollRef.current);
+      if (archivalPollTimeoutRef.current) clearTimeout(archivalPollTimeoutRef.current);
+    };
+  }, []);
+
   // @ts-ignore Sprint 85
   const triggerMutation = trpc.archivalAdmin.triggerArchival.useMutation({
     // @ts-ignore Sprint 85
@@ -99,14 +109,18 @@ export default function ArchivalAdmin() {
       if (data.success) {
         toast.success(`Archival job ${data.jobId} started`);
         setTriggerOpen(false);
-        // Poll for completion
+        // Poll for completion (tracked in refs so unmount cleanup can stop it)
         const poll = setInterval(() => {
           // @ts-ignore Sprint 85
           utils.archivalAdmin.getStats.invalidate();
           // @ts-ignore Sprint 85
           utils.archivalAdmin.getHistory.invalidate();
         }, 3000);
-        setTimeout(() => clearInterval(poll), 120000);
+        archivalPollRef.current = poll;
+        archivalPollTimeoutRef.current = setTimeout(() => {
+          clearInterval(poll);
+          archivalPollRef.current = null;
+        }, 120000);
       } else {
         toast.error(data.error ?? "Failed to start archival job");
       }

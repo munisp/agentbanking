@@ -39,7 +39,7 @@ import RemittanceVerification from "./pages/RemittanceVerification";
 import SendRemittance from "./pages/SendRemittance";
 import Services from "./pages/Services";
 import SignUp from "./pages/SignUp";
-import StoreMap from "./pages/StoreMap";
+const StoreMap = lazy(() => import("./pages/StoreMap"));
 import Transactions from "./pages/Transactions";
 import Transfer from "./pages/Transfer";
 
@@ -322,7 +322,7 @@ function App() {
             <Route path="commission" element={<CommissionSettlement />} />
             {/* <Route path="services" element={<Services />} /> */}
             <Route path="float" element={<FloatManagement />} />
-            <Route path="store-map" element={<StoreMap />} />
+            <Route path="store-map" element={<Suspense fallback={LazyFallback}><StoreMap /></Suspense>} />
             <Route path="training" element={<Training />} />
             <Route path="performance" element={<Performance />} />
             <Route path="achievements" element={<Achievements />} />

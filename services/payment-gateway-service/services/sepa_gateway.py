@@ -6,7 +6,7 @@ Single Euro Payments Area
 from typing import Dict, Any, Optional
 from datetime import datetime
 import httpx
-from ..base_gateway import BasePaymentGateway
+from ..base_gateway import BasePaymentGateway, get_shared_async_client
 
 class SEPAGateway(BasePaymentGateway):
     """
@@ -37,36 +37,36 @@ class SEPAGateway(BasePaymentGateway):
     ) -> Dict[str, Any]:
         """Initialize a payment transaction"""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/payments",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "amount": amount,
-                        "currency": currency,
-                        "sender": sender_account,
-                        "recipient": recipient_account,
-                        "metadata": metadata or {}
-                    }
-                )
-                response.raise_for_status()
-                return response.json()
+            client = get_shared_async_client()
+            response = await client.post(
+                f"{self.base_url}/payments",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "amount": amount,
+                    "currency": currency,
+                    "sender": sender_account,
+                    "recipient": recipient_account,
+                    "metadata": metadata or {}
+                }
+            )
+            response.raise_for_status()
+            return response.json()
         except Exception as e:
             return {"error": str(e), "status": "failed"}
     
     async def check_status(self, transaction_id: str) -> Dict[str, Any]:
         """Check payment status"""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.base_url}/payments/{transaction_id}",
-                    headers={"Authorization": f"Bearer {self.api_key}"}
-                )
-                response.raise_for_status()
-                return response.json()
+            client = get_shared_async_client()
+            response = await client.get(
+                f"{self.base_url}/payments/{transaction_id}",
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            response.raise_for_status()
+            return response.json()
         except Exception as e:
             return {"error": str(e), "status": "unknown"}
     
@@ -78,47 +78,47 @@ class SEPAGateway(BasePaymentGateway):
     ) -> Dict[str, Any]:
         """Process a refund"""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/refunds",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "transaction_id": transaction_id,
-                        "amount": amount,
-                        "reason": reason
-                    }
-                )
-                response.raise_for_status()
-                return response.json()
+            client = get_shared_async_client()
+            response = await client.post(
+                f"{self.base_url}/refunds",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "transaction_id": transaction_id,
+                    "amount": amount,
+                    "reason": reason
+                }
+            )
+            response.raise_for_status()
+            return response.json()
         except Exception as e:
             return {"error": str(e), "status": "failed"}
     
     async def validate_account(self, account_number: str) -> Dict[str, Any]:
         """Validate account number"""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.base_url}/accounts/validate/{account_number}",
-                    headers={"Authorization": f"Bearer {self.api_key}"}
-                )
-                response.raise_for_status()
-                return response.json()
+            client = get_shared_async_client()
+            response = await client.get(
+                f"{self.base_url}/accounts/validate/{account_number}",
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            response.raise_for_status()
+            return response.json()
         except Exception as e:
             return {"error": str(e), "valid": False}
     
     async def get_exchange_rate(self, from_currency: str, to_currency: str) -> Dict[str, Any]:
         """Get current exchange rate"""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.base_url}/rates",
-                    params={"from": from_currency, "to": to_currency},
-                    headers={"Authorization": f"Bearer {self.api_key}"}
-                )
-                response.raise_for_status()
-                return response.json()
+            client = get_shared_async_client()
+            response = await client.get(
+                f"{self.base_url}/rates",
+                params={"from": from_currency, "to": to_currency},
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            response.raise_for_status()
+            return response.json()
         except Exception as e:
             return {"error": str(e), "rate": None}

@@ -1,3 +1,4 @@
+import asyncio
 import abc
 import json
 import time
@@ -156,18 +157,15 @@ class RemitaGateway(BasePaymentGateway):
             except httpx.HTTPStatusError as e:
                 # Handle HTTP errors (4xx, 5xx)
                 if attempt < max_retries - 1 and e.response.status_code in [500, 502, 503, 504]:
-                    # Close and re-open client to ensure fresh connection
-                    await self.client.aclose()
-                    self.client = httpx.AsyncClient(base_url=self.base_url, timeout=30.0)
-                    await time.sleep(2 ** attempt) # Exponential backoff
+                    # Reuse the shared instance client; httpx recovers failed
+                    # connections from its pool automatically on the next call.
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
                     continue
                 raise ConnectionError(f"Remita API HTTP Error: {e.response.status_code} - {e.response.text}") from e
             except httpx.RequestError as e:
                 # Handle network errors
                 if attempt < max_retries - 1:
-                    await self.client.aclose()
-                    self.client = httpx.AsyncClient(base_url=self.base_url, timeout=30.0)
-                    await time.sleep(2 ** attempt)
+                    await asyncio.sleep(2 ** attempt)
                     continue
                 raise ConnectionError(f"Remita API Request Error: {e}") from e
             except Exception as e:

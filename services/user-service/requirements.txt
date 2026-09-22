@@ -41,3 +41,4 @@ uvicorn
 uvloop
 watchfiles
 websockets
+gunicorn>=21.2

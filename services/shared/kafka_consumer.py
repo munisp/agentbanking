@@ -91,8 +91,13 @@ class KafkaEventConsumer:
         self.enable_auto_commit = enable_auto_commit
         self.max_poll_records = max_poll_records
         self.session_timeout_ms = session_timeout_ms
-        
+        # DLQ settings were previously accepted and dropped, leaving
+        # _publish_to_dlq with dead attribute references.
+        self.dlq_enabled = dlq_enabled
+        self.dlq_topic_suffix = dlq_topic_suffix
+
         self.consumer: Optional[AIOKafkaConsumer] = None
+        self._producer: Optional[AIOKafkaProducer] = None
         self._is_started = False
         self._is_consuming = False
         
@@ -125,8 +130,17 @@ class KafkaEventConsumer:
         )
         
         await self.consumer.start()
+
+        # Start the DLQ producer when dead-lettering is enabled.
+        if self.dlq_enabled:
+            self._producer = AIOKafkaProducer(
+                bootstrap_servers=self.bootstrap_servers.split(","),
+                value_serializer=lambda v: json.dumps(v, default=str).encode("utf-8"),
+            )
+            await self._producer.start()
+
         self._is_started = True
-        
+
         logger.info("✅ Kafka consumer started successfully")
     
     async def stop(self):
@@ -137,10 +151,14 @@ class KafkaEventConsumer:
         logger.info("Stopping Kafka consumer...")
         
         self._is_consuming = False
-        
+
         if self.consumer:
             await self.consumer.stop()
-        
+
+        if self._producer:
+            await self._producer.stop()
+            self._producer = None
+
         self._is_started = False
         logger.info("✅ Kafka consumer stopped")
         
@@ -186,6 +204,15 @@ class KafkaEventConsumer:
         if not self.enable_auto_commit and self.consumer is not None:
             await self.consumer.commit()
 
+    @staticmethod
+    def _message_size(value) -> int:
+        """Approximate serialized size of a consumed message value in bytes."""
+        if isinstance(value, (bytes, bytearray)):
+            return len(value)
+        if isinstance(value, str):
+            return len(value.encode("utf-8"))
+        return len(json.dumps(value, default=str).encode("utf-8"))
+
     async def consume(self):
         """
         Start consuming messages (runs forever).
@@ -205,35 +232,42 @@ class KafkaEventConsumer:
                 
                 # Update metrics
                 self.messages_consumed += 1
-                self.bytes_consumed += len(message.value)
-                
+                self.bytes_consumed += self._message_size(message.value)
+
                 # Log message metadata
                 logger.debug(
                     f"Received message from {message.topic} "
                     f"(partition={message.partition}, offset={message.offset})"
                 )
-                
+
                 try:
                     # Extract event data
                     event_data = message.value
-                    
+
                     # Call handler
                     await self.handler(event_data)
-                    
+
                     # Update metrics
                     self.messages_processed += 1
-                    
+
                     logger.debug(f"✅ Message processed successfully")
-                
+
+                    # Manual-commit semantics: commit only after the handler
+                    # succeeded, so failures are never silently skipped.
+                    await self._commit_offsets()
+
                 except Exception as e:
                     self.messages_failed += 1
                     logger.error(
                         f"❌ Error processing message from {message.topic}: {e}",
                         exc_info=True
                     )
-                    
-                    # Optionally publish to dead letter queue
-                    # await self.publish_to_dlq(message, e)
+
+                    # Publish to dead letter queue; commit the offset only once
+                    # the message is safely dead-lettered (otherwise leave it
+                    # uncommitted so it is redelivered).
+                    if await self._publish_to_dlq(message, e):
+                        await self._commit_offsets()
         
         except Exception as e:
             logger.error(f"❌ Error in consume loop: {e}", exc_info=True)
@@ -266,29 +300,43 @@ class KafkaEventConsumer:
                     continue
                 
                 # Process all messages in batch
+                unresolved = 0
                 for topic_partition, records in messages.items():
                     for message in records:
                         # Update metrics
                         self.messages_consumed += 1
-                        self.bytes_consumed += len(message.value)
-                        
+                        self.bytes_consumed += self._message_size(message.value)
+
                         try:
                             # Extract event data
                             event_data = message.value
-                            
+
                             # Call handler
                             await self.handler(event_data)
-                            
+
                             # Update metrics
                             self.messages_processed += 1
-                        
+
                         except Exception as e:
                             self.messages_failed += 1
                             logger.error(
                                 f"❌ Error processing message: {e}",
                                 exc_info=True
                             )
-                
+                            if not await self._publish_to_dlq(message, e):
+                                unresolved += 1
+
+                # Manual-commit semantics: getmany() has already advanced the
+                # fetch position past these records, so commit only when every
+                # message in the batch was either handled or dead-lettered.
+                if unresolved == 0:
+                    await self._commit_offsets()
+                else:
+                    logger.warning(
+                        f"{unresolved} message(s) neither processed nor "
+                        "dead-lettered; offsets left uncommitted for redelivery"
+                    )
+
                 logger.debug(f"Processed batch of {sum(len(r) for r in messages.values())} messages")
         
         except Exception as e:

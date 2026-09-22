@@ -19,7 +19,7 @@ import {
   supervisorAgents,
   gl_journal_entries,
 } from "../../drizzle/schema";
-import { eq, desc, and, count, max } from "drizzle-orm";
+import { eq, desc, and, count, max, inArray } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { floatTopupRequestsTotal } from "../metrics";
@@ -416,20 +416,17 @@ export const floatTopUpRouter = router({
         .where(
           and(
             eq(floatTopUpRequests.supervisorApprovalRequired, true),
-            eq(floatTopUpRequests.status, "pending")
+            eq(floatTopUpRequests.status, "pending"),
+            // Supervisors only see top-ups for their assigned agents (SQL-side)
+            ...(session.role === "supervisor"
+              ? [inArray(floatTopUpRequests.agentId, agentIds)]
+              : [])
           )
         )
-        .orderBy(desc(floatTopUpRequests.createdAt));
+        .orderBy(desc(floatTopUpRequests.createdAt))
+        .limit(100);
 
-      // Filter by assigned agents for supervisors
-      const filtered =
-        session.role === "supervisor"
-          ? rows.filter(
-              (r: any) => r.agentId !== null && agentIds.includes(r.agentId)
-            )
-          : rows;
-
-      return filtered.map((r: any) => ({
+      return rows.map((r: any) => ({
         ...r,
         requestedAmount: Number(r.requestedAmount),
         agentFloat: Number(r.agentFloat ?? 0),

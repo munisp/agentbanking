@@ -304,6 +304,162 @@ export async function failIdempotencyKey(
   }
 }
 
+// ── Round-8: batched claim/complete for the Kafka event consumer ─────────────
+// eachBatch processing was paying 2 PG round trips PER EVENT (claim INSERT +
+// complete UPDATE). These batch variants do the same claim-first,
+// DB-authoritative, fail-closed dance but with ONE bulk INSERT + ONE
+// inspection SELECT + ONE bulk completion UPDATE per batch (chunked), i.e.
+// ~2 writes per batch instead of 2 per event. Envelope format and replay /
+// conflict / CAS re-claim semantics are identical to the single-key path
+// above (failed/expired prior claims fall back to claimIdempotencyKey).
+
+export type BatchClaimOutcome =
+  | { kind: "claimed" }
+  | { kind: "replay"; result: unknown }
+  | { kind: "conflict"; reason: string };
+
+/**
+ * Claim many idempotency keys at once. Fail-closed: any DB error THROWS —
+ * the caller must not process the corresponding events.
+ *
+ * Returns a per-key outcome map. Keys whose prior claim is failed/expired are
+ * re-claimed via the single-key CAS path (rare — retries), so exactly one
+ * consumer resumes them.
+ */
+export async function claimIdempotencyKeysBatch(
+  items: { key: string; requestHash: string }[],
+  chunkSize = 100
+): Promise<Map<string, BatchClaimOutcome>> {
+  const db = await getDb();
+  if (!db || (db as any)._isNoop) {
+    throw new Error(
+      "Database not available — refusing to execute a financial operation without idempotency protection"
+    );
+  }
+  const outcomes = new Map<string, BatchClaimOutcome>();
+  if (items.length === 0) return outcomes;
+
+  for (let start = 0; start < items.length; start += chunkSize) {
+    const chunk = items.slice(start, start + chunkSize);
+    const pendingByKey = new Map<string, string>();
+    const valuesList = chunk.map(i => {
+      const pending = encodeEnvelope({
+        v: 1,
+        requestHash: i.requestHash,
+        status: "pending",
+      });
+      pendingByKey.set(i.key, pending);
+      return sql`(${i.key}, ${pending}, NOW() + INTERVAL '24 hours')`;
+    });
+
+    // 1. Bulk claim.
+    const claimedRows = rowsOf(
+      await db.execute(
+        sql`INSERT INTO idempotency_keys (idempotency_key, response_data, expires_at)
+            VALUES ${sql.join(valuesList, sql`, `)}
+            ON CONFLICT (idempotency_key) DO NOTHING
+            RETURNING idempotency_key`
+      )
+    );
+    const claimedKeys = new Set<string>(
+      claimedRows.map(r => String(r.idempotency_key))
+    );
+    for (const k of claimedKeys) outcomes.set(k, { kind: "claimed" });
+
+    // 2. Inspect prior claims for keys we did not win.
+    const unclaimed = chunk.filter(i => !claimedKeys.has(i.key));
+    if (unclaimed.length === 0) continue;
+    const existingRows = rowsOf(
+      await db.execute(
+        sql`SELECT idempotency_key, response_data, expires_at FROM idempotency_keys
+            WHERE idempotency_key IN (${sql.join(
+              unclaimed.map(i => sql`${i.key}`),
+              sql`, `
+            )})`
+      )
+    );
+    const byKey = new Map<string, any>(
+      existingRows.map(r => [String(r.idempotency_key), r])
+    );
+
+    for (const item of unclaimed) {
+      const row = byKey.get(item.key);
+      const rawData = row?.response_data as string | undefined;
+      const env = row ? decodeEnvelope(rawData) : null;
+
+      // Fast path (no extra query): a clearly-completed prior claim with a
+      // matching payload hash is a replay. Everything else — hash mismatch,
+      // failed/expired re-claim CAS races, unreadable envelopes, in-flight
+      // duplicates, vanished rows — is delegated to the single-key claim,
+      // which re-reads the row and applies the exact FF-7 semantics.
+      if (env && env.status === "completed") {
+        if (env.requestHash === "" || env.requestHash === item.requestHash) {
+          outcomes.set(item.key, { kind: "replay", result: env.result });
+          continue;
+        }
+      }
+
+      try {
+        const single = await claimIdempotencyKey(item.key, item.requestHash);
+        outcomes.set(
+          item.key,
+          single.kind === "claimed"
+            ? { kind: "claimed" }
+            : { kind: "replay", result: single.result }
+        );
+      } catch (err) {
+        outcomes.set(item.key, {
+          kind: "conflict",
+          reason: (err as Error).message,
+        });
+      }
+    }
+  }
+  return outcomes;
+}
+
+/**
+ * Mark many claimed keys completed in ONE UPDATE per chunk. Best-effort,
+ * never throws: on bulk failure falls back to the per-key complete path
+ * (which itself degrades to failIdempotencyKey on error).
+ */
+export async function completeIdempotencyKeysBatch(
+  items: { key: string; requestHash: string; result: unknown }[],
+  chunkSize = 100
+): Promise<void> {
+  if (items.length === 0) return;
+  try {
+    const db = await getDb();
+    if (!db || (db as any)._isNoop) return;
+    for (let start = 0; start < items.length; start += chunkSize) {
+      const chunk = items.slice(start, start + chunkSize);
+      const valuesList = chunk.map(i => {
+        const env = encodeEnvelope({
+          v: 1,
+          requestHash: i.requestHash,
+          status: "completed",
+          result: i.result ?? null,
+        });
+        return sql`(${i.key}, ${env})`;
+      });
+      await db.execute(
+        sql`UPDATE idempotency_keys AS ik
+            SET response_data = v.response_data
+            FROM (VALUES ${sql.join(valuesList, sql`, `)}) AS v(idempotency_key, response_data)
+            WHERE ik.idempotency_key = v.idempotency_key`
+      );
+    }
+  } catch (err) {
+    console.error(
+      "[Idempotency] Bulk completion failed; falling back to per-key completion:",
+      err
+    );
+    for (const i of items) {
+      await completeIdempotencyKey(i.key, i.requestHash, i.result ?? null);
+    }
+  }
+}
+
 /**
  * Execute an operation with idempotency protection (claim-first, fail-closed).
  *

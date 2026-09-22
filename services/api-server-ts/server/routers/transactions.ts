@@ -27,6 +27,7 @@ import {
   getAgentById,
   createFraudAlert,
   getDb,
+  getReadDb,
 } from "../db";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -116,10 +117,22 @@ function generateRef(): string {
 }
 
 // ─── Platform setting helper ──────────────────────────────────────────────────
+// Round-8 perf (R8): platform_settings is a tiny, rarely-changed table but was
+// queried uncached ≥3× per transaction create. 30s in-process cache; staleness
+// bound = TTL (no invalidation hook exists on settings writes). Fail-open to
+// defaultValue exactly as before.
+const PLATFORM_SETTING_TTL_MS = 30_000;
+const platformSettingCache = new Map<
+  string,
+  { value: string; expiresAt: number }
+>();
+
 async function getPlatformSetting(
   key: string,
   defaultValue: string
 ): Promise<string> {
+  const cached = platformSettingCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
   try {
     const db = (await getDb())!;
     if (!db) return defaultValue;
@@ -128,7 +141,12 @@ async function getPlatformSetting(
       .from(platformSettings)
       .where(eq(platformSettings.key, key))
       .limit(1);
-    return rows[0]?.value ?? defaultValue;
+    const value = rows[0]?.value ?? defaultValue;
+    platformSettingCache.set(key, {
+      value,
+      expiresAt: Date.now() + PLATFORM_SETTING_TTL_MS,
+    });
+    return value;
   } catch {
     return defaultValue;
   }
@@ -247,6 +265,125 @@ async function checkVelocityLimits(
     console.error("[Velocity] Check error (fail-open):", err);
     return { allowed: true };
   }
+}
+
+// ─── Round-8 perf (R7): concurrent gate-read loaders ─────────────────────────
+// The create mutation chained ~15 serial awaits. The READS backing Gate 4
+// (velocity), Gate 5 (geofence) and the commission-rate lookup are independent
+// of each other and of Gates 0-3, so the create handler starts them
+// concurrently right after Gate 3 and awaits the results at the ORIGINAL
+// evaluation points — gate order, failure side effects (fraud alerts, audit
+// logs, terminal emits) and the fail-closed sanctions/AML sequence further
+// down are all unchanged. Loaders are read-only and never throw (geofence
+// loader fails open to null, exactly like the old inline try/catch).
+
+interface GeofenceGateData {
+  enabled: string;
+  assignedZones: unknown[];
+  recentLoc: { withinZone: boolean | null }[];
+}
+
+async function loadGeofenceData(
+  agentId: number
+): Promise<GeofenceGateData | null> {
+  try {
+    const geofenceEnabled = await getPlatformSetting(
+      "geofencing_enabled",
+      "false"
+    );
+    if (geofenceEnabled !== "true") {
+      return { enabled: geofenceEnabled, assignedZones: [], recentLoc: [] };
+    }
+    const db = (await getDb())!;
+    if (!db) {
+      return { enabled: geofenceEnabled, assignedZones: [], recentLoc: [] };
+    }
+    const assignedZones = await db
+      .select({ zone: geofenceZones })
+      .from(agentGeofenceZones)
+      .innerJoin(
+        geofenceZones,
+        eq(agentGeofenceZones.zoneId, geofenceZones.id)
+      )
+      .where(
+        and(
+          eq(agentGeofenceZones.agentId, agentId),
+          eq(geofenceZones.isActive, true)
+        )
+      );
+    let recentLoc: { withinZone: boolean | null }[] = [];
+    if (assignedZones.length > 0) {
+      // Most recent device location for this agent (within last 10 minutes)
+      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+      recentLoc = await db
+        .select()
+        .from(deviceLocations)
+        .where(
+          and(
+            eq(deviceLocations.agentId, agentId),
+            gte(deviceLocations.reportedAt, tenMinAgo)
+          )
+        )
+        .orderBy(desc(deviceLocations.reportedAt))
+        .limit(1);
+    }
+    return { enabled: geofenceEnabled, assignedZones, recentLoc };
+  } catch (err) {
+    console.error("[Geofence] Check error (fail-open):", err);
+    return null;
+  }
+}
+
+/**
+ * Commission rate lookup: Redis cache → DB commission_rules.
+ * NO hardcoded fallback: a missing configured rate is a hard failure —
+ * silently applying a fabricated rate misstates agent earnings.
+ */
+async function loadCommissionRate(txType: string): Promise<number | null> {
+  const commissionCacheKey = `commission_rate:${txType}`;
+  let commissionCacheSet:
+    | ((key: string, value: string, ttlSeconds?: number) => Promise<boolean>)
+    | null = null;
+  try {
+    const { cacheGet, cacheSet } = await import("../redisClient");
+    commissionCacheSet = cacheSet;
+    const cached = await cacheGet(commissionCacheKey);
+    if (cached !== null) {
+      const n = Number(cached);
+      if (Number.isFinite(n) && n >= 0) return n;
+    }
+  } catch (cacheErr) {
+    console.warn(
+      "[Commission] Rate cache lookup failed, falling back to DB:",
+      (cacheErr as Error).message
+    );
+  }
+  const db = (await getDb())!;
+  if (db) {
+    const ruleRows = await db
+      .select({ value: commissionRules.value })
+      .from(commissionRules)
+      .where(
+        and(
+          eq(commissionRules.txType, txType as any),
+          eq(commissionRules.isActive, true)
+        )
+      )
+      .limit(1);
+    if (ruleRows.length > 0) {
+      const n = Number(ruleRows[0].value);
+      if (Number.isFinite(n) && n >= 0) {
+        // Cache for 5 minutes — rules change infrequently
+        if (commissionCacheSet) {
+          commissionCacheSet(commissionCacheKey, String(n), 300).catch(
+            () => {}
+          );
+        }
+        return n;
+      }
+    }
+  }
+  return null;
 }
 
 // ─── Device token validation ──────────────────────────────────────────────────
@@ -493,13 +630,29 @@ export const transactionsRouter = router({
           });
         }
 
-        // ── Gate 4: Velocity limits ────────────────────────────────────────────
-        const velocityCheck = await checkVelocityLimits(
+        // ── Round-8 perf (R7): start the independent gate READS concurrently ──
+        // (velocity ∥ geofence ∥ commission rate). All three depend only on
+        // agent/input resolved above; they are awaited at their original gate
+        // evaluation points below, so gate order and failure side effects are
+        // unchanged. The commission promise normalizes errors into a result
+        // object so an earlier gate failure can never strand a rejected
+        // promise (unhandled rejection); the original throw is replayed at
+        // the commission evaluation point.
+        const velocityCheckP = checkVelocityLimits(
           agent.id,
           agentRecord.tier,
           input.amount,
           agent.agentCode
         );
+        const geofenceDataP = loadGeofenceData(agent.id);
+        const commissionRateP: Promise<{ rate: number | null } | { err: unknown }> =
+          loadCommissionRate(input.type).then(
+            rate => ({ rate }),
+            err => ({ err })
+          );
+
+        // ── Gate 4: Velocity limits ────────────────────────────────────────────
+        const velocityCheck = await velocityCheckP;
         if (!velocityCheck.allowed) {
           await createFraudAlert({
             agentId: agent.id,
@@ -543,42 +696,16 @@ export const transactionsRouter = router({
 
         // ── Gate 5: Geofence enforcement ──────────────────────────────────────
         // Only enforce if agent has assigned zones and a location was reported recently
+        // Round-8 perf: reads preloaded concurrently (geofenceDataP); the
+        // evaluation and failure side effects below are byte-for-byte the
+        // original sequence.
         try {
-          const geofenceEnabled = await getPlatformSetting(
-            "geofencing_enabled",
-            "false"
-          );
-          if (geofenceEnabled === "true") {
-            const db = (await getDb())!;
-            if (db) {
-              const assignedZones = await db
-                .select({ zone: geofenceZones })
-                .from(agentGeofenceZones)
-                .innerJoin(
-                  geofenceZones,
-                  eq(agentGeofenceZones.zoneId, geofenceZones.id)
-                )
-                .where(
-                  and(
-                    eq(agentGeofenceZones.agentId, agent.id),
-                    eq(geofenceZones.isActive, true)
-                  )
-                );
-              if (assignedZones.length > 0) {
-                // Get the most recent device location for this agent (within last 10 minutes)
-                const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
-                const recentLoc = await db
-                  .select()
-                  .from(deviceLocations)
-                  .where(
-                    and(
-                      eq(deviceLocations.agentId, agent.id),
-                      gte(deviceLocations.reportedAt, tenMinAgo)
-                    )
-                  )
-                  .orderBy(desc(deviceLocations.reportedAt))
-                  .limit(1);
-                if (recentLoc.length > 0 && !recentLoc[0].withinZone) {
+          const geo = await geofenceDataP;
+          if (geo && geo.enabled === "true") {
+            const assignedZones = geo.assignedZones;
+            if (assignedZones.length > 0) {
+              const recentLoc = geo.recentLoc;
+              if (recentLoc.length > 0 && !recentLoc[0].withinZone) {
                   // Agent is outside their assigned zone — create fraud alert and block
                   await createFraudAlert({
                     agentId: agent.id,
@@ -613,7 +740,6 @@ export const transactionsRouter = router({
                     message:
                       "Transaction blocked — device is outside your assigned operational zone.",
                   });
-                }
               }
             }
           }
@@ -624,55 +750,13 @@ export const transactionsRouter = router({
 
         // ── Core processing ────────────────────────────────────────────────────
         const ref = generateRef();
-        // Look up commission rate: Redis cache → DB commission_rules.
-        // NO hardcoded fallback: a missing configured rate is a hard failure —
-        // silently applying a fabricated rate misstates agent earnings.
-        let commissionRate: number | null = null;
-        const commissionCacheKey = `commission_rate:${input.type}`;
-        let commissionCacheSet:
-          | ((key: string, value: string, ttlSeconds?: number) => Promise<boolean>)
-          | null = null;
-        try {
-          const { cacheGet, cacheSet } = await import("../redisClient");
-          commissionCacheSet = cacheSet;
-          const cached = await cacheGet(commissionCacheKey);
-          if (cached !== null) {
-            const n = Number(cached);
-            if (Number.isFinite(n) && n >= 0) commissionRate = n;
-          }
-        } catch (cacheErr) {
-          console.warn(
-            "[Commission] Rate cache lookup failed, falling back to DB:",
-            (cacheErr as Error).message
-          );
-        }
-        if (commissionRate === null) {
-          const db = (await getDb())!;
-          if (db) {
-            const ruleRows = await db
-              .select({ value: commissionRules.value })
-              .from(commissionRules)
-              .where(
-                and(
-                  eq(commissionRules.txType, input.type),
-                  eq(commissionRules.isActive, true)
-                )
-              )
-              .limit(1);
-            if (ruleRows.length > 0) {
-              const n = Number(ruleRows[0].value);
-              if (Number.isFinite(n) && n >= 0) {
-                commissionRate = n;
-                // Cache for 5 minutes — rules change infrequently
-                if (commissionCacheSet) {
-                  commissionCacheSet(commissionCacheKey, String(n), 300).catch(
-                    () => {}
-                  );
-                }
-              }
-            }
-          }
-        }
+        // Commission rate was preloaded concurrently with gates 4-5
+        // (commissionRateP). Redis cache → DB commission_rules, NO hardcoded
+        // fallback: a missing configured rate is a hard failure — silently
+        // applying a fabricated rate misstates agent earnings.
+        const cr = await commissionRateP;
+        if ("err" in cr) throw cr.err; // preserve original propagation (500)
+        const commissionRate: number | null = cr.rate;
         if (commissionRate === null) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
@@ -1662,7 +1746,10 @@ export const transactionsRouter = router({
         })
         .from(transactions)
         .leftJoin(agents, eq(transactions.agentId, agents.id))
-        .where(eq(transactions.status, "pending_reversal_approval"));
+        .where(eq(transactions.status, "pending_reversal_approval"))
+        // Round-8 perf (R6): unbounded joined list grew with backlog.
+        .orderBy(desc(transactions.createdAt))
+        .limit(100);
       return rows.map((r: any) => ({ ...r, amount: Number(r.amount) }));
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -2408,31 +2495,37 @@ export const transactionsRouter = router({
         const db = (await getDb())!;
         if (!db) return { escalated: 0 };
         const now = new Date();
-        // Find alerts that are in "investigating" state (snoozed) and snooze has expired
+        // Round-8 perf (R5): was an N+1 — SELECT (no LIMIT) then one UPDATE +
+        // one notification HTTP per row, serially. Now ONE bulk UPDATE ...
+        // RETURNING escalates all expired snoozed alerts, then notifications
+        // are fanned out concurrently (bounded). Cap at 500 rows per run so a
+        // neglected backlog cannot produce an unbounded statement/notification
+        // burst; the cron re-runs and drains the remainder.
         const expired = await db
-          .select()
-          .from(fraudAlerts)
+          .update(fraudAlerts)
+          .set({ status: "escalated", escalatedAt: now })
           .where(
             and(
               eq(fraudAlerts.status, "investigating"),
               lte(fraudAlerts.snoozedUntil, now)
             )
-          );
+          )
+          .returning();
         if (expired.length === 0) return { escalated: 0 };
-        for (const alert of expired) {
-          await db
-            .update(fraudAlerts)
-            .set({ status: "escalated", escalatedAt: now })
-            .where(eq(fraudAlerts.id, alert.id));
-          try {
-            await notifyOwner({
+        // All matched rows are escalated by the single UPDATE above; the cap
+        // applies only to the notification fan-out (a huge backlog should not
+        // fire unbounded notification HTTP calls in one run).
+        const notifyBatch = expired.slice(0, 500);
+        await Promise.allSettled(
+          notifyBatch.map(alert =>
+            notifyOwner({
               title: `Auto-Escalated: ${alert.type} (Snooze Expired)`,
               content: `Alert #${alert.id} (${alert.severity}) was snoozed but not resolved. Auto-escalated at ${now.toISOString()}.`,
-            });
-          } catch (e) {
-            console.error("[autoEscalateSnoozedAlerts] notifyOwner failed:", e);
-          }
-        }
+            }).catch((e: unknown) => {
+              console.error("[autoEscalateSnoozedAlerts] notifyOwner failed:", e);
+            })
+          )
+        );
         return { escalated: expired.length };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -2730,22 +2823,24 @@ export const transactionsRouter = router({
   adminHourlyStats: protectedProcedure.query(async ({ ctx }) => {
     try {
       if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
-      const db = (await getDb())!;
-      if (!db) throw new Error("Database connection unavailable");
+      // Round-8 perf (R2): was a full day scan of ALL agents' transactions
+      // pulled into Node for JS bucketing. Now a single GROUP BY hour executed
+      // on the read replica.
+      const readDb = (await getReadDb())!;
+      if (!readDb) throw new Error("Database connection unavailable");
       const dayStart = new Date();
       dayStart.setHours(0, 0, 0, 0);
-      const rows = await db
-        .select({
-          createdAt: transactions.createdAt,
-          amount: transactions.amount,
-        })
-        .from(transactions)
-        .where(
-          and(
-            gte(transactions.createdAt, dayStart),
-            eq(transactions.status, "success")
-          )
-        );
+      const hourlyRows = (await readDb.execute(sql`
+        SELECT to_char(date_trunc('hour', "createdAt"), 'HH24:00') AS hour,
+               COUNT(*)::int AS count,
+               COALESCE(SUM("amount"::numeric), 0)::float8 AS volume
+        FROM ${transactions}
+        WHERE "createdAt" >= ${dayStart} AND "status" = 'success'
+        GROUP BY 1
+      `)) as unknown as { rows?: { hour: string; count: number; volume: number }[] };
+      const grouped = Array.isArray(hourlyRows)
+        ? (hourlyRows as unknown as { hour: string; count: number; volume: number }[])
+        : hourlyRows.rows ?? [];
       const buckets: Record<string, { volume: number; count: number }> = {};
       for (let h = 0; h < 24; h++) {
         buckets[`${h.toString().padStart(2, "0")}:00`] = {
@@ -2753,10 +2848,12 @@ export const transactionsRouter = router({
           count: 0,
         };
       }
-      for (const row of rows) {
-        const key = `${new Date(row.createdAt).getHours().toString().padStart(2, "0")}:00`;
-        buckets[key].volume += Number(row.amount);
-        buckets[key].count++;
+      for (const row of grouped) {
+        const key = row.hour;
+        if (buckets[key]) {
+          buckets[key].volume = Number(row.volume);
+          buckets[key].count = Number(row.count);
+        }
       }
       return Object.entries(buckets).map(([hour, v]) => ({ hour, ...v }));
     } catch (error) {
@@ -2773,25 +2870,28 @@ export const transactionsRouter = router({
   statsByType: protectedProcedure.query(async ({ ctx }) => {
     try {
       if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
-      const db = (await getDb())!;
-      if (!db) throw new Error("Database connection unavailable");
+      // Round-8 perf (R1): was a 30-day full-range scan of ALL transactions
+      // pulled into Node for JS aggregation (the old comment's premise was
+      // wrong — GROUP BY is portable). Now aggregated in SQL on the read
+      // replica.
+      const readDb = (await getReadDb())!;
+      if (!readDb) throw new Error("Database connection unavailable");
       const since = new Date();
       since.setDate(since.getDate() - 30);
-      const rows = await db
-        .select({ type: transactions.type, amount: transactions.amount })
-        .from(transactions)
-        .where(
-          and(
-            gte(transactions.createdAt, since),
-            eq(transactions.status, "success")
-          )
-        );
-      // Aggregate by type in memory (avoids dialect-specific GROUP BY)
+      const typeRowsRaw = (await readDb.execute(sql`
+        SELECT "type" AS type,
+               COUNT(*)::int AS count,
+               COALESCE(SUM("amount"::numeric), 0)::float8 AS volume
+        FROM ${transactions}
+        WHERE "createdAt" >= ${since} AND "status" = 'success'
+        GROUP BY "type"
+      `)) as unknown as { rows?: { type: string; count: number; volume: number }[] };
+      const typeRows = Array.isArray(typeRowsRaw)
+        ? (typeRowsRaw as unknown as { type: string; count: number; volume: number }[])
+        : typeRowsRaw.rows ?? [];
       const map: Record<string, { count: number; volume: number }> = {};
-      for (const row of rows) {
-        if (!map[row.type]) map[row.type] = { count: 0, volume: 0 };
-        map[row.type].count++;
-        map[row.type].volume += Number(row.amount);
+      for (const row of typeRows) {
+        map[row.type] = { count: Number(row.count), volume: Number(row.volume) };
       }
       const total = Object.values(map as any).reduce(
         (s: any, v: any) => s + v.count,
@@ -2959,37 +3059,52 @@ export const transactionsRouter = router({
             );
           }
         }
-        // Local DB fallback
-        const db = (await getDb())!;
-        if (!db) return { source: "local" as const, data: null };
-        const rows = await db
-          .select({
-            type: transactions.type,
-            amount: transactions.amount,
-            status: transactions.status,
-          })
-          .from(transactions)
-          .where(
-            and(
-              input.startDate
-                ? gte(transactions.createdAt, new Date(input.startDate))
-                : undefined,
-              input.endDate
-                ? lte(transactions.createdAt, new Date(input.endDate))
-                : undefined
-            )
-          );
-        const successRows = rows.filter(r => r.status === "success");
-        const totalVolume = successRows.reduce(
-          (s: any, r: any) => s + Number(r.amount),
+        // Local DB fallback — Round-8 perf (R3): was a full-table SELECT (when
+        // no date filters given) streamed to Node for JS aggregation. Now a
+        // GROUP BY type,status aggregate executed on the read replica. Date
+        // filters pushed into SQL; note that with neither filter this is still
+        // a full-range aggregate scan (but only ~2 numbers per type×status
+        // cross the wire instead of every row).
+        const readDb = (await getReadDb())!;
+        if (!readDb) return { source: "local" as const, data: null };
+        const dateConds = [
+          input.startDate
+            ? sql`"createdAt" >= ${new Date(input.startDate)}`
+            : undefined,
+          input.endDate
+            ? sql`"createdAt" <= ${new Date(input.endDate)}`
+            : undefined,
+        ].filter(Boolean) as any[];
+        const whereClause =
+          dateConds.length > 0
+            ? sql`WHERE ${sql.join(dateConds, sql` AND `)}`
+            : sql``;
+        const aggRaw = (await readDb.execute(sql`
+          SELECT "type" AS type,
+                 "status" AS status,
+                 COUNT(*)::int AS count,
+                 COALESCE(SUM("amount"::numeric), 0)::float8 AS volume
+          FROM ${transactions}
+          ${whereClause}
+          GROUP BY "type", "status"
+        `)) as unknown as {
+          rows?: { type: string; status: string; count: number; volume: number }[];
+        };
+        const aggRows = Array.isArray(aggRaw)
+          ? (aggRaw as unknown as { type: string; status: string; count: number; volume: number }[])
+          : aggRaw.rows ?? [];
+        const successGroups = aggRows.filter(r => r.status === "success");
+        const totalVolume = successGroups.reduce(
+          (s, r) => s + Number(r.volume),
           0
         );
-        const totalCount = successRows.length;
+        const totalCount = successGroups.reduce((s, r) => s + Number(r.count), 0);
+        const allCount = aggRows.reduce((s, r) => s + Number(r.count), 0);
         const byType: Record<string, { count: number; volume: number }> = {};
-        for (const r of successRows) {
+        for (const r of successGroups) {
           if (!byType[r.type]) byType[r.type] = { count: 0, volume: 0 };
-          byType[r.type].count++;
-          byType[r.type].volume += Number(r.amount);
+          byType[r.type].count += Number(r.count);
+          byType[r.type].volume += Number(r.volume);
         }
         return {
           source: "local" as const,
@@ -2997,7 +3112,7 @@ export const transactionsRouter = router({
             total_transactions: totalCount,
             total_volume: totalVolume,
             success_rate:
-              rows.length > 0 ? (totalCount / rows.length) * 100 : 0,
+              allCount > 0 ? (totalCount / allCount) * 100 : 0,
             by_type: byType,
           },
         };

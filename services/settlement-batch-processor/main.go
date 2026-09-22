@@ -68,6 +68,13 @@ var (
 	tbClient tb.Client
 )
 
+// maxInMemoryBatches bounds the in-memory batch cache (F15); durable records
+// are in Postgres (settlement_batches).
+const maxInMemoryBatches = 500
+
+// tbBatchLimit stays below TigerBeetle's max of ~8189 operations per message (F16).
+const tbBatchLimit = 8000
+
 // settlementBatchID is DETERMINISTIC per settlement date + 6-hour window
 // (e.g. "batch-20250101-w2"). A fresh random/sequential ID per run would
 // defeat TigerBeetle dedup: the transfer ID "stl:<batch>:<agent>" must be
@@ -180,65 +187,90 @@ func revertUnpostedRows(ctx context.Context, batchID string) {
 	}
 }
 
-// ensureTBAccount creates a settlement account in TigerBeetle, tolerating EXISTS.
-func ensureTBAccount(id tbtypes.Uint128, code uint16) error {
-	results, err := tbClient.CreateAccounts([]tbtypes.Account{
-		{ID: id, Ledger: 1, Code: code, Flags: 0},
-	})
-	if err != nil {
-		return fmt.Errorf("tigerbeetle CreateAccounts: %w", err)
-	}
-	for _, res := range results {
-		if !strings.Contains(fmt.Sprintf("%v", res.Result), "EXISTS") {
-			return fmt.Errorf("tigerbeetle account creation rejected: result=%v index=%d", res.Result, res.Index)
+// createTBAccountsBatched creates settlement accounts in TigerBeetle in chunks
+// of up to tbBatchLimit, tolerating EXISTS (F16: was one CreateAccounts call
+// per account per agent).
+func createTBAccountsBatched(accounts []tbtypes.Account) error {
+	for start := 0; start < len(accounts); start += tbBatchLimit {
+		end := start + tbBatchLimit
+		if end > len(accounts) {
+			end = len(accounts)
+		}
+		results, err := tbClient.CreateAccounts(accounts[start:end])
+		if err != nil {
+			return fmt.Errorf("tigerbeetle CreateAccounts: %w", err)
+		}
+		for _, res := range results {
+			if !strings.Contains(fmt.Sprintf("%v", res.Result), "EXISTS") {
+				return fmt.Errorf("tigerbeetle account creation rejected: result=%v index=%d", res.Result, res.Index)
+			}
 		}
 	}
 	return nil
 }
 
-// postSettlementTransfer posts the real per-agent net settlement transfer.
-func postSettlementTransfer(batchID, agentID string, amountKobo int64) error {
-	if amountKobo <= 0 {
-		return fmt.Errorf("non-positive settlement amount %d for agent %s", amountKobo, agentID)
+// postSettlementTransfersBatch posts the real per-agent net settlement
+// transfers as batched CreateAccounts + CreateTransfers calls (F16: was 3
+// sequential TigerBeetle round trips per agent). The round-7 deterministic
+// batch logic is preserved: transfer IDs stay stl:<batch>:<agent>, so an
+// EXISTS result on a re-run is treated as dedup-success, never a second
+// payment. On the first non-EXISTS rejection it returns an error naming the
+// agent, exactly like the previous sequential loop.
+func postSettlementTransfersBatch(batchID string, entries []SettlementEntry, amounts map[string]int64) error {
+	if len(entries) == 0 {
+		return nil
 	}
-	transferID := stringToUint128(fmt.Sprintf("stl:%s:%s", batchID, agentID))
 	platformAcct := stringToUint128("settle:platform")
-	agentAcct := stringToUint128("settle:" + agentID)
 
-	if err := ensureTBAccount(platformAcct, 3001); err != nil {
-		return err
-	}
-	if err := ensureTBAccount(agentAcct, 3002); err != nil {
-		return err
-	}
-
-	results, err := tbClient.CreateTransfers([]tbtypes.Transfer{
-		{
-			ID:              transferID,
+	// Collect unique accounts: platform + one per agent.
+	acctSeen := map[tbtypes.Uint128]bool{platformAcct: true}
+	accounts := []tbtypes.Account{{ID: platformAcct, Ledger: 1, Code: 3001}}
+	transfers := make([]tbtypes.Transfer, 0, len(entries))
+	for _, entry := range entries {
+		agentAcct := stringToUint128("settle:" + entry.AgentID)
+		if !acctSeen[agentAcct] {
+			accounts = append(accounts, tbtypes.Account{ID: agentAcct, Ledger: 1, Code: 3002})
+			acctSeen[agentAcct] = true
+		}
+		transfers = append(transfers, tbtypes.Transfer{
+			ID:              stringToUint128(fmt.Sprintf("stl:%s:%s", batchID, entry.AgentID)),
 			DebitAccountID:  platformAcct,
 			CreditAccountID: agentAcct,
-			Amount:          tbtypes.ToUint128(uint64(amountKobo)),
+			Amount:          tbtypes.ToUint128(uint64(amounts[entry.AgentID])),
 			Ledger:          1,
 			Code:            2,
 			Flags:           0,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("tigerbeetle CreateTransfers: %w", err)
+		})
 	}
-	if len(results) > 0 {
-		// The transfer ID is deterministic (stl:<batch>:<agent>), so EXISTS on
-		// a re-run means this agent was ALREADY posted by an earlier attempt —
-		// treat as success (dedup), never as a second payment.
-		if strings.Contains(fmt.Sprintf("%v", results[0].Result), "EXISTS") {
-			log.Printf("[TigerBeetle] settlement transfer %s already exists (dedup) — agent %s already posted",
-				hex.EncodeToString(transferID[:]), agentID)
-			return nil
+
+	if err := createTBAccountsBatched(accounts); err != nil {
+		return err
+	}
+
+	for start := 0; start < len(transfers); start += tbBatchLimit {
+		end := start + tbBatchLimit
+		if end > len(transfers) {
+			end = len(transfers)
 		}
-		return fmt.Errorf("tigerbeetle settlement transfer rejected: result=%v index=%d", results[0].Result, results[0].Index)
+		results, err := tbClient.CreateTransfers(transfers[start:end])
+		if err != nil {
+			return fmt.Errorf("tigerbeetle CreateTransfers: %w", err)
+		}
+		for _, res := range results {
+			agentID := entries[start+int(res.Index)].AgentID
+			transferID := transfers[start+int(res.Index)].ID
+			// The transfer ID is deterministic (stl:<batch>:<agent>), so EXISTS
+			// on a re-run means this agent was ALREADY posted by an earlier
+			// attempt — treat as success (dedup), never as a second payment.
+			if strings.Contains(fmt.Sprintf("%v", res.Result), "EXISTS") {
+				log.Printf("[TigerBeetle] settlement transfer %s already exists (dedup) — agent %s already posted",
+					hex.EncodeToString(transferID[:]), agentID)
+				continue
+			}
+			return fmt.Errorf("tigerbeetle settlement transfer rejected for agent %s: result=%v index=%d", agentID, res.Result, res.Index)
+		}
 	}
-	log.Printf("[TigerBeetle] settlement transfer %s committed (%d kobo -> agent %s)",
-		hex.EncodeToString(transferID[:]), amountKobo, agentID)
+	log.Printf("[TigerBeetle] posted %d settlement transfers for batch %s", len(transfers), batchID)
 	return nil
 }
 
@@ -306,6 +338,19 @@ func handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(),
 	}
 	batches[batch.BatchID] = batch
+	// F15: bound the in-memory cache — evict the oldest batches past the cap
+	// (durable records live in settlement_batches, so this is only a cache).
+	if len(batches) > maxInMemoryBatches {
+		var oldestID string
+		var oldestTime time.Time
+		first := true
+		for id, b := range batches {
+			if first || b.CreatedAt.Before(oldestTime) {
+				oldestID, oldestTime, first = id, b.CreatedAt, false
+			}
+		}
+		delete(batches, oldestID)
+	}
 	batchesMu.Unlock()
 
 	// Step 2: aggregate real rows per agent.
@@ -371,13 +416,17 @@ func handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 	// durable even if the process dies mid-loop.
 	persistBatch(ctx, batch, nil)
 
-	// Step 3: post the real per-agent settlement transfers to TigerBeetle.
-	// Per-entry status: each agent's rows flip to 'settled' right after that
-	// agent's transfer commits. On failure, unposted agents' rows revert to
-	// 'pending' so a re-run retries exactly them — posted agents are skipped
-	// (their rows are 'settled' and their deterministic TB transfer IDs dedupe).
+	// Step 3 (F16): post all per-agent settlement transfers to TigerBeetle in
+	// batched CreateAccounts/CreateTransfers calls, then mark every posted
+	// agent's rows 'settled' with a single UPDATE ... WHERE id = ANY($1).
+	// The deterministic transfer IDs (stl:<batch>:<agent>) keep re-runs safe:
+	// committed transfers dedupe as EXISTS, and on failure unposted rows revert
+	// to 'pending' so a re-run retries exactly them (round-7 semantics kept).
+	amounts := make(map[string]int64, len(batch.Entries))
+	payable := make([]SettlementEntry, 0, len(batch.Entries))
 	for _, entry := range batch.Entries {
 		amountKobo := int64(math.Round(entry.SettlementAmt * 100))
+		amounts[entry.AgentID] = amountKobo
 		agg := agents[entry.AgentID]
 		if amountKobo <= 0 {
 			// Nothing payable to this agent — settle the claimed rows without a transfer.
@@ -386,30 +435,40 @@ func handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		if err := postSettlementTransfer(batch.BatchID, entry.AgentID, amountKobo); err != nil {
-			revertUnpostedRows(ctx, batch.BatchID)
-			batchesMu.Lock()
-			batch.Status = "failed"
-			batchesMu.Unlock()
-			errMsg := "ledger settlement posting failed for agent " + entry.AgentID + ": " + err.Error()
-			persistBatch(ctx, batch, &errMsg)
-			log.Printf("[settlement-batch-processor] batch %s failed at agent %s: %v", batch.BatchID, entry.AgentID, err)
-			http.Error(w, fmt.Sprintf(`{"error":%q,"batch_id":%q}`, errMsg, batch.BatchID), 500)
-			return
-		}
-		if err := markAgentRowsSettled(ctx, batch.BatchID, agg.rowIDs); err != nil {
-			// TB transfer is committed but rows not marked. Reverting this
-			// agent's rows to 'pending' is SAFE (unlike the post-failure path,
-			// here re-posting is deduped): a re-run re-claims them, the
-			// deterministic TB transfer ID returns EXISTS (no double pay), and
+		payable = append(payable, entry)
+	}
+
+	if err := postSettlementTransfersBatch(batch.BatchID, payable, amounts); err != nil {
+		revertUnpostedRows(ctx, batch.BatchID)
+		batchesMu.Lock()
+		batch.Status = "failed"
+		batchesMu.Unlock()
+		errMsg := "ledger settlement posting failed: " + err.Error()
+		persistBatch(ctx, batch, &errMsg)
+		log.Printf("[settlement-batch-processor] batch %s failed: %v", batch.BatchID, err)
+		http.Error(w, fmt.Sprintf(`{"error":%q,"batch_id":%q}`, errMsg, batch.BatchID), 500)
+		return
+	}
+
+	// All payable transfers committed — flip their rows to 'settled' in one
+	// statement (F16: was one UPDATE per agent).
+	settledRowIDs := make([]int64, 0, len(batch.Entries))
+	for _, entry := range payable {
+		settledRowIDs = append(settledRowIDs, agents[entry.AgentID].rowIDs...)
+	}
+	if len(settledRowIDs) > 0 {
+		if err := markAgentRowsSettled(ctx, batch.BatchID, settledRowIDs); err != nil {
+			// TB transfers are committed but rows not marked. Reverting these
+			// rows to 'pending' is SAFE: a re-run re-claims them, the
+			// deterministic TB transfer IDs return EXISTS (no double pay), and
 			// the rows are then marked settled.
 			revertUnpostedRows(ctx, batch.BatchID)
 			batchesMu.Lock()
 			batch.Status = "failed"
 			batchesMu.Unlock()
-			errMsg := "failed to mark ledger rows settled after posting for agent " + entry.AgentID + ": " + err.Error()
+			errMsg := "failed to mark ledger rows settled after posting: " + err.Error()
 			persistBatch(ctx, batch, &errMsg)
-			log.Printf("[settlement-batch-processor] batch %s settle-mark failed after TB posting for agent %s: %v", batch.BatchID, entry.AgentID, err)
+			log.Printf("[settlement-batch-processor] batch %s settle-mark failed after TB posting: %v", batch.BatchID, err)
 			http.Error(w, fmt.Sprintf(`{"error":%q,"batch_id":%q}`, errMsg, batch.BatchID), 500)
 			return
 		}
@@ -504,7 +563,17 @@ func main() {
 	if dsn == "" {
 		log.Fatal("[settlement-batch-processor] POSTGRES_URL/DATABASE_URL not set — refusing to start")
 	}
-	pool, err := pgxpool.New(context.Background(), dsn)
+	// F9: explicit pool sizing/lifetime instead of pgx defaults (~4 conns, no
+	// health checks).
+	poolCfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		log.Fatalf("[settlement-batch-processor] postgres config parse failed: %v", err)
+	}
+	poolCfg.MaxConns = 20
+	poolCfg.MaxConnLifetime = 30 * time.Minute
+	poolCfg.MaxConnIdleTime = 5 * time.Minute
+	poolCfg.HealthCheckPeriod = 30 * time.Second
+	pool, err := pgxpool.NewWithConfig(context.Background(), poolCfg)
 	if err != nil {
 		log.Fatalf("[settlement-batch-processor] postgres connect failed: %v", err)
 	}
@@ -527,12 +596,29 @@ func main() {
 	tbClient = client
 	defer tbClient.Close()
 
-	http.HandleFunc("/api/v1/batch/create", handleCreateBatch)
-	http.HandleFunc("/api/v1/batch/list", handleListBatches)
-	http.HandleFunc("/health", handleHealth)
-	http.HandleFunc("/ready", handleReady)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/batch/create", handleCreateBatch)
+	mux.HandleFunc("/api/v1/batch/list", handleListBatches)
+	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", handleReady)
+
+	// F1: explicit server timeouts (Slowloris protection). WriteTimeout is 60s
+	// because the batch-create handler performs the claim + posting work
+	// in-request.
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       90 * time.Second,
+	}
+	setupGracefulShutdown(srv)
+
 	log.Printf("[settlement-batch-processor] Starting on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
 }
 
 // --- Production: Graceful Shutdown ---

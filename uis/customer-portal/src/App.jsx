@@ -20,7 +20,7 @@ import Onboarding from "./pages/Onboarding";
 import Profile from "./pages/Profile";
 import SignUp from "./pages/SignUp";
 import Storefront from "./pages/Storefront";
-import StoreMap from "./pages/StoreMap";
+const StoreMap = lazy(() => import("./pages/StoreMap"));
 import Transactions from "./pages/Transactions";
 import { STORAGE } from "./utils/api";
 
@@ -194,7 +194,7 @@ function AppContent() {
             <Route path="accounts" element={<Accounts />} />
             <Route path="transactions" element={<Transactions />} />
             <Route path="storefront" element={<Storefront />} />
-            <Route path="store-map" element={<StoreMap />} />
+            <Route path="store-map" element={<Suspense fallback={null}><StoreMap /></Suspense>} />
             <Route path="communication" element={<Communication />} />
             <Route path="profile" element={<Profile />} />
             <Route path="wallet" element={<CustomerWallet />} />

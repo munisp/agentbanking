@@ -24,4 +24,4 @@ COPY . /app/
 EXPOSE 80
 
 # Command to run the FastAPI app with Uvicorn (ASGI server)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80"]
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "--workers", "2", "--bind", "0.0.0.0:80", "main:app"]

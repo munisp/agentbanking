@@ -13,7 +13,7 @@ import asyncpg
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -211,6 +211,9 @@ async def startup():
         # Step 4: create indexes now that the columns are guaranteed to exist.
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_cards_number_hash ON cards(card_number_search_hash)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_cards_customer    ON cards(customer_id)")
+        # Composite index backing the tenant card listing (WHERE tenant_id
+        # ORDER BY created_at DESC) — previously a seq scan + full sort.
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_cards_tenant_created ON cards(tenant_id, created_at DESC)")
 
 
 @app.on_event("shutdown")
@@ -371,17 +374,20 @@ async def issue_card_admin(
 async def list_tenant_cards(
     db=Depends(lambda: db_pool),
     tenant_id: str = Header(..., alias="x-tenant-id"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
     try:
         async with db.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT card_id, card_number_last4, card_type, customer_id, account_id,
                           name_on_card, expiry_date, status, tenant_id, created_at
-                   FROM cards WHERE tenant_id = $1 ORDER BY created_at DESC""",
-                tenant_id,
+                   FROM cards WHERE tenant_id = $1 ORDER BY created_at DESC
+                   LIMIT $2 OFFSET $3""",
+                tenant_id, limit, offset,
             )
         cards = [dict(row) for row in rows]
-        return {"cards": cards, "total": len(cards)}
+        return {"cards": cards, "total": len(cards), "limit": limit, "offset": offset}
     except Exception as e:
         raise_http_exception_handler(500, f"Failed to fetch cards: {str(e)}", "CRD-LIST-5001")
 
@@ -448,7 +454,9 @@ async def set_pin(
         if len(payload.pin) != 4 or not payload.pin.isdigit():
             raise HTTPException(status_code=400, detail="PIN must be exactly 4 digits.")
 
-        pin_hash = _hash_pin(payload.pin)
+        # bcrypt (rounds=12) is CPU-bound (~200-300ms); run it off the event
+        # loop so concurrent requests are not stalled.
+        pin_hash = await asyncio.to_thread(_hash_pin, payload.pin)
 
         async with db.acquire() as conn:
             result = await conn.execute(

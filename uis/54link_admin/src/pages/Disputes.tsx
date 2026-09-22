@@ -70,7 +70,7 @@ export default function Disputes() {
   useEffect(() => {
     fetchDisputes(true);
     // Refresh every 10 seconds (silently in background)
-    const interval = setInterval(() => fetchDisputes(false), 10000);
+    const interval = setInterval(() => fetchDisputes(false), 30000);
     return () => clearInterval(interval);
   }, []);
 

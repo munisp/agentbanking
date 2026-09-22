@@ -99,7 +99,7 @@ export default function AdminCards() {
   useEffect(() => {
     fetchCards(true);
     // Refresh every 10 seconds (silently in background)
-    const interval = setInterval(() => fetchCards(false), 10000);
+    const interval = setInterval(() => fetchCards(false), 30000);
     return () => clearInterval(interval);
   }, []);
 

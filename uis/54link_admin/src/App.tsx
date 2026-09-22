@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Sidebar from "./components/Sidebar";
@@ -7,78 +7,88 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { ProgressProvider } from "./contexts/ProgressContext";
 import { TenantBrandingProvider } from "./contexts/TenantBrandingContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import AgentBanking from "./pages/AgentBanking";
-import AlertRules from "./pages/AlertRules";
-import AlertSettings from "./pages/AlertSettings";
-import Alerts from "./pages/Alerts";
-import AuditTrails from "./pages/AuditTrails";
-import BankManagement from "./pages/BankManagement";
-import BankOnboarding from "./pages/BankOnboarding";
-import Billing from "./pages/Billing";
-import Curriculum from "./pages/Curriculum";
-import Dashboard from "./pages/Dashboard";
-import Disputes from "./pages/Disputes";
-import FeatureFlags from "./pages/FeatureFlags";
-import GroupLending from "./pages/GroupLending";
-import Home from "./pages/Home";
-import Infrastructure from "./pages/Infrastructure";
-import BNPL from "./pages/BNPL";
-import LPO from "./pages/LPO";
-import Labs from "./pages/Labs";
-import Loans from "./pages/Loans";
-import ChangePassword from "./pages/ChangePassword";
-import Login from "./pages/Login";
-import Monitoring from "./pages/Monitoring";
-import NotFound from "./pages/NotFound";
-import QuickReference from "./pages/QuickReference";
-import RegulatoryReporting from "./pages/RegulatoryReporting";
-import Resources from "./pages/Resources";
-import Savings from "./pages/Savings";
-import Transactions from "./pages/Transactions";
-import UsageAnalytics from "./pages/UsageAnalytics";
-import AdminManagement from "./pages/admin/admins";
-import AdminAnalytics from "./pages/admin/analytics";
-import AuditLogs from "./pages/admin/audit-logs";
-import AdminCards from "./pages/admin/cards";
-import {
-  AdminFeatureFlagsPage,
-  AdminSecurityPage,
-  AdminBankingOpsPage,
-  AdminAnalyticsPage,
-  AdminUsersPage,
-} from "./pages/AdminModulePages";
+const AgentBanking = lazy(() => import("./pages/AgentBanking"));
+const AlertRules = lazy(() => import("./pages/AlertRules"));
+const AlertSettings = lazy(() => import("./pages/AlertSettings"));
+const Alerts = lazy(() => import("./pages/Alerts"));
+const AuditTrails = lazy(() => import("./pages/AuditTrails"));
+const BankManagement = lazy(() => import("./pages/BankManagement"));
+const BankOnboarding = lazy(() => import("./pages/BankOnboarding"));
+const Billing = lazy(() => import("./pages/Billing"));
+const Curriculum = lazy(() => import("./pages/Curriculum"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Disputes = lazy(() => import("./pages/Disputes"));
+const FeatureFlags = lazy(() => import("./pages/FeatureFlags"));
+const GroupLending = lazy(() => import("./pages/GroupLending"));
+const Home = lazy(() => import("./pages/Home"));
+const Infrastructure = lazy(() => import("./pages/Infrastructure"));
+const BNPL = lazy(() => import("./pages/BNPL"));
+const LPO = lazy(() => import("./pages/LPO"));
+const Labs = lazy(() => import("./pages/Labs"));
+const Loans = lazy(() => import("./pages/Loans"));
+const ChangePassword = lazy(() => import("./pages/ChangePassword"));
+const Login = lazy(() => import("./pages/Login"));
+const Monitoring = lazy(() => import("./pages/Monitoring"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const QuickReference = lazy(() => import("./pages/QuickReference"));
+const RegulatoryReporting = lazy(() => import("./pages/RegulatoryReporting"));
+const Resources = lazy(() => import("./pages/Resources"));
+const Savings = lazy(() => import("./pages/Savings"));
+const Transactions = lazy(() => import("./pages/Transactions"));
+const UsageAnalytics = lazy(() => import("./pages/UsageAnalytics"));
+const AdminManagement = lazy(() => import("./pages/admin/admins"));
+const AdminAnalytics = lazy(() => import("./pages/admin/analytics"));
+const AuditLogs = lazy(() => import("./pages/admin/audit-logs"));
+const AdminCards = lazy(() => import("./pages/admin/cards"));
+const AdminFeatureFlagsPage = lazy(() =>
+  import("./pages/AdminModulePages").then((m) => ({ default: m.AdminFeatureFlagsPage }))
+);
+const AdminSecurityPage = lazy(() =>
+  import("./pages/AdminModulePages").then((m) => ({ default: m.AdminSecurityPage }))
+);
+const AdminBankingOpsPage = lazy(() =>
+  import("./pages/AdminModulePages").then((m) => ({ default: m.AdminBankingOpsPage }))
+);
+const AdminAnalyticsPage = lazy(() =>
+  import("./pages/AdminModulePages").then((m) => ({ default: m.AdminAnalyticsPage }))
+);
+const AdminUsersPage = lazy(() =>
+  import("./pages/AdminModulePages").then((m) => ({ default: m.AdminUsersPage }))
+);
 // Role-based dashboards
-import AuditorDashboard from "./pages/dashboard/AuditorDashboard";
-import BankAdminDashboard from "./pages/dashboard/BankAdminDashboard";
-import ComplianceOfficerDashboard from "./pages/dashboard/ComplianceOfficerDashboard";
-import CustomerSupportDashboard from "./pages/dashboard/CustomerSupportDashboard";
-import OperationsOfficerDashboard from "./pages/dashboard/OperationsOfficerDashboard";
-import SuperAdminDashboard from "./pages/dashboard/SuperAdminDashboard";
-import TechnicalAdminDashboard from "./pages/dashboard/TechnicalAdminDashboard";
+const AuditorDashboard = lazy(() => import("./pages/dashboard/AuditorDashboard"));
+const BankAdminDashboard = lazy(() => import("./pages/dashboard/BankAdminDashboard"));
+const ComplianceOfficerDashboard = lazy(() => import("./pages/dashboard/ComplianceOfficerDashboard"));
+const CustomerSupportDashboard = lazy(() => import("./pages/dashboard/CustomerSupportDashboard"));
+const OperationsOfficerDashboard = lazy(() => import("./pages/dashboard/OperationsOfficerDashboard"));
+const SuperAdminDashboard = lazy(() => import("./pages/dashboard/SuperAdminDashboard"));
+const TechnicalAdminDashboard = lazy(() => import("./pages/dashboard/TechnicalAdminDashboard"));
 // COMMENTED OUT: Onboarding removed - app is only for 54link
 // // COMMENTED OUT: Onboarding removed - app is only for 54link
 // import AdminOnboarding from './pages/AdminOnboarding';
-import BiometricAuthWorkspace from "./pages/BiometricAuthWorkspace";
-import BusinessManagement from "./pages/BusinessManagement";
-import KYC from "./pages/KYC";
-import KYBEngineWorkspace from "./pages/KYBEngineWorkspace";
-import KYBTriggersWorkspace from "./pages/KYBTriggersWorkspace";
-import KYBVerification from "./pages/KYBVerification";
-import CbnAgsmeisWorkspace from "./pages/CbnAgsmeisWorkspace";
-import CbnAnchorBorrowersWorkspace from "./pages/CbnAnchorBorrowersWorkspace";
-import CBNReturnsWorkspace from "./pages/CBNReturnsWorkspace";
-import CbnAgriReturnsWorkspace from "./pages/CbnAgriReturnsWorkspace";
-import CBNComplianceCheckerWorkspace from "./pages/CBNComplianceCheckerWorkspace";
+const BiometricAuthWorkspace = lazy(() => import("./pages/BiometricAuthWorkspace"));
+const BusinessManagement = lazy(() => import("./pages/BusinessManagement"));
+const KYC = lazy(() => import("./pages/KYC"));
+const KYBEngineWorkspace = lazy(() => import("./pages/KYBEngineWorkspace"));
+const KYBTriggersWorkspace = lazy(() => import("./pages/KYBTriggersWorkspace"));
+const KYBVerification = lazy(() => import("./pages/KYBVerification"));
+const CbnAgsmeisWorkspace = lazy(() => import("./pages/CbnAgsmeisWorkspace"));
+const CbnAnchorBorrowersWorkspace = lazy(() => import("./pages/CbnAnchorBorrowersWorkspace"));
+const CBNReturnsWorkspace = lazy(() => import("./pages/CBNReturnsWorkspace"));
+const CbnAgriReturnsWorkspace = lazy(() => import("./pages/CbnAgriReturnsWorkspace"));
+const CBNComplianceCheckerWorkspace = lazy(() => import("./pages/CBNComplianceCheckerWorkspace"));
 // Developer Platform
 import { useTemporalAccessPolling } from "./_core/hooks/useTemporalAccess";
-import Analytics from "./pages/Analytics";
-import AppReview from "./pages/AppReview";
-import { DeveloperManagement } from "./pages/DeveloperManagement";
-import DeveloperPlatform from "./pages/DeveloperPlatform";
-import MyAccess from "./pages/MyAccess";
-import Organizations from "./pages/Organizations";
-import Security from "./pages/Security";
-import TemporalAccess from "./pages/TemporalAccess";
+const Analytics = lazy(() => import("./pages/Analytics"));
+const AppReview = lazy(() => import("./pages/AppReview"));
+const DeveloperManagement = lazy(() =>
+  import("./pages/DeveloperManagement").then((m) => ({ default: m.DeveloperManagement }))
+);
+const DeveloperPlatform = lazy(() => import("./pages/DeveloperPlatform"));
+const MyAccess = lazy(() => import("./pages/MyAccess"));
+const Organizations = lazy(() => import("./pages/Organizations"));
+const Security = lazy(() => import("./pages/Security"));
+const TemporalAccess = lazy(() => import("./pages/TemporalAccess"));
 import { tenantService } from "./services/tenant";
 // TODO: STEP 5 — Feature Realignment
 // COMMENTED OUT: Onboarding removed - app is only for 54link
@@ -176,6 +186,13 @@ function Router() {
     <div className="flex">
       {!isLoginPage && <Sidebar />}
       <div className="flex-1">
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center p-8 text-sm text-muted-foreground">
+              Loading…
+            </div>
+          }
+        >
         <Switch>
           <Route path="/" component={DashboardComponent} />
           <Route path="/tenants" component={BankManagement} />
@@ -259,6 +276,7 @@ function Router() {
           {/* Final fallback route */}
           <Route component={NotFound} />
         </Switch>
+        </Suspense>
       </div>
     </div>
   );

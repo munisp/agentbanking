@@ -1,3 +1,4 @@
+import asyncio
 import abc
 import json
 import time
@@ -153,7 +154,7 @@ class FlutterwaveGateway(BasePaymentGateway):
                     # Note: In a real application, you would not close the client here, but rather
                     # ensure the client is properly managed. For this isolated example, we simulate
                     # a brief pause.
-                    time.sleep(delay)
+                    await asyncio.sleep(delay)
                     delay *= 2  # Exponential backoff
                 else:
                     raise RuntimeError(f"Flutterwave API Server Error ({e.response.status_code}) after {max_retries} attempts: {error_detail.get('message', str(error_detail))}") from e
@@ -161,7 +162,7 @@ class FlutterwaveGateway(BasePaymentGateway):
                 # Network or timeout error - retry
                 if attempt < max_retries - 1:
                     print(f"Attempt {attempt + 1} failed with network error. Retrying in {delay}s...")
-                    time.sleep(delay)
+                    await asyncio.sleep(delay)
                     delay *= 2
                 else:
                     raise ConnectionError(f"Flutterwave API Connection failed after {max_retries} attempts: {e}") from e

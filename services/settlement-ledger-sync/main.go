@@ -133,6 +133,13 @@ type SettlementBatch struct {
 // Settlement Ledger Sync Engine
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// maxBatchHistory caps the in-memory batch history (F13): a sync runs every
+// 30s, so an uncapped slice grows ~17.5k entries/yr forever.
+const maxBatchHistory = 200
+
+// tbBatchLimit stays below TigerBeetle's max of ~8189 operations per message (F16).
+const tbBatchLimit = 8000
+
 type LedgerSyncEngine struct {
 	config      *Config
 	pgPool      *pgxpool.Pool
@@ -144,6 +151,8 @@ type LedgerSyncEngine struct {
 	syncCount   int64
 	lastSync    time.Time
 	totalSynced int64
+	// syncMu serializes sync cycles (scheduler tick vs. async HTTP trigger, F2).
+	syncMu sync.Mutex
 }
 
 func NewLedgerSyncEngine(cfg *Config, pgPool *pgxpool.Pool, tbClient tb.Client, kafkaWriter *kafka.Writer) *LedgerSyncEngine {
@@ -171,6 +180,13 @@ func stringToUint128(s string) tbtypes.Uint128 {
 // SyncPendingEntries fetches unsynced billing ledger entries from Postgres,
 // creates double-entry transfers in TigerBeetle, and publishes settlement events to Kafka
 func (lse *LedgerSyncEngine) SyncPendingEntries(ctx context.Context) error {
+	// Serialize sync cycles: the async HTTP trigger (F2) must not overlap with
+	// the scheduler tick.
+	if !lse.syncMu.TryLock() {
+		return errors.New("sync already in progress")
+	}
+	defer lse.syncMu.Unlock()
+
 	log.Println("[LedgerSync] Starting sync cycle")
 
 	// Step 1: Fetch pending entries from billing ledger (PostgreSQL)
@@ -182,17 +198,11 @@ func (lse *LedgerSyncEngine) SyncPendingEntries(ctx context.Context) error {
 		return errNoPending
 	}
 
-	// Step 2: Create TigerBeetle transfers for each entry. Only entries whose
-	// transfers were actually committed count towards the batch.
-	synced := make([]BillingLedgerEntry, 0, len(entries))
-	failed := 0
-	for _, entry := range entries {
-		if err := lse.createTigerBeetleTransfer(ctx, entry); err != nil {
-			log.Printf("[LedgerSync] TigerBeetle transfer failed for tx %s: %v", entry.TransactionID, err)
-			failed++
-			continue
-		}
-		synced = append(synced, entry)
+	// Step 2: Create TigerBeetle accounts + transfers in batches (F16: was ~6
+	// sequential round trips per entry) and mark rows synced with one UPDATE.
+	synced, failed, err := lse.createTigerBeetleTransfersBatch(ctx, entries)
+	if err != nil {
+		return err
 	}
 
 	if len(synced) == 0 {
@@ -207,9 +217,7 @@ func (lse *LedgerSyncEngine) SyncPendingEntries(ctx context.Context) error {
 	if err := lse.publishSettlementEvent(ctx, batch); err != nil {
 		batch.State = StateFailed
 		batch.CommittedAt = nil
-		lse.mu.Lock()
-		lse.batches = append(lse.batches, batch)
-		lse.mu.Unlock()
+		lse.recordBatch(batch)
 		return fmt.Errorf("publish settlement event for batch %s: %w", batch.BatchID, err)
 	}
 
@@ -218,11 +226,22 @@ func (lse *LedgerSyncEngine) SyncPendingEntries(ctx context.Context) error {
 	lse.syncCount++
 	lse.lastSync = time.Now()
 	lse.totalSynced += int64(len(synced))
-	lse.batches = append(lse.batches, batch)
 	lse.mu.Unlock()
+	lse.recordBatch(batch)
 
 	log.Printf("[LedgerSync] Synced %d entries in batch %s (%d failed)", len(synced), batch.BatchID, failed)
 	return nil
+}
+
+// recordBatch appends to the in-memory batch history, evicting the oldest
+// entries once the cap is reached (F13).
+func (lse *LedgerSyncEngine) recordBatch(batch SettlementBatch) {
+	lse.mu.Lock()
+	defer lse.mu.Unlock()
+	lse.batches = append(lse.batches, batch)
+	if len(lse.batches) > maxBatchHistory {
+		lse.batches = append([]SettlementBatch(nil), lse.batches[len(lse.batches)-maxBatchHistory:]...)
+	}
 }
 
 // fetchPendingEntries queries the real pending billing ledger entries from Postgres.
@@ -253,88 +272,134 @@ func (lse *LedgerSyncEngine) fetchPendingEntries(ctx context.Context) ([]Billing
 	return entries, rows.Err()
 }
 
-// ensureTBAccount creates a ledger account in TigerBeetle, tolerating EXISTS.
-func (lse *LedgerSyncEngine) ensureTBAccount(id tbtypes.Uint128, code uint16) error {
-	results, err := lse.tbClient.CreateAccounts([]tbtypes.Account{
-		{ID: id, Ledger: 1, Code: code, Flags: 0},
-	})
-	if err != nil {
-		return fmt.Errorf("tigerbeetle CreateAccounts: %w", err)
-	}
-	for _, res := range results {
-		if !strings.Contains(fmt.Sprintf("%v", res.Result), "EXISTS") {
-			return fmt.Errorf("tigerbeetle account creation rejected: result=%v index=%d", res.Result, res.Index)
+// createTBAccountsBatch creates ledger accounts in TigerBeetle in batches of
+// up to tbBatchLimit, tolerating EXISTS (F16: was one CreateAccounts call per
+// account per entry).
+func (lse *LedgerSyncEngine) createTBAccountsBatch(accounts []tbtypes.Account) error {
+	for start := 0; start < len(accounts); start += tbBatchLimit {
+		end := start + tbBatchLimit
+		if end > len(accounts) {
+			end = len(accounts)
+		}
+		results, err := lse.tbClient.CreateAccounts(accounts[start:end])
+		if err != nil {
+			return fmt.Errorf("tigerbeetle CreateAccounts: %w", err)
+		}
+		for _, res := range results {
+			if !strings.Contains(fmt.Sprintf("%v", res.Result), "EXISTS") {
+				log.Printf("[LedgerSync] tigerbeetle account creation rejected: result=%v index=%d", res.Result, res.Index)
+			}
 		}
 	}
 	return nil
 }
 
-// createTigerBeetleTransfer posts the real double-entry transfers for a billing
-// entry and marks the Postgres row synced only after the cluster accepts them.
-func (lse *LedgerSyncEngine) createTigerBeetleTransfer(ctx context.Context, entry BillingLedgerEntry) error {
-	customerAcct := stringToUint128("cust:" + entry.ClientID)
-	platformAcct := stringToUint128("platform:revenue")
-	clientAcct := stringToUint128("client:" + entry.ClientID)
-	agentAcct := stringToUint128("agent:" + entry.AgentID)
+// createTigerBeetleTransfersBatch posts the double-entry transfers for a whole
+// sync batch (F16): accounts and transfers are each collected across all
+// entries and submitted as chunked CreateAccounts/CreateTransfers calls, then
+// all succeeded rows are marked synced with a single UPDATE ... WHERE id =
+// ANY($1). Returns the synced entries and the per-entry failure count.
+func (lse *LedgerSyncEngine) createTigerBeetleTransfersBatch(ctx context.Context, entries []BillingLedgerEntry) ([]BillingLedgerEntry, int, error) {
+	// Step A: collect unique accounts across all entries.
+	accountCodes := make(map[tbtypes.Uint128]uint16)
+	entryAccounts := make([][4]tbtypes.Uint128, len(entries))
+	for i, entry := range entries {
+		customerAcct := stringToUint128("cust:" + entry.ClientID)
+		platformAcct := stringToUint128("platform:revenue")
+		clientAcct := stringToUint128("client:" + entry.ClientID)
+		agentAcct := stringToUint128("agent:" + entry.AgentID)
+		entryAccounts[i] = [4]tbtypes.Uint128{customerAcct, platformAcct, clientAcct, agentAcct}
+		accountCodes[customerAcct] = 1001
+		accountCodes[platformAcct] = 1002
+		accountCodes[clientAcct] = 1003
+		accountCodes[agentAcct] = 1004
+	}
+	accounts := make([]tbtypes.Account, 0, len(accountCodes))
+	for id, code := range accountCodes {
+		accounts = append(accounts, tbtypes.Account{ID: id, Ledger: 1, Code: code, Flags: 0})
+	}
+	if err := lse.createTBAccountsBatch(accounts); err != nil {
+		return nil, len(entries), fmt.Errorf("ensure accounts: %w", err)
+	}
 
-	for _, acct := range []struct {
-		id   tbtypes.Uint128
-		code uint16
-	}{
-		{customerAcct, 1001},
-		{platformAcct, 1002},
-		{clientAcct, 1003},
-		{agentAcct, 1004},
-	} {
-		if err := lse.ensureTBAccount(acct.id, acct.code); err != nil {
-			return err
+	// Step B: collect transfers across all entries, remembering which entry
+	// each transfer belongs to.
+	failedEntries := make(map[int]bool)
+	allTransfers := make([]tbtypes.Transfer, 0, len(entries)*3)
+	transferEntry := make([]int, 0, len(entries)*3)
+	for i, entry := range entries {
+		accts := entryAccounts[i]
+		before := len(allTransfers)
+		addTransfer := func(leg string, debit, credit tbtypes.Uint128, amount int64, code uint16) {
+			if amount <= 0 {
+				return
+			}
+			allTransfers = append(allTransfers, tbtypes.Transfer{
+				ID:              stringToUint128("sync:" + entry.TransactionID + ":" + leg),
+				DebitAccountID:  debit,
+				CreditAccountID: credit,
+				Amount:          tbtypes.ToUint128(uint64(amount)),
+				Ledger:          1,
+				Code:            code,
+				Flags:           0,
+			})
+			transferEntry = append(transferEntry, i)
+		}
+		// 1. Customer → Platform (platformShare)
+		addTransfer("platform", accts[0], accts[1], entry.PlatformShare, 10)
+		// 2. Customer → Client (clientShare)
+		addTransfer("client", accts[0], accts[2], entry.ClientShare, 11)
+		// 3. Client → Agent (agentCommission)
+		addTransfer("agent", accts[2], accts[3], entry.AgentCommission, 12)
+		if len(allTransfers) == before {
+			log.Printf("[LedgerSync] entry %s has no positive shares to transfer", entry.TransactionID)
+			failedEntries[i] = true
 		}
 	}
 
-	transfers := make([]tbtypes.Transfer, 0, 3)
-	addTransfer := func(leg string, debit, credit tbtypes.Uint128, amount int64, code uint16) {
-		if amount <= 0 {
-			return
+	// Step C: submit transfers in chunks at or below the TigerBeetle batch
+	// limit; any rejected transfer fails only its own entry.
+	for start := 0; start < len(allTransfers); start += tbBatchLimit {
+		end := start + tbBatchLimit
+		if end > len(allTransfers) {
+			end = len(allTransfers)
 		}
-		transfers = append(transfers, tbtypes.Transfer{
-			ID:              stringToUint128("sync:" + entry.TransactionID + ":" + leg),
-			DebitAccountID:  debit,
-			CreditAccountID: credit,
-			Amount:          tbtypes.ToUint128(uint64(amount)),
-			Ledger:          1,
-			Code:            code,
-			Flags:           0,
-		})
-	}
-	// 1. Customer → Platform (platformShare)
-	addTransfer("platform", customerAcct, platformAcct, entry.PlatformShare, 10)
-	// 2. Customer → Client (clientShare)
-	addTransfer("client", customerAcct, clientAcct, entry.ClientShare, 11)
-	// 3. Client → Agent (agentCommission)
-	addTransfer("agent", clientAcct, agentAcct, entry.AgentCommission, 12)
-
-	if len(transfers) == 0 {
-		return fmt.Errorf("entry %s has no positive shares to transfer", entry.TransactionID)
+		results, err := lse.tbClient.CreateTransfers(allTransfers[start:end])
+		if err != nil {
+			// Transport-level failure: every entry in this chunk failed.
+			for j := start; j < end; j++ {
+				failedEntries[transferEntry[j]] = true
+			}
+			log.Printf("[LedgerSync] tigerbeetle CreateTransfers chunk failed: %v", err)
+			continue
+		}
+		for _, res := range results {
+			idx := start + int(res.Index)
+			log.Printf("[LedgerSync] transfer rejected for tx %s: result=%v", entries[transferEntry[idx]].TransactionID, res.Result)
+			failedEntries[transferEntry[idx]] = true
+		}
 	}
 
-	results, err := lse.tbClient.CreateTransfers(transfers)
-	if err != nil {
-		return fmt.Errorf("tigerbeetle CreateTransfers: %w", err)
+	// Step D: mark all succeeded rows synced in a single UPDATE (F16).
+	synced := make([]BillingLedgerEntry, 0, len(entries))
+	syncedIDs := make([]int64, 0, len(entries))
+	for i, entry := range entries {
+		if failedEntries[i] {
+			continue
+		}
+		synced = append(synced, entry)
+		syncedIDs = append(syncedIDs, entry.ID)
 	}
-	if len(results) > 0 {
-		return fmt.Errorf("tigerbeetle transfer rejected: result=%v index=%d", results[0].Result, results[0].Index)
+	if len(syncedIDs) > 0 {
+		if _, err := lse.pgPool.Exec(ctx,
+			`UPDATE platform_billing_ledger SET sync_status = 'synced', synced_at = NOW() WHERE id = ANY($1) AND sync_status = 'pending'`,
+			syncedIDs); err != nil {
+			return nil, len(entries), fmt.Errorf("mark ledger entries synced: %w", err)
+		}
 	}
 
-	// Mark the row synced only after the cluster accepted the transfers.
-	if _, err := lse.pgPool.Exec(ctx,
-		`UPDATE platform_billing_ledger SET sync_status = 'synced', synced_at = NOW() WHERE id = $1 AND sync_status = 'pending'`,
-		entry.ID); err != nil {
-		return fmt.Errorf("mark ledger entry %d synced: %w", entry.ID, err)
-	}
-
-	log.Printf("[TigerBeetle] Posted %d transfers for tx %s: platform=%d, client=%d, agent=%d",
-		len(transfers), entry.TransactionID, entry.PlatformShare, entry.ClientShare, entry.AgentCommission)
-	return nil
+	log.Printf("[TigerBeetle] Posted %d transfers for %d/%d entries", len(allTransfers), len(synced), len(entries))
+	return synced, len(failedEntries), nil
 }
 
 func (lse *LedgerSyncEngine) createSettlementBatch(entries []BillingLedgerEntry) SettlementBatch {
@@ -507,21 +572,27 @@ func (lse *LedgerSyncEngine) handleHealth(w http.ResponseWriter, r *http.Request
 }
 
 func (lse *LedgerSyncEngine) handleTriggerSync(w http.ResponseWriter, r *http.Request) {
-	if err := lse.SyncPendingEntries(r.Context()); err != nil {
-		if errors.Is(err, errNoPending) {
-			http.Error(w, errNoPending.Error(), http.StatusNotFound)
-			return
+	// F2: run the sync asynchronously (202 Accepted) — a full cycle can take
+	// minutes and must not run inside the HTTP request lifetime.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		if err := lse.SyncPendingEntries(ctx); err != nil && !errors.Is(err, errNoPending) {
+			log.Printf("[LedgerSync] triggered sync failed: %v", err)
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "synced"})
+	}()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"status": "sync_started"})
 }
 
 func (lse *LedgerSyncEngine) handleGetBatches(w http.ResponseWriter, r *http.Request) {
+	// F13: copy a snapshot under the lock, encode after releasing it.
 	lse.mu.RLock()
-	defer lse.mu.RUnlock()
-	json.NewEncoder(w).Encode(lse.batches)
+	snapshot := make([]SettlementBatch, len(lse.batches))
+	copy(snapshot, lse.batches)
+	lse.mu.RUnlock()
+	json.NewEncoder(w).Encode(snapshot)
 }
 
 func (lse *LedgerSyncEngine) handleSettleBatch(w http.ResponseWriter, r *http.Request) {
@@ -545,7 +616,17 @@ func main() {
 	if cfg.PostgresURL == "" {
 		log.Fatal("[LedgerSync] POSTGRES_URL not set — refusing to start")
 	}
-	pgPool, err := pgxpool.New(context.Background(), cfg.PostgresURL)
+	// F10: explicit pool sizing/lifetime instead of pgx defaults (~4 conns, no
+	// health checks).
+	pgCfg, err := pgxpool.ParseConfig(cfg.PostgresURL)
+	if err != nil {
+		log.Fatalf("[LedgerSync] postgres config parse failed: %v", err)
+	}
+	pgCfg.MaxConns = 20
+	pgCfg.MaxConnLifetime = 30 * time.Minute
+	pgCfg.MaxConnIdleTime = 5 * time.Minute
+	pgCfg.HealthCheckPeriod = 30 * time.Second
+	pgPool, err := pgxpool.NewWithConfig(context.Background(), pgCfg)
 	if err != nil {
 		log.Fatalf("[LedgerSync] postgres connect failed: %v", err)
 	}
@@ -582,7 +663,16 @@ func main() {
 	mux.HandleFunc("/api/v1/ledger/batches", engine.handleGetBatches)
 	mux.HandleFunc("/api/v1/ledger/settle", engine.handleSettleBatch)
 
-	server := &http.Server{Addr: ":" + cfg.Port, Handler: mux}
+	// F2: explicit server timeouts (Slowloris protection); the sync trigger is
+	// async (202) so WriteTimeout 60s is ample.
+	server := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       90 * time.Second,
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

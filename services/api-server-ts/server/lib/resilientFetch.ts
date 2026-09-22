@@ -8,7 +8,7 @@
  *  - Structured logging and metrics
  */
 import logger from "../_core/logger";
-import { getMtlsAgent } from "./mtlsAgent";
+import { getMtlsDispatcher } from "./mtlsAgent";
 
 // ── Circuit Breaker ──────────────────────────────────────────────────────────
 type CircuitState = "closed" | "open" | "half_open";
@@ -141,7 +141,9 @@ export async function resilientFetch<T>(
   const { serviceName, timeoutMs = 5_000, fallback, useMtls } = options;
   const retryConfig = { ...DEFAULT_RETRY, ...options.retry };
   const breaker = getBreaker(serviceName);
-  const mtlsAgent = useMtls ? getMtlsAgent() : null;
+  // Round-8 fix: undici fetch ignores the legacy https.Agent `agent` option —
+  // use a `dispatcher` (undici Agent) so mTLS is actually applied.
+  const mtlsDispatcher = useMtls ? await getMtlsDispatcher() : null;
 
   if (!breaker.canExecute()) {
     if (fallback !== undefined) {
@@ -167,8 +169,8 @@ export async function resilientFetch<T>(
         ...init,
         signal: controller.signal,
       };
-      if (mtlsAgent) {
-        (fetchInit as Record<string, unknown>).agent = mtlsAgent;
+      if (mtlsDispatcher) {
+        (fetchInit as Record<string, unknown>).dispatcher = mtlsDispatcher;
       }
 
       const response = await fetch(url, fetchInit);

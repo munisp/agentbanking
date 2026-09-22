@@ -26,7 +26,16 @@ export function TenantBrandingProvider({ children }: { children: ReactNode }) {
   // const [userRole, setUserRole] = useState<UserRole | null>(null);
 
   useEffect(() => {
+    // Raw stored value from the last applied load; avoids JSON.parse + setState
+    // (and the resulting app-wide re-render) when nothing changed.
+    let lastRawConfig: string | null | undefined = undefined;
     const loadTenant = () => {
+      const raw = localStorage.getItem('tenant_config');
+      if (raw === lastRawConfig) {
+        setIsLoading(false);
+        return;
+      }
+      lastRawConfig = raw;
       const config = tenantService.getTenantConfig();
       setTenant(config);
       setIsLoading(false);
@@ -74,8 +83,8 @@ export function TenantBrandingProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener('storage', handleStorageChange);
     
-    // Also check periodically for changes
-    const interval = setInterval(loadTenant, 5000);
+    // Also check periodically for changes (same-tab writes don't fire "storage")
+    const interval = setInterval(loadTenant, 30000);
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);

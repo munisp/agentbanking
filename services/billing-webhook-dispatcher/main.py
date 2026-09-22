@@ -15,8 +15,8 @@ import time
 from datetime import datetime
 from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
-from collections import defaultdict
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from collections import defaultdict, deque
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import urllib.request
 import urllib.error
 
@@ -138,10 +138,14 @@ class WebhookDelivery:
     created_at: str
 
 class WebhookDispatcher:
+    # Bound in-memory history (keep newest N) so long-running processes don't
+    # grow without limit.
+    MAX_DELIVERIES_KEPT = int(os.getenv("WEBHOOK_DELIVERIES_KEPT", "1000"))
+
     def __init__(self):
         self.configs: Dict[int, List[WebhookConfig]] = {}
-        self.deliveries: List[WebhookDelivery] = []
-        self.dead_letter_queue: List[WebhookDelivery] = []
+        self.deliveries: deque = deque(maxlen=self.MAX_DELIVERIES_KEPT)
+        self.dead_letter_queue: deque = deque(maxlen=self.MAX_DELIVERIES_KEPT)
         self._load_default_configs()
         logger.info(f"[WebhookDispatcher] Initialized with {len(self.configs)} tenant configs")
 
@@ -352,4 +356,6 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     logger.info(f"[BillingWebhookDispatcher] Starting on :{PORT}")
-    HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    # ThreadingHTTPServer (minimal change): a slow blocking delivery no longer
+    # stalls /health and other requests. Threads are daemonized by default.
+    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

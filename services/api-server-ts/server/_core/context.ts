@@ -15,6 +15,14 @@ import type { CreateExpressContextOptions } from "@trpc/server/adapters/express"
 import type { User } from "../../drizzle/schema";
 import { verifySessionJwt, KC_SESSION_COOKIE } from "./keycloakAuth";
 import { getUserByKeycloakSub } from "../db";
+import { withCacheTyped } from "../lib/cacheAside";
+
+// Round-8 perf: cache the per-request users-by-keycloakSub lookup for 15s
+// (Redis, type-preserving via superjson, singleflight). No invalidation hook
+// exists on user writes, so the staleness bound is the TTL: role/status
+// changes take up to 15s to propagate. Fail-open: Redis errors fall through
+// to the DB lookup.
+const USER_LOOKUP_CACHE_TTL_S = 15;
 
 const isDev = process.env.NODE_ENV === "development";
 const isTest = process.env.NODE_ENV === "test";
@@ -80,7 +88,11 @@ export async function createContext(
       if (session?.sub) {
         let dbUser: User | undefined;
         try {
-          dbUser = await getUserByKeycloakSub(session.sub);
+          dbUser = await withCacheTyped(
+            `ctx:user:${session.sub}`,
+            USER_LOOKUP_CACHE_TTL_S,
+            () => getUserByKeycloakSub(session.sub)
+          );
         } catch (dbErr) {
           if (devBypassEnabled) {
             console.warn("[context] DB lookup failed, using dev fallback user");

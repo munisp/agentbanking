@@ -40,7 +40,7 @@
  */
 
 import { Router, Request, Response, NextFunction } from "express";
-import { getDb } from "./db";
+import { getDb, getReadDb } from "./db";
 import {
   agents,
   transactions,
@@ -164,20 +164,29 @@ function err(res: Response, e: unknown, status = 500) {
 
 router.get("/dashboard/stats", async (req, res) => {
   try {
-    const db = await getDb();
-    if (!db)
+    // Round-8 perf (R19): three aggregates ran SERIALLY on the PRIMARY pool,
+    // including a full-table SUM. Now a single combined aggregate query on
+    // the read replica (one scan instead of three round trips).
+    const readDb = await getReadDb();
+    if (!readDb)
       return ok(res, { totalTransactions: 0, totalAgents: 0, totalVolume: 0 });
-    const [txCount] = await db.select({ count: count() }).from(transactions);
-    const [agentCount] = await db.select({ count: count() }).from(agents);
-    const [volRow] = await db
-      .select({
-        total: sql<number>`COALESCE(SUM(amount), 0)`,
-      })
-      .from(transactions);
+    const [txAgg, agentAgg] = await Promise.all([
+      readDb.execute(sql`
+        SELECT COUNT(*)::int AS "txCount",
+               COALESCE(SUM("amount"::numeric), 0) AS "totalVolume"
+        FROM ${transactions}
+      `),
+      readDb.select({ count: count() }).from(agents),
+    ]);
+    const txRow = Array.isArray(txAgg)
+      ? (txAgg as any[])[0]
+      : (txAgg as any).rows?.[0];
     ok(res, {
-      totalTransactions: txCount.count,
-      totalAgents: agentCount.count,
-      totalVolume: volRow.total,
+      totalTransactions: Number(txRow?.txCount ?? 0),
+      totalAgents: agentAgg[0]?.count ?? 0,
+      // Pass through as-is (numeric → string from pg), matching the
+      // pre-existing response shape exactly.
+      totalVolume: txRow?.totalVolume ?? 0,
       period: req.query.period ?? "today",
     });
   } catch (e) {

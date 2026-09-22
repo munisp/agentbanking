@@ -207,7 +207,9 @@ services:
       context: .
       dockerfile: services/go/Dockerfile.consolidated
       args:
-        SERVICES: "hierarchy-engine,offline-sync-orchestrator,ussd-gateway,ussd-tx-processor,ussd-receipt-printer,at-ussd-handler,at-sms-webhook"
+        # at-sms-webhook removed: services/go/at-sms-webhook was deleted (round 7);
+        # the live service builds from the flat services/at-sms-webhook dir.
+        SERVICES: "hierarchy-engine,offline-sync-orchestrator,ussd-gateway,ussd-tx-processor,ussd-receipt-printer,at-ussd-handler"
     environment:
       <<: *common-env
       SERVICE_GROUP: agents

@@ -53,9 +53,15 @@ func main() {
 
 	var addr = ":" + GetEnv("PORT", "8011")
 
+	// F8: explicit server timeouts (Slowloris protection); DB-backed list
+	// endpoints previously pinned connections indefinitely.
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: router,
+		Addr:              addr,
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       90 * time.Second,
 	}
 
 	go func() {
@@ -267,6 +273,27 @@ func createLoanApplication(c *gin.Context) {
 	c.JSON(201, application)
 }
 
+// paginationParams parses ?limit=/?offset= with a default of 100 and a hard
+// cap of 1000 (F21).
+func paginationParams(c *gin.Context) (int, int) {
+	limit := 100
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	offset := 0
+	if v := c.Query("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			offset = n
+		}
+	}
+	return limit, offset
+}
+
 func getAllLoanApplications(c *gin.Context) {
 	tenantID := c.GetHeader("X-Tenant-ID")
 
@@ -274,6 +301,10 @@ func getAllLoanApplications(c *gin.Context) {
 		SendErrorGin(c, "bad_request", "Missing X-Tenant-ID header", 400)
 		return
 	}
+
+	// F21: LIMIT/OFFSET pagination (default 100, cap 1000) — the full tenant
+	// history is never returned in one response.
+	limit, offset := paginationParams(c)
 
 	query := `
 		SELECT id, tenant_id, applicant_id, loan_application_id, loan_amount, loan_purpose, requested_term,
@@ -283,9 +314,10 @@ func getAllLoanApplications(c *gin.Context) {
 		FROM loan_applications
 		WHERE tenant_id = $1
 		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
 	`
 
-	rows, err := db.Query(query, tenantID)
+	rows, err := db.Query(query, tenantID, limit, offset)
 	if err != nil {
 		SendErrorGin(c, "internal_error", "Database query failed", 500)
 		return
@@ -335,6 +367,9 @@ func getLoanApplications(c *gin.Context) {
 		return
 	}
 
+	// F21: LIMIT/OFFSET pagination (default 100, cap 1000).
+	limit, offset := paginationParams(c)
+
 	query := `
 		SELECT id, tenant_id, applicant_id, loan_application_id, loan_amount, loan_purpose, requested_term,
 		       monthly_income, existing_debt, collateral_value, credit_score, employment_status,
@@ -343,9 +378,10 @@ func getLoanApplications(c *gin.Context) {
 		FROM loan_applications
 		WHERE applicant_id = $1 AND tenant_id = $2
 		ORDER BY created_at DESC
+		LIMIT $3 OFFSET $4
 	`
 
-	rows, err := db.Query(query, keycloakID, tenantID)
+	rows, err := db.Query(query, keycloakID, tenantID, limit, offset)
 	if err != nil {
 		SendErrorGin(c, "internal_error", "Database query failed", 500)
 		return

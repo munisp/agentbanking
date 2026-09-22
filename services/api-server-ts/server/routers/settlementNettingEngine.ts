@@ -348,10 +348,21 @@ export const settlementNettingEngineRouter = router({
           (input.parties?.length ?? 0) > 0
             ? grossAmount / (input.parties?.length ?? 1)
             : grossAmount;
-        for (const party of input.parties ?? []) {
+        // Round-8 perf (R12): was a serial per-party INSERT loop (N round
+        // trips inside the transaction, holding the tx open). Single bulk
+        // multi-row INSERT instead — same statement, one round trip.
+        const parties = input.parties ?? [];
+        if (parties.length > 0) {
+          const valueRows = sql.join(
+            parties.map(
+              party =>
+                sql`(${id}, ${party}, ${perPartyGross}, ${feeAmount}, ${netAmount})`
+            ),
+            sql`, `
+          );
           await tx.execute(sql`
             INSERT INTO netting_run_items (run_id, party, gross_amount, fee_amount, net_amount)
-            VALUES (${id}, ${party}, ${perPartyGross}, ${feeAmount}, ${netAmount})
+            VALUES ${valueRows}
           `);
         }
         return id;

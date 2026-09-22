@@ -74,7 +74,7 @@ export default function Loans() {
   useEffect(() => {
     fetchLoanApplications(true);
     // Refresh every 10 seconds (silently in background)
-    const interval = setInterval(() => fetchLoanApplications(false), 10000);
+    const interval = setInterval(() => fetchLoanApplications(false), 30000);
     return () => clearInterval(interval);
   }, []);
 

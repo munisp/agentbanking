@@ -2,14 +2,41 @@ import os
 import requests
 import logging
 from pathlib import Path
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
 PERMIFY_URL = os.getenv("PERMIFY_URL", "http://localhost:3476")
 
+# Module-level shared session: keep-alive connection pooling across all
+# Permify calls (schema load, permission checks, relationship writes).
+_SESSION = requests.Session()
+_SESSION.mount(
+    "http://",
+    HTTPAdapter(
+        pool_connections=4,
+        pool_maxsize=int(os.getenv("PERMIFY_HTTP_POOL_MAXSIZE", "32")),
+        max_retries=Retry(total=2, backoff_factor=0.1, status_forcelist=(502, 503, 504)),
+    ),
+)
+_SESSION.mount(
+    "https://",
+    HTTPAdapter(
+        pool_connections=4,
+        pool_maxsize=int(os.getenv("PERMIFY_HTTP_POOL_MAXSIZE", "32")),
+        max_retries=Retry(total=2, backoff_factor=0.1, status_forcelist=(502, 503, 504)),
+    ),
+)
+
 
 def load_schema():
-    """Load Permify schema from file and deploy to all pods"""
+    """Load Permify schema from file with a single write.
+
+    The schema write response returns the authoritative ``schema_version``,
+    which we read back from the response instead of hammering every pod
+    with repeated writes (previous behavior: 15 sequential POSTs).
+    """
     try:
         # Get the correct path to the schema file
         schema_path = Path(__file__).parent.parent / "schemas" / "permify" / "v2.perm"
@@ -20,38 +47,21 @@ def load_schema():
         # Load schema to tenant from environment variable or default to 'bpmgd'
         tenant_id = os.getenv("PERMIFY_DEFAULT_TENANT", "bpmgd")
 
-        # Write schema multiple times to ensure all Permify pods receive it
-        # Permify uses in-memory storage with 3 replicas
-        write_attempts = int(os.getenv("PERMIFY_WRITE_ATTEMPTS", "15"))
-        successful_writes = 0
-        schema_version = "unknown"
+        response = _SESSION.post(
+            f"{PERMIFY_URL}/v1/tenants/{tenant_id}/schemas/write",
+            json={"schema": schema},
+            timeout=10,
+        )
 
-        for attempt in range(write_attempts):
-            try:
-                response = requests.post(
-                    f"{PERMIFY_URL}/v1/tenants/{tenant_id}/schemas/write",
-                    json={"schema": schema},
-                    timeout=10,
-                )
-
-                if response.status_code == 200:
-                    successful_writes += 1
-                    result = response.json()
-                    schema_version = result.get("schema_version", schema_version)
-            except Exception as attempt_error:
-                logger.debug(
-                    f"Schema write attempt {attempt + 1} failed: {str(attempt_error)}"
-                )
-                continue
-
-        if successful_writes > 0:
+        if response.status_code == 200:
+            result = response.json()
+            schema_version = result.get("schema_version", "unknown")
             logger.info(
-                f"Permify schema loaded successfully (version: {schema_version}, "
-                f"{successful_writes}/{write_attempts} writes succeeded)"
+                f"Permify schema loaded successfully (version: {schema_version})"
             )
         else:
             logger.error(
-                f"Failed to load Permify schema: all {write_attempts} write attempts failed"
+                f"Failed to load Permify schema: HTTP {response.status_code}: {response.text}"
             )
     except Exception as e:
         logger.error(f"Error loading Permify schema: {str(e)}")
@@ -70,7 +80,7 @@ def check_permission(
             "subject": {"type": "user", "id": user_id},
         }
 
-        response = requests.post(
+        response = _SESSION.post(
             f"{PERMIFY_URL}/v1/tenants/{tenant_id}/permissions/check",
             json=payload,
             timeout=5,
@@ -101,10 +111,53 @@ def check_permission(
         return False
 
 
+def _read_relationships(
+    tenant_id: str,
+    entity_type: str,
+    entity_id: str,
+    relation: str,
+    user_id: str,
+    snap_token: str = "",
+) -> list:
+    """Read back relationship tuples, pinned to ``snap_token`` when given.
+
+    Returns the list of matching tuples, or None if the read itself failed
+    (distinguishing "no tuples" from "read error" for callers).
+    """
+    try:
+        payload = {
+            "metadata": {"snap_token": snap_token},
+            "filter": {
+                "entity": {"type": entity_type, "ids": [entity_id]},
+                "relation": relation,
+                "subject": {"type": "user", "ids": [user_id]},
+            },
+        }
+        response = _SESSION.post(
+            f"{PERMIFY_URL}/v1/tenants/{tenant_id}/relationships/read",
+            json=payload,
+            timeout=5,
+        )
+        if response.status_code != 200:
+            logger.warning(
+                f"Relationship read-verify failed: HTTP {response.status_code}: {response.text}"
+            )
+            return None
+        return response.json().get("tuples", [])
+    except Exception as e:
+        logger.warning(f"Relationship read-verify error: {str(e)}")
+        return None
+
+
 def assign_role(
     user_id: str, tenant_id: str, role: str, entity_type: str, entity_id: str
 ) -> bool:
-    """Assign role/relation to user for a specific entity"""
+    """Assign role/relation to user for a specific entity.
+
+    Performs a single write and verifies it with a consistent read pinned
+    to the returned ``snap_token`` (replacing the previous 15 sequential
+    write attempts).
+    """
     try:
         payload = {
             "metadata": {"schema_version": ""},
@@ -117,39 +170,42 @@ def assign_role(
             ],
         }
 
-        # Write relationship multiple times to ensure all Permify pods receive it
-        # Permify uses in-memory storage with 3 replicas, so we need to write
-        # multiple times through the load balancer to hit all pods
-        write_attempts = int(os.getenv("PERMIFY_WRITE_ATTEMPTS", "15"))
-        successful_writes = 0
+        response = _SESSION.post(
+            f"{PERMIFY_URL}/v1/tenants/{tenant_id}/relationships/write",
+            json=payload,
+            timeout=5,
+        )
 
-        for attempt in range(write_attempts):
-            try:
-                response = requests.post(
-                    f"{PERMIFY_URL}/v1/tenants/{tenant_id}/relationships/write",
-                    json=payload,
-                    timeout=5,
-                )
-
-                if response.status_code in [200, 201]:
-                    successful_writes += 1
-            except Exception as attempt_error:
-                logger.debug(
-                    f"Write attempt {attempt + 1} failed: {str(attempt_error)}"
-                )
-                continue
-
-        if successful_writes > 0:
-            logger.info(
-                f"Successfully assigned role '{role}' to user {user_id} on {entity_type}:{entity_id} "
-                f"({successful_writes}/{write_attempts} writes succeeded)"
-            )
-            return True
-        else:
+        if response.status_code not in [200, 201]:
             logger.error(
-                f"Failed to assign role: all {write_attempts} write attempts failed"
+                f"Failed to assign role: HTTP {response.status_code}: {response.text}"
             )
             return False
+
+        snap_token = response.json().get("snap_token", "")
+
+        # Read-back verify at the write's snap_token (consistent read).
+        tuples = _read_relationships(
+            tenant_id, entity_type, entity_id, role, user_id, snap_token
+        )
+        if tuples is not None and not tuples:
+            logger.error(
+                f"Role assignment not visible at snap_token for user {user_id} "
+                f"on {entity_type}:{entity_id}"
+            )
+            return False
+        if tuples is None:
+            # Write succeeded but verification read failed; don't fail the
+            # operation on a transient read error.
+            logger.warning(
+                f"Could not verify role assignment for user {user_id} "
+                f"(write succeeded, read-verify failed)"
+            )
+
+        logger.info(
+            f"Successfully assigned role '{role}' to user {user_id} on {entity_type}:{entity_id}"
+        )
+        return True
     except Exception as e:
         logger.error(f"Error assigning role: {str(e)}")
         return False
@@ -168,37 +224,45 @@ def remove_role(
             }
         }
 
-        # Delete relationship multiple times to ensure all Permify pods process it
-        delete_attempts = int(os.getenv("PERMIFY_WRITE_ATTEMPTS", "15"))
-        successful_deletes = 0
+        # Single delete, then read-back verify at the returned snap_token
+        # (replacing the previous 15 sequential delete attempts).
+        response = _SESSION.post(
+            f"{PERMIFY_URL}/v1/tenants/{tenant_id}/relationships/delete",
+            json=payload,
+            timeout=5,
+        )
 
-        for attempt in range(delete_attempts):
-            try:
-                response = requests.post(
-                    f"{PERMIFY_URL}/v1/tenants/{tenant_id}/relationships/delete",
-                    json=payload,
-                    timeout=5,
-                )
-
-                if response.status_code in [200, 204]:
-                    successful_deletes += 1
-            except Exception as attempt_error:
-                logger.debug(
-                    f"Delete attempt {attempt + 1} failed: {str(attempt_error)}"
-                )
-                continue
-
-        if successful_deletes > 0:
-            logger.info(
-                f"Successfully removed role '{role}' from user {user_id} on {entity_type}:{entity_id} "
-                f"({successful_deletes}/{delete_attempts} deletes succeeded)"
-            )
-            return True
-        else:
+        if response.status_code not in [200, 204]:
             logger.error(
-                f"Failed to remove role: all {delete_attempts} delete attempts failed"
+                f"Failed to remove role: HTTP {response.status_code}: {response.text}"
             )
             return False
+
+        try:
+            snap_token = response.json().get("snap_token", "") if response.content else ""
+        except ValueError:
+            snap_token = ""
+
+        # Read-back verify: the tuple should no longer be visible.
+        tuples = _read_relationships(
+            tenant_id, entity_type, entity_id, role, user_id, snap_token
+        )
+        if tuples:
+            logger.error(
+                f"Role removal not visible at snap_token for user {user_id} "
+                f"on {entity_type}:{entity_id}"
+            )
+            return False
+        if tuples is None:
+            logger.warning(
+                f"Could not verify role removal for user {user_id} "
+                f"(delete succeeded, read-verify failed)"
+            )
+
+        logger.info(
+            f"Successfully removed role '{role}' from user {user_id} on {entity_type}:{entity_id}"
+        )
+        return True
     except Exception as e:
         logger.error(f"Error removing role: {str(e)}")
         return False

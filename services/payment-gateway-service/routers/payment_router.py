@@ -38,19 +38,32 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
 
+# Startup-scoped singleton GatewayFactory. GatewayFactory caches gateway
+# instances (and their httpx.AsyncClients) internally, so constructing it
+# per request defeated the cache and forced a fresh client + TLS handshake
+# on every payment call.
+_gateway_factory: GatewayFactory | None = None
+
+
+def get_gateway_factory() -> GatewayFactory:
+    """Return the process-wide singleton GatewayFactory."""
+    global _gateway_factory
+    if _gateway_factory is None:
+        # Production: Load gateway configs from database or config file
+        gateway_configs = {
+            "paystack": {"is_active": True, "priority": 10},
+            "flutterwave": {"is_active": True, "priority": 20},
+            "interswitch": {"is_active": True, "priority": 30},
+            # ... other gateways
+        }
+        _gateway_factory = GatewayFactory(gateway_configs)
+    return _gateway_factory
+
 
 # Dependency to get payment service
 def get_payment_service(db: Session = Depends(get_db)) -> PaymentService:
     """Get payment service instance."""
-    # Production: Load gateway configs from database or config file
-    gateway_configs = {
-        "paystack": {"is_active": True, "priority": 10},
-        "flutterwave": {"is_active": True, "priority": 20},
-        "interswitch": {"is_active": True, "priority": 30},
-        # ... other gateways
-    }
-    gateway_factory = GatewayFactory(gateway_configs)
-    return PaymentService(db, gateway_factory)
+    return PaymentService(db, get_gateway_factory())
 
 
 @router.post(

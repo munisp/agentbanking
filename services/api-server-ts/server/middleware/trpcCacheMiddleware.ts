@@ -1,15 +1,31 @@
 /**
  * tRPC caching middleware — automatic query result caching via Redis.
  *
- * Caches all query (read) procedure results with configurable TTL.
- * Mutations bypass the cache entirely.
+ * Read-through cache for query (read) procedures:
+ *   1. BEFORE next(): cacheGet — on hit, short-circuit with the cached payload.
+ *   2. AFTER next(): cacheSet successful results (fire-and-forget).
+ * Mutations and subscriptions bypass the cache entirely.
  *
- * Cache key format: trpc:{path}:{hash(input)}
- * Default TTL: 30s for most queries, configurable per-path.
+ * Cache key format: trpc:{userId}:{path}:{hash(serializedInput)}
+ *   The user id is part of the key so one user's cached results can never be
+ *   served to another user. Anonymous callers share the "anon" bucket, which
+ *   only ever contains results produced by genuinely public procedures
+ *   (protected procedures always run with ctx.user set by createContext).
+ *
+ * TTL: 10s default (PATH_TTL overrides per path). Staleness bound: a revoked
+ * permission or updated record may be served from cache for at most the TTL.
+ *
+ * Fail-open: any Redis error (both helpers already swallow errors and return
+ * null/false) results in a normal uncached call — the cache never blocks or
+ * breaks the request path.
+ *
+ * Serialization: superjson (the configured tRPC transformer) so Dates/Maps in
+ * resolver results round-trip correctly through the cache.
  */
 
-import { cacheSet } from "../redisClient";
+import { cacheGet, cacheSet } from "../redisClient";
 import crypto from "crypto";
+import superjson from "superjson";
 
 const PATH_TTL: Record<string, number> = {
   "healthCheck.status": 10,
@@ -35,13 +51,13 @@ const SKIP_CACHE_PATHS = new Set([
   "auth.register",
 ]);
 
-const DEFAULT_TTL = 30;
+const DEFAULT_TTL = 10;
 
 function hashInput(input: unknown): string {
   if (input === undefined || input === null) return "no-input";
   return crypto
     .createHash("md5")
-    .update(JSON.stringify(input))
+    .update(superjson.stringify(input))
     .digest("hex")
     .slice(0, 12);
 }
@@ -53,6 +69,7 @@ export function createTrpcCacheMiddleware(t: { middleware: (fn: any) => any }) {
       type: string;
       next: () => Promise<any>;
       rawInput?: unknown;
+      ctx?: { user?: { id?: number | string } | null };
     }) => {
       const { path, type, next } = opts;
 
@@ -60,15 +77,33 @@ export function createTrpcCacheMiddleware(t: { middleware: (fn: any) => any }) {
       if (type !== "query") return next();
       if (SKIP_CACHE_PATHS.has(path)) return next();
 
-      // Execute the procedure
+      const userId = opts.ctx?.user?.id != null ? String(opts.ctx.user.id) : "anon";
+      const cacheKey = `trpc:${userId}:${path}:${hashInput(opts.rawInput)}`;
+      const ttl = PATH_TTL[path] ?? DEFAULT_TTL;
+
+      // 1. Read-through: serve from Redis on hit. cacheGet returns null on any
+      //    Redis error, so failures fall through to a normal procedure call.
+      const cached = await cacheGet(cacheKey);
+      if (cached !== null) {
+        try {
+          return { ok: true, data: superjson.parse(cached) };
+        } catch {
+          // Corrupt/legacy payload — treat as a miss and overwrite below.
+        }
+      }
+
+      // 2. Execute the procedure
       const result = await next();
 
       // Cache successful results in Redis (fire-and-forget)
       if (result.ok) {
-        const inputHash = hashInput(opts.rawInput);
-        const cacheKey = `trpc:${path}:${inputHash}`;
-        const ttl = PATH_TTL[path] ?? DEFAULT_TTL;
-        cacheSet(cacheKey, JSON.stringify(result.data), ttl).catch(() => {});
+        try {
+          cacheSet(cacheKey, superjson.stringify(result.data), ttl).catch(
+            () => {}
+          );
+        } catch {
+          // superjson.stringify on unserializable data must not break the call
+        }
       }
 
       return result;

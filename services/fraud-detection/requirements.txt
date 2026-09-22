@@ -20,3 +20,4 @@ structlog==23.2.0
 flask>=3.1.1
 flask-cors>=5.0.1
 requests>=2.32.4
+gunicorn>=21.2

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Data extraction rules referenced by AndroidManifest.xml
+  (android:dataExtractionRules). minSdk 26 / targetSdk 34.
+  Default template: include everything in cloud backup and
+  device transfer; no exclusions.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+    </cloud-backup>
+    <device-transfer>
+    </device-transfer>
+</data-extraction-rules>

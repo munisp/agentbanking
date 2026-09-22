@@ -1,9 +1,19 @@
+import threading
+import time
+
 from utils import ExternalAPIClient, get_config, ApiError, create_logger
 from definitions import CreateKeycloakUser, GetKeycloakUserResponse
 from urllib.parse import urlencode, quote
 
 config = get_config()
 logger = create_logger(__name__)
+
+# Process-wide admin-token cache. KeycloakAdapter instances are created per
+# operation, so the cache must live at module level to be effective.
+# Refresh this many seconds before the token's actual expiry.
+_ADMIN_TOKEN_EXPIRY_MARGIN_SECONDS = 30
+_admin_token_cache = {"token": None, "expires_at": 0.0}
+_admin_token_lock = threading.Lock()
 
 
 class KeycloakAdapter(ExternalAPIClient):
@@ -22,33 +32,59 @@ class KeycloakAdapter(ExternalAPIClient):
         self.headers["Authorization"] = f"Bearer {self.request_admin_cli_token()}"
 
     def request_admin_cli_token(self):
-        """Request an admin access token from keycloak."""
+        """Request an admin access token from keycloak.
 
-        data = {
-            "client_id": "admin-cli",
-            "username": config.KEYCLOAK_ADMIN_USERNAME,
-            "password": config.KEYCLOAK_ADMIN_PASSWORD,
-            "grant_type": "password",
-        }
+        The token is cached process-wide until ``expires_in`` minus a safety
+        margin, so we no longer pay an extra token-endpoint round trip for
+        every Keycloak operation.
+        """
 
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        now = time.time()
+        cached_token = _admin_token_cache["token"]
+        if cached_token and now < (
+            _admin_token_cache["expires_at"] - _ADMIN_TOKEN_EXPIRY_MARGIN_SECONDS
+        ):
+            return cached_token
 
-        response = self._post(
-            endpoint="/realms/master/protocol/openid-connect/token",
-            data=urlencode(data),
-            headers=headers,
-        )
+        # Singleflight: only one thread fetches a fresh token; others either
+        # wait for it or use the still-valid cached token.
+        with _admin_token_lock:
+            now = time.time()
+            cached_token = _admin_token_cache["token"]
+            if cached_token and now < (
+                _admin_token_cache["expires_at"] - _ADMIN_TOKEN_EXPIRY_MARGIN_SECONDS
+            ):
+                return cached_token
 
-        access_token = response.get("access_token", "")
+            data = {
+                "client_id": "admin-cli",
+                "username": config.KEYCLOAK_ADMIN_USERNAME,
+                "password": config.KEYCLOAK_ADMIN_PASSWORD,
+                "grant_type": "password",
+            }
 
-        if not access_token:
-            raise ApiError(
-                message="Failed to fetch keycloak admin token.",
-                status_code=500,
-                code="AUTH-KEYCLOAK-INT-5001",
+            headers = {"Content-Type": "application/x-www-form-urlencoded"}
+
+            response = self._post(
+                endpoint="/realms/master/protocol/openid-connect/token",
+                data=urlencode(data),
+                headers=headers,
             )
 
-        return access_token
+            access_token = response.get("access_token", "")
+
+            if not access_token:
+                raise ApiError(
+                    message="Failed to fetch keycloak admin token.",
+                    status_code=500,
+                    code="AUTH-KEYCLOAK-INT-5001",
+                )
+
+            expires_in = response.get("expires_in", 60)
+            _admin_token_cache["token"] = access_token
+            _admin_token_cache["expires_at"] = time.time() + expires_in
+
+            return access_token
 
     def create_user(self, payload: CreateKeycloakUser) -> None:
         """Create new keycloak user."""

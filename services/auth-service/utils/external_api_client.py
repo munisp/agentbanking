@@ -1,12 +1,36 @@
 """External Api Client"""
 
+import os
 import requests
 
 from typing import Any
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from .errors import InternalApiError
 from .helpers import create_logger
 
 logger = create_logger(__name__)
+
+# Module-level shared session: keep-alive connection pooling so we don't pay
+# a fresh TCP+TLS handshake on every external call (Keycloak, CoA, etc.).
+_POOL_MAXSIZE = int(os.getenv("EXTERNAL_API_POOL_MAXSIZE", "32"))
+
+
+def _build_session() -> requests.Session:
+    session = requests.Session()
+    adapter = HTTPAdapter(
+        pool_connections=8,
+        pool_maxsize=_POOL_MAXSIZE,
+        max_retries=Retry(
+            total=2, backoff_factor=0.1, status_forcelist=(502, 503, 504)
+        ),
+    )
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
+_SESSION = _build_session()
 
 
 class ExternalAPIClient:
@@ -111,7 +135,7 @@ class ExternalAPIClient:
         """
         url = self._get_url(endpoint)
         merged_headers = {**(self.headers or {}), **(headers or {})}
-        response = requests.get(url, params=params, headers=merged_headers, timeout=30)
+        response = _SESSION.get(url, params=params, headers=merged_headers, timeout=30)
         return self._handle_response(response)
 
     def _post(
@@ -142,7 +166,7 @@ class ExternalAPIClient:
         elif isinstance(data, str):
             str_data = data
 
-        response = requests.post(
+        response = _SESSION.post(
             url, json=json_data, data=str_data, headers=merged_headers, timeout=30
         )
 
@@ -187,7 +211,7 @@ class ExternalAPIClient:
         """
         url = self._get_url(endpoint)
         merged_headers = {**(self.headers or {}), **(headers or {})}
-        response = requests.put(url, json=data, headers=merged_headers, timeout=60)
+        response = _SESSION.put(url, json=data, headers=merged_headers, timeout=60)
 
         if get_response:
             return {
@@ -230,7 +254,7 @@ class ExternalAPIClient:
         """
         url = self._get_url(endpoint)
         merged_headers = {**(self.headers or {}), **(headers or {})}
-        response = requests.patch(url, json=data, headers=merged_headers, timeout=60)
+        response = _SESSION.patch(url, json=data, headers=merged_headers, timeout=60)
 
         if get_response:
             return {
@@ -255,5 +279,5 @@ class ExternalAPIClient:
         """
         url = self._get_url(endpoint)
         merged_headers = {**(self.headers or {}), **(headers or {})}
-        response = requests.delete(url, headers=merged_headers, json=data, timeout=60)
+        response = _SESSION.delete(url, headers=merged_headers, json=data, timeout=60)
         return self._handle_response(response)

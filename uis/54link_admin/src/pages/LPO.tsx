@@ -172,11 +172,6 @@ export default function LPO() {
     if (activeTab === 'lpos' || activeTab === 'repayments') {
       // Load LPOs for both LPOs tab and Repayments tab (needed for selector)
       fetchLPOs(true);
-      if (activeTab === 'lpos') {
-        // Refresh every 10 seconds (silently in background)
-        const interval = setInterval(() => fetchLPOs(false), 10000);
-        return () => clearInterval(interval);
-      }
     }
   }, [activeTab]);
 
@@ -223,9 +218,6 @@ export default function LPO() {
   useEffect(() => {
     if (activeTab === 'repayments' && selectedLPOId) {
       fetchRepayments(true);
-      // Refresh every 10 seconds (silently in background)
-      const interval = setInterval(() => fetchRepayments(false), 10000);
-      return () => clearInterval(interval);
     } else if (activeTab === 'repayments' && !selectedLPOId) {
       setRepayments([]);
       setRepaymentsLoading(false);
@@ -267,11 +259,23 @@ export default function LPO() {
   useEffect(() => {
     if (activeTab === 'suppliers') {
       fetchSuppliers(true);
-      // Refresh every 10 seconds (silently in background)
-      const interval = setInterval(() => fetchSuppliers(false), 10000);
-      return () => clearInterval(interval);
     }
   }, [activeTab]);
+
+  // Consolidated background refresh — one 30s interval for all LPO tabs
+  // (previously three separate 10s intervals). Silent refresh, per-tab target.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (activeTab === 'lpos') {
+        fetchLPOs(false);
+      } else if (activeTab === 'repayments' && selectedLPOId) {
+        fetchRepayments(false);
+      } else if (activeTab === 'suppliers') {
+        fetchSuppliers(false);
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [activeTab, selectedLPOId]);
 
   const fetchSupplierProfile = async (supplierId: string) => {
     setSupplierDetailsLoading(true);

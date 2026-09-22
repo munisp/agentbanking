@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -11,6 +12,29 @@ import (
 	"sync"
 	"time"
 )
+
+// Shared HTTP clients (F11): a single client per upstream class gives
+// connection reuse and a hard timeout so hung sidecars/bureaus cannot pin
+// goroutines forever.
+var (
+	eventHTTPClient     = &http.Client{Timeout: 5 * time.Second}
+	kycEngineHTTPClient = &http.Client{Timeout: 10 * time.Second}
+	bureauHTTPClient    = &http.Client{Timeout: 15 * time.Second}
+)
+
+// postJSONFireAndForget POSTs a JSON payload without blocking the caller and
+// always drains + closes the response body so TCP connections return to the
+// pool (F11: previously http.Post via DefaultClient with no timeout and the
+// body never closed).
+func postJSONFireAndForget(url string, payload []byte) {
+	resp, err := eventHTTPClient.Post(url, "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		log.Printf("[KYC-Enforcement] event POST %s failed: %v", url, err)
+		return
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // KYC Enforcement Gateway — Fail-Closed Gate + Loan KYC + Multi-Bureau
@@ -45,24 +69,24 @@ import (
 // ── Configuration ────────────────────────────────────────────────────────────
 
 type Config struct {
-	Port             string
-	KYCEngineURL     string
-	LivenessURL      string
-	SanctionsURL     string
-	KafkaBrokers     string
-	RedisURL         string
-	KeycloakURL      string
-	TigerBeetleURL   string
-	TemporalURL      string
-	DaprURL          string
-	PermifyURL       string
-	FirstCentralURL  string
-	CRCURL           string
+	Port              string
+	KYCEngineURL      string
+	LivenessURL       string
+	SanctionsURL      string
+	KafkaBrokers      string
+	RedisURL          string
+	KeycloakURL       string
+	TigerBeetleURL    string
+	TemporalURL       string
+	DaprURL           string
+	PermifyURL        string
+	FirstCentralURL   string
+	CRCURL            string
 	CreditRegistryURL string
-	FirstCentralKey  string
-	CRCKey           string
+	FirstCentralKey   string
+	CRCKey            string
 	CreditRegistryKey string
-	Environment      string
+	Environment       string
 }
 
 func loadConfig() Config {
@@ -115,28 +139,28 @@ const (
 )
 
 type EnforcementResult struct {
-	Allowed          bool       `json:"allowed"`
-	Reason           string     `json:"reason"`
-	RequiredKYCLevel KYCLevel   `json:"required_kyc_level"`
-	CurrentKYCLevel  KYCLevel   `json:"current_kyc_level,omitempty"`
-	KYCVerified      bool       `json:"kyc_verified"`
-	NextSteps        []string   `json:"next_steps,omitempty"`
-	ApplicationID    string     `json:"application_id,omitempty"`
-	KafkaEventID     string     `json:"kafka_event_id,omitempty"`
-	GatewayReachable bool       `json:"gateway_reachable"`
-	FailClosed       bool       `json:"fail_closed"`
+	Allowed          bool     `json:"allowed"`
+	Reason           string   `json:"reason"`
+	RequiredKYCLevel KYCLevel `json:"required_kyc_level"`
+	CurrentKYCLevel  KYCLevel `json:"current_kyc_level,omitempty"`
+	KYCVerified      bool     `json:"kyc_verified"`
+	NextSteps        []string `json:"next_steps,omitempty"`
+	ApplicationID    string   `json:"application_id,omitempty"`
+	KafkaEventID     string   `json:"kafka_event_id,omitempty"`
+	GatewayReachable bool     `json:"gateway_reachable"`
+	FailClosed       bool     `json:"fail_closed"`
 }
 
 type AccountOpeningRequest struct {
-	CustomerID   string      `json:"customer_id"`
-	Tier         AccountTier `json:"tier"`
-	ProductType  string      `json:"product_type"` // savings, current, domiciliary, fixed_deposit, corporate
-	FirstName    string      `json:"first_name"`
-	LastName     string      `json:"last_name"`
-	Phone        string      `json:"phone"`
-	BVN          string      `json:"bvn,omitempty"`
-	NIN          string      `json:"nin,omitempty"`
-	Email        string      `json:"email,omitempty"`
+	CustomerID  string      `json:"customer_id"`
+	Tier        AccountTier `json:"tier"`
+	ProductType string      `json:"product_type"` // savings, current, domiciliary, fixed_deposit, corporate
+	FirstName   string      `json:"first_name"`
+	LastName    string      `json:"last_name"`
+	Phone       string      `json:"phone"`
+	BVN         string      `json:"bvn,omitempty"`
+	NIN         string      `json:"nin,omitempty"`
+	Email       string      `json:"email,omitempty"`
 }
 
 type LoanEnforcementRequest struct {
@@ -148,30 +172,30 @@ type LoanEnforcementRequest struct {
 }
 
 type BureauVerificationRequest struct {
-	CustomerID  string `json:"customer_id"`
-	BVN         string `json:"bvn"`
-	NIN         string `json:"nin,omitempty"`
-	FullName    string `json:"full_name"`
-	DateOfBirth string `json:"date_of_birth"`
-	Phone       string `json:"phone"`
+	CustomerID  string   `json:"customer_id"`
+	BVN         string   `json:"bvn"`
+	NIN         string   `json:"nin,omitempty"`
+	FullName    string   `json:"full_name"`
+	DateOfBirth string   `json:"date_of_birth"`
+	Phone       string   `json:"phone"`
 	Bureaus     []string `json:"bureaus,omitempty"` // firstcentral, crc, creditregistry
 }
 
 type BureauResult struct {
-	Bureau         string  `json:"bureau"`
-	Status         string  `json:"status"` // verified, not_found, mismatch, error, timeout
-	Confidence     float64 `json:"confidence"`
-	CreditScore    int     `json:"credit_score,omitempty"`
+	Bureau         string   `json:"bureau"`
+	Status         string   `json:"status"` // verified, not_found, mismatch, error, timeout
+	Confidence     float64  `json:"confidence"`
+	CreditScore    int      `json:"credit_score,omitempty"`
 	MatchedFields  []string `json:"matched_fields,omitempty"`
 	Discrepancies  []string `json:"discrepancies,omitempty"`
-	ResponseTimeMs int64   `json:"response_time_ms"`
+	ResponseTimeMs int64    `json:"response_time_ms"`
 }
 
 type BureauVerificationResult struct {
 	VerificationID string         `json:"verification_id"`
 	CustomerID     string         `json:"customer_id"`
 	OverallStatus  string         `json:"overall_status"` // verified, partial, failed
-	Consensus      float64        `json:"consensus"` // % agreement across bureaus
+	Consensus      float64        `json:"consensus"`      // % agreement across bureaus
 	BureauResults  []BureauResult `json:"bureau_results"`
 	CreditScore    int            `json:"aggregated_credit_score,omitempty"`
 	Timestamp      time.Time      `json:"timestamp"`
@@ -189,11 +213,11 @@ var productKYCMap = map[string]struct {
 	Level KYCLevel
 	Tier  AccountTier
 }{
-	"savings":      {KYCLevelBasic, Tier1},
-	"current":      {KYCLevelStandard, Tier2},
-	"domiciliary":  {KYCLevelEnhanced, Tier3},
+	"savings":       {KYCLevelBasic, Tier1},
+	"current":       {KYCLevelStandard, Tier2},
+	"domiciliary":   {KYCLevelEnhanced, Tier3},
 	"fixed_deposit": {KYCLevelStandard, Tier2},
-	"corporate":    {KYCLevelFullEDD, Tier3},
+	"corporate":     {KYCLevelFullEDD, Tier3},
 }
 
 // ── Loan KYC Level Requirements (CBN) ────────────────────────────────────────
@@ -214,32 +238,96 @@ func requiredKYCForLoan(loanType string, amount float64) KYCLevel {
 // ── Application State ────────────────────────────────────────────────────────
 
 type AppState struct {
-	config    Config
-	mu        sync.RWMutex
-	kycCache  map[string]KYCLevel // customerID → verified level
+	config       Config
+	mu           sync.RWMutex
+	kycCache     map[string]KYCLevel // customerID → verified level
 	applications map[string]*ApplicationRecord
-	bureauResults map[string]*BureauVerificationResult
-	startTime time.Time
+	// appsByCustomer indexes applications by customerID so the verify-callback
+	// hot path is O(apps-for-customer) instead of an O(n) full-map scan under
+	// the write lock (F14).
+	appsByCustomer map[string]map[string]*ApplicationRecord
+	bureauResults  map[string]*BureauVerificationResult
+	startTime      time.Time
 }
 
 type ApplicationRecord struct {
-	ID          string      `json:"id"`
-	CustomerID  string      `json:"customer_id"`
-	Type        string      `json:"type"` // account, loan
-	Status      string      `json:"status"` // pending_kyc, approved, blocked
-	KYCVerified bool        `json:"kyc_verified"`
-	KYCLevel    KYCLevel    `json:"kyc_level"`
-	CreatedAt   time.Time   `json:"created_at"`
+	ID          string    `json:"id"`
+	CustomerID  string    `json:"customer_id"`
+	Type        string    `json:"type"`   // account, loan
+	Status      string    `json:"status"` // pending_kyc, approved, blocked
+	KYCVerified bool      `json:"kyc_verified"`
+	KYCLevel    KYCLevel  `json:"kyc_level"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 func NewAppState(cfg Config) *AppState {
 	return &AppState{
-		config:        cfg,
-		kycCache:      make(map[string]KYCLevel),
-		applications:  make(map[string]*ApplicationRecord),
-		bureauResults: make(map[string]*BureauVerificationResult),
-		startTime:     time.Now(),
+		config:         cfg,
+		kycCache:       make(map[string]KYCLevel),
+		applications:   make(map[string]*ApplicationRecord),
+		appsByCustomer: make(map[string]map[string]*ApplicationRecord),
+		bureauResults:  make(map[string]*BureauVerificationResult),
+		startTime:      time.Now(),
 	}
+}
+
+// addApplicationLocked inserts an application into the primary map and the
+// per-customer index. Caller must hold s.mu (write).
+func (s *AppState) addApplicationLocked(app *ApplicationRecord) {
+	s.applications[app.ID] = app
+	bucket := s.appsByCustomer[app.CustomerID]
+	if bucket == nil {
+		bucket = make(map[string]*ApplicationRecord)
+		s.appsByCustomer[app.CustomerID] = bucket
+	}
+	bucket[app.ID] = app
+}
+
+// removeApplicationLocked deletes an application from both maps. Caller must
+// hold s.mu (write).
+func (s *AppState) removeApplicationLocked(id string) {
+	app, ok := s.applications[id]
+	if !ok {
+		return
+	}
+	delete(s.applications, id)
+	if bucket := s.appsByCustomer[app.CustomerID]; bucket != nil {
+		delete(bucket, id)
+		if len(bucket) == 0 {
+			delete(s.appsByCustomer, app.CustomerID)
+		}
+	}
+}
+
+// evictTerminalEntriesLocked bounds the in-memory maps (F14): applications in
+// a terminal state (approved/blocked) and bureau results older than 24h are
+// evicted. Caller must hold s.mu (write).
+func (s *AppState) evictTerminalEntriesLocked() {
+	cutoff := time.Now().Add(-24 * time.Hour)
+	for id, app := range s.applications {
+		if (app.Status == "approved" || app.Status == "blocked") && app.CreatedAt.Before(cutoff) {
+			s.removeApplicationLocked(id)
+		}
+	}
+	for id, res := range s.bureauResults {
+		if res.Timestamp.Before(cutoff) {
+			delete(s.bureauResults, id)
+		}
+	}
+}
+
+// startEvictionLoop periodically evicts terminal entries so the maps stay
+// bounded under sustained traffic.
+func (s *AppState) startEvictionLoop() {
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.mu.Lock()
+			s.evictTerminalEntriesLocked()
+			s.mu.Unlock()
+		}
+	}()
 }
 
 // ── Middleware: Kafka Publishing ─────────────────────────────────────────────
@@ -254,7 +342,7 @@ func (s *AppState) publishKafka(topic string, event map[string]interface{}) stri
 	if s.config.DaprURL != "" {
 		go func() {
 			url := fmt.Sprintf("%s/v1.0/publish/kafka-pubsub/%s", s.config.DaprURL, topic)
-			http.Post(url, "application/json", strings.NewReader(string(payload)))
+			postJSONFireAndForget(url, payload)
 		}()
 	}
 	return eventID
@@ -279,7 +367,7 @@ func (s *AppState) setKYCPermission(customerID string, level KYCLevel) {
 			},
 		})
 		url := fmt.Sprintf("%s/v1/relationships/write", s.config.PermifyURL)
-		http.Post(url, "application/json", strings.NewReader(string(payload)))
+		postJSONFireAndForget(url, payload)
 	}()
 }
 
@@ -314,9 +402,8 @@ func (s *AppState) checkKYCStatus(customerID string, requiredLevel KYCLevel) (bo
 	}
 
 	// Call KYC engine (fail-closed: if unreachable, return blocked)
-	client := &http.Client{Timeout: 10 * time.Second}
 	url := fmt.Sprintf("%s/kyc/status/%s", s.config.KYCEngineURL, customerID)
-	resp, err := client.Get(url)
+	resp, err := kycEngineHTTPClient.Get(url)
 	if err != nil {
 		log.Printf("[KYC-Enforcement] KYC engine unreachable: %v — FAIL CLOSED", err)
 		return false, "", false // FAIL CLOSED
@@ -425,14 +512,14 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 	if !verified {
 		// KYC not verified — save as pending, emit events
 		s.mu.Lock()
-		s.applications[appID] = &ApplicationRecord{
+		s.addApplicationLocked(&ApplicationRecord{
 			ID:         appID,
 			CustomerID: req.CustomerID,
 			Type:       "account",
 			Status:     "pending_kyc",
 			KYCLevel:   requiredLevel,
 			CreatedAt:  time.Now(),
-		}
+		})
 		s.mu.Unlock()
 
 		// Kafka events
@@ -472,7 +559,7 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 
 	// KYC verified — approve
 	s.mu.Lock()
-	s.applications[appID] = &ApplicationRecord{
+	s.addApplicationLocked(&ApplicationRecord{
 		ID:          appID,
 		CustomerID:  req.CustomerID,
 		Type:        "account",
@@ -480,7 +567,7 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 		KYCVerified: true,
 		KYCLevel:    currentLevel,
 		CreatedAt:   time.Now(),
-	}
+	})
 	s.mu.Unlock()
 
 	s.publishKafka("account.opened", map[string]interface{}{
@@ -498,14 +585,14 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"allowed":           true,
-		"reason":            "KYC verified — account approved",
+		"allowed":            true,
+		"reason":             "KYC verified — account approved",
 		"required_kyc_level": requiredLevel,
 		"current_kyc_level":  currentLevel,
-		"kyc_verified":      true,
-		"application_id":    appID,
-		"gateway_reachable": true,
-		"fail_closed":       false,
+		"kyc_verified":       true,
+		"application_id":     appID,
+		"gateway_reachable":  true,
+		"fail_closed":        false,
 		"limits": map[string]interface{}{
 			"max_balance": maxBal,
 			"daily_limit": dailyLim,
@@ -549,14 +636,14 @@ func (s *AppState) handleLoanEnforcement(w http.ResponseWriter, r *http.Request)
 
 	if !verified {
 		s.mu.Lock()
-		s.applications[appID] = &ApplicationRecord{
+		s.addApplicationLocked(&ApplicationRecord{
 			ID:         appID,
 			CustomerID: req.CustomerID,
 			Type:       "loan",
 			Status:     "pending_kyc",
 			KYCLevel:   requiredLevel,
 			CreatedAt:  time.Now(),
-		}
+		})
 		s.mu.Unlock()
 
 		// Kafka events
@@ -631,12 +718,12 @@ func (s *AppState) handleKYCCheck(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"customer_id":      req.CustomerID,
-		"verified":         verified,
-		"current_level":    current,
-		"required_level":   req.Level,
+		"customer_id":       req.CustomerID,
+		"verified":          verified,
+		"current_level":     current,
+		"required_level":    req.Level,
 		"gateway_reachable": reachable,
-		"fail_closed":      !reachable,
+		"fail_closed":       !reachable,
 	})
 }
 
@@ -654,10 +741,11 @@ func (s *AppState) handleVerifyCallback(w http.ResponseWriter, r *http.Request) 
 	s.mu.Lock()
 	s.kycCache[req.CustomerID] = req.Level
 
-	// Approve all pending applications for this customer
+	// Approve all pending applications for this customer via the per-customer
+	// index (F14) — no O(n) full-map scan under the write lock.
 	approved := 0
-	for _, app := range s.applications {
-		if app.CustomerID == req.CustomerID && app.Status == "pending_kyc" {
+	for _, app := range s.appsByCustomer[req.CustomerID] {
+		if app.Status == "pending_kyc" {
 			if isLevelSufficient(req.Level, app.KYCLevel) {
 				app.Status = "approved"
 				app.KYCVerified = true
@@ -672,17 +760,17 @@ func (s *AppState) handleVerifyCallback(w http.ResponseWriter, r *http.Request) 
 
 	// Kafka event
 	s.publishKafka("account.kyc.verified", map[string]interface{}{
-		"customer_id":          req.CustomerID,
-		"level":                req.Level,
+		"customer_id":           req.CustomerID,
+		"level":                 req.Level,
 		"applications_approved": approved,
 	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"customer_id":          req.CustomerID,
-		"level":                req.Level,
+		"customer_id":           req.CustomerID,
+		"level":                 req.Level,
 		"applications_approved": approved,
-		"status":               "verified",
+		"status":                "verified",
 	})
 }
 
@@ -710,10 +798,10 @@ func (s *AppState) handleApproveGate(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"error":      "KYC_NOT_VERIFIED",
-			"message":    "Manual approval is BLOCKED until KYC completes — there is no override path",
-			"kyc_level":  app.KYCLevel,
-			"status":     app.Status,
+			"error":     "KYC_NOT_VERIFIED",
+			"message":   "Manual approval is BLOCKED until KYC completes — there is no override path",
+			"kyc_level": app.KYCLevel,
+			"status":    app.Status,
 		})
 		return
 	}
@@ -841,13 +929,12 @@ func (s *AppState) callBureau(bureau string, req BureauVerificationRequest) Bure
 		"phone":         req.Phone,
 	})
 
-	client := &http.Client{Timeout: 15 * time.Second}
 	httpReq, _ := http.NewRequest("POST", apiURL+"/verify/identity", strings.NewReader(string(payload)))
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 	httpReq.Header.Set("X-Request-ID", generateID())
 
-	resp, err := client.Do(httpReq)
+	resp, err := bureauHTTPClient.Do(httpReq)
 	elapsed := time.Since(start).Milliseconds()
 
 	if err != nil {
@@ -929,29 +1016,29 @@ func (s *AppState) handleTierRequirements(w http.ResponseWriter, r *http.Request
 			"tier_1": map[string]interface{}{
 				"name": "Basic (Mobile Money)", "max_balance": 300000, "daily_limit": 50000,
 				"documents": []string{"phone", "name", "dob"},
-				"liveness": false, "bvn": false, "nin": false, "address": false,
+				"liveness":  false, "bvn": false, "nin": false, "address": false,
 				"kyc_level": "basic",
 			},
 			"tier_2": map[string]interface{}{
 				"name": "Standard", "max_balance": 500000, "daily_limit": 200000,
 				"documents": []string{"phone", "name", "dob", "bvn", "id_document"},
-				"liveness": true, "bvn": true, "nin": false, "address": false,
+				"liveness":  true, "bvn": true, "nin": false, "address": false,
 				"kyc_level": "standard",
 			},
 			"tier_3": map[string]interface{}{
 				"name": "Enhanced (Full Banking)", "max_balance": 0, "daily_limit": 0,
 				"documents": []string{"phone", "name", "dob", "bvn", "nin", "id_document", "utility_bill", "passport_photo", "signature"},
-				"liveness": true, "bvn": true, "nin": true, "address": true,
+				"liveness":  true, "bvn": true, "nin": true, "address": true,
 				"kyc_level": "enhanced",
 			},
 		},
 		"loan_requirements": map[string]interface{}{
-			"personal":    map[string]interface{}{"min_level": "enhanced", "threshold": "any amount"},
-			"sme":         map[string]interface{}{"min_level": "enhanced", "threshold": "any amount"},
-			"corporate":   map[string]interface{}{"min_level": "enhanced", "threshold": "any amount"},
-			"mortgage":    map[string]interface{}{"min_level": "full_edd", "threshold": "any amount"},
-			"above_10m":   map[string]interface{}{"min_level": "enhanced", "threshold": "≥₦10,000,000"},
-			"above_50m":   map[string]interface{}{"min_level": "full_edd", "threshold": "≥₦50,000,000"},
+			"personal":  map[string]interface{}{"min_level": "enhanced", "threshold": "any amount"},
+			"sme":       map[string]interface{}{"min_level": "enhanced", "threshold": "any amount"},
+			"corporate": map[string]interface{}{"min_level": "enhanced", "threshold": "any amount"},
+			"mortgage":  map[string]interface{}{"min_level": "full_edd", "threshold": "any amount"},
+			"above_10m": map[string]interface{}{"min_level": "enhanced", "threshold": "≥₦10,000,000"},
+			"above_50m": map[string]interface{}{"min_level": "full_edd", "threshold": "≥₦50,000,000"},
 		},
 		"cbn_circular": "CBN/DIR/GEN/CIR/04/010",
 	})
@@ -966,14 +1053,14 @@ func (s *AppState) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"uptime_sec": time.Since(s.startTime).Seconds(),
 		"design":     "fail-closed",
 		"integrations": map[string]string{
-			"kyc_engine":      s.config.KYCEngineURL,
-			"sanctions":       s.config.SanctionsURL,
-			"kafka":           s.config.KafkaBrokers,
-			"tigerbeetle":     s.config.TigerBeetleURL,
-			"permify":         s.config.PermifyURL,
-			"firstcentral":    s.config.FirstCentralURL,
-			"crc":             s.config.CRCURL,
-			"creditregistry":  s.config.CreditRegistryURL,
+			"kyc_engine":     s.config.KYCEngineURL,
+			"sanctions":      s.config.SanctionsURL,
+			"kafka":          s.config.KafkaBrokers,
+			"tigerbeetle":    s.config.TigerBeetleURL,
+			"permify":        s.config.PermifyURL,
+			"firstcentral":   s.config.FirstCentralURL,
+			"crc":            s.config.CRCURL,
+			"creditregistry": s.config.CreditRegistryURL,
 		},
 	})
 }
@@ -1004,11 +1091,23 @@ func main() {
 	mux.HandleFunc("/api/v1/tiers/requirements", state.handleTierRequirements)
 	mux.HandleFunc("/health", state.handleHealth)
 
+	state.startEvictionLoop()
+
 	addr := ":" + cfg.Port
 	log.Printf("[KYC-Enforcement] Starting on %s (fail-closed design, env=%s)", addr, cfg.Environment)
 	log.Printf("[KYC-Enforcement] Bureaus: FirstCentral=%s, CRC=%s, CreditRegistry=%s", cfg.FirstCentralURL, cfg.CRCURL, cfg.CreditRegistryURL)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	// F3: explicit timeouts — the bureau handler fans out to 3 bureaus with
+	// 15s client timeouts, so WriteTimeout must exceed the upstream budget.
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      45 * time.Second,
+		IdleTimeout:       90 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("[KYC-Enforcement] Server failed: %v", err)
 	}
 }

@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Dict, Optional
 from urllib.parse import quote, urlencode
 import httpx
+from ..base_gateway import get_shared_async_client
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
 from Crypto.Hash import SHA256
@@ -179,9 +180,9 @@ class AlipayGateway:
         params["sign"] = self._sign(sign_string)
         
         # Make API request
-        async with httpx.AsyncClient() as client:
-            response = await client.post(self.gateway_url, data=params)
-            result = response.json()
+        client = get_shared_async_client()
+        response = await client.post(self.gateway_url, data=params)
+        result = response.json()
         
         response_data = result.get("alipay_trade_precreate_response", {})
         
@@ -221,9 +222,9 @@ class AlipayGateway:
         params["sign"] = self._sign(sign_string)
         
         # Make API request
-        async with httpx.AsyncClient() as client:
-            response = await client.post(self.gateway_url, data=params)
-            result = response.json()
+        client = get_shared_async_client()
+        response = await client.post(self.gateway_url, data=params)
+        result = response.json()
         
         response_data = result.get("alipay_trade_query_response", {})
         
@@ -275,9 +276,9 @@ class AlipayGateway:
         params["sign"] = self._sign(sign_string)
         
         # Make API request
-        async with httpx.AsyncClient() as client:
-            response = await client.post(self.gateway_url, data=params)
-            result = response.json()
+        client = get_shared_async_client()
+        response = await client.post(self.gateway_url, data=params)
+        result = response.json()
         
         response_data = result.get("alipay_trade_refund_response", {})
         
@@ -305,9 +306,9 @@ class AlipayGateway:
         params["sign"] = self._sign(sign_string)
         
         # Make API request
-        async with httpx.AsyncClient() as client:
-            response = await client.post(self.gateway_url, data=params)
-            result = response.json()
+        client = get_shared_async_client()
+        response = await client.post(self.gateway_url, data=params)
+        result = response.json()
         
         response_data = result.get("alipay_trade_close_response", {})
         

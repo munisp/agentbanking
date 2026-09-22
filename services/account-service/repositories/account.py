@@ -86,13 +86,17 @@ class AccountRepository:
             .all()
         )
 
-    def get_accounts(self, tenant_id: str):
-        return (
+    def get_accounts(self, tenant_id: str, limit: int | None = None, offset: int = 0):
+        query = (
             self.__db.query(Account)
             .filter(Account.tenant_id == tenant_id)
             .order_by(Account.created_at)
-            .all()
         )
+        if offset:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
+        return query.all()
 
     def get_accounts_by_user(self, keycloak_id: str, tenant_id: str):
         """Get all accounts for a specific user (all account types)"""

@@ -376,16 +376,12 @@ async function startServer() {
     console.warn("[Middleware] API versioning failed:", (e as any).message);
   }
 
-  try {
-    const compMod = await import("../middleware/responseCompression.js");
-    app.use(compMod.responseCompressionMiddleware);
-    console.log("[Middleware] Response compression enabled");
-  } catch (e) {
-    console.warn(
-      "[Middleware] Response compression failed:",
-      (e as any).message
-    );
-  }
+  // ── Round-8 perf: second compression layer REMOVED ────────────────────────
+  // responseCompressionMiddleware double-compressed every JSON response that
+  // compression() (mounted above) already gzips, and ran blocking
+  // zlib.gzipSync() on the event loop per response >1KB. compression() is the
+  // single compression layer now. The module is retained (async gzip) for any
+  // out-of-band use but is deliberately NOT mounted here.
 
   // ── Sprint 71: Multi-Language Security Orchestrator (Rust DDoS + Go PBAC + Python Fraud ML) ──
   try {
@@ -419,7 +415,16 @@ async function startServer() {
   app.use((req, res, next) => {
     const start = Date.now();
     res.on("finish", () => {
-      const route = req.route?.path ?? req.path ?? "unknown";
+      // Round-8 perf: bound Prometheus label cardinality. Raw req.path embeds
+      // IDs (REST bridge / webhook paths) → unbounded "route" label churn.
+      // Use the matched route template; "unmatched" when no route matched.
+      const routePath = req.route?.path;
+      const route =
+        typeof routePath === "string"
+          ? routePath
+          : Array.isArray(routePath)
+            ? routePath.join("|")
+            : "unmatched";
       httpRequestDurationMs
         .labels(req.method, route, String(res.statusCode))
         .observe(Date.now() - start);

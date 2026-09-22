@@ -15,7 +15,7 @@
  */
 
 import { ENV } from "./env.js";
-import { getMtlsAgent } from "../lib/mtlsAgent.js";
+import { getMtlsDispatcher } from "../lib/mtlsAgent.js";
 
 // ─── Service base URLs ────────────────────────────────────────────────────────
 
@@ -64,16 +64,18 @@ async function platformFetch<T>(
 
   const url = `${baseUrl}${path}`;
 
-  // Attach mTLS agent when certificates are available (HTTPS platform services).
+  // Attach mTLS dispatcher when certificates are available (HTTPS platform
+  // services). Round-8 fix: undici fetch ignores the legacy `agent` option —
+  // `dispatcher` (undici Agent) is required for mTLS to actually apply.
   // Falls back to plain fetch when MTLS_ENABLED=false or certs are absent.
-  const mtlsAgent = getMtlsAgent();
-  const agentOption = mtlsAgent ? { agent: mtlsAgent } : {};
+  const mtlsDispatcher = await getMtlsDispatcher();
+  const dispatcherOption = mtlsDispatcher ? { dispatcher: mtlsDispatcher } : {};
 
   let res: Response;
   try {
     res = await fetch(url, {
       ...fetchOptions,
-      ...agentOption,
+      ...dispatcherOption,
       headers,
     } as RequestInit);
   } catch (err) {
@@ -696,11 +698,13 @@ export async function proxyFetch(
       : {}),
     ...((init.headers as Record<string, string>) ?? {}),
   };
-  const mtlsAgent = getMtlsAgent();
-  const agentOption = mtlsAgent ? { agent: mtlsAgent } : {};
+  const mtlsDispatcher = await getMtlsDispatcher();
+  const dispatcherOption = mtlsDispatcher
+    ? { dispatcher: mtlsDispatcher }
+    : {};
   let res: Response;
   try {
-    res = await fetch(url, { ...init, headers, ...agentOption } as RequestInit);
+    res = await fetch(url, { ...init, headers, ...dispatcherOption } as RequestInit);
   } catch (err) {
     throw new Error(`Platform gateway unreachable: ${String(err)}`);
   }

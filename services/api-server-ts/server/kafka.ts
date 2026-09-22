@@ -1,5 +1,13 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
+ * @deprecated Round-8 audit (B1): this module is a DUPLICATE Kafka producer
+ * with divergent config (GZIP compression, allowAutoTopicCreation:true, no
+ * retry/DLQ wrapper) and has ZERO importers in server/ as of commit
+ * 34821da6. All 48 call sites use server/kafkaClient.ts (batched, idempotent
+ * producer with retry + DLQ semantics). Do not add new imports here; this
+ * file is retained only because consolidation/deletion is deferred as a
+ * separate low-risk cleanup. Use `publishEvent` from "./kafkaClient" instead.
+ *
  * Kafka Event Bus Integration
  *
  * Provides a KafkaJS producer and consumer for the 54agent platform.

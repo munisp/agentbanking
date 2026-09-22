@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, responses, Header
+import asyncio
+
+from fastapi import APIRouter, Depends, HTTPException, responses, Header, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 import os
@@ -83,19 +85,30 @@ def get_tenant_users(
     db: Session = Depends(get_session),
     tenant_id: str = Header(..., alias="x-tenant-id"),
     keycloak_id: str = Header(..., alias="x-keycloak-id"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
-    """Get user."""
+    """Get users for the requesting tenant (paginated)."""
 
     context = Context(
         tenant_id=tenant_id,
         keycloak_id=keycloak_id,
     )
 
-    users = db.query(User).filter(User.tenant_id == context.tenant_id).order_by(User.created_at).all()
+    users = (
+        db.query(User)
+        .filter(User.tenant_id == context.tenant_id)
+        .order_by(User.created_at)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
     return {
         "message": "success",
-        "users": [u.to_dict() for u in users]
+        "users": [u.to_dict() for u in users],
+        "limit": limit,
+        "offset": offset,
     }
 
 @user_router.get("/all")
@@ -103,8 +116,10 @@ def get_all_users(
     db: Session = Depends(get_session),
     tenant_id: str = Header(..., alias="x-tenant-id"),
     keycloak_id: str = Header(..., alias="x-keycloak-id"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
-    """Get all users scoped to the requesting tenant. Requires ADMIN or SUPERADMIN role."""
+    """Get all users scoped to the requesting tenant (paginated). Requires ADMIN or SUPERADMIN role."""
 
     requesting_user = db.query(User).filter(
         User.keycloak_id == keycloak_id,
@@ -117,11 +132,20 @@ def get_all_users(
     if requesting_user.user_role not in (UserRole.ADMIN, UserRole.SUPERADMIN):
         raise HTTPException(status_code=403, detail="Insufficient permissions. Admin role required.")
 
-    users = db.query(User).filter(User.tenant_id == tenant_id).order_by(User.created_at).all()
+    users = (
+        db.query(User)
+        .filter(User.tenant_id == tenant_id)
+        .order_by(User.created_at)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
     return {
         "message": "success",
         "users": [u.to_dict() for u in users],
+        "limit": limit,
+        "offset": offset,
     }
 
 @user_router.get("/metrics")
@@ -152,20 +176,24 @@ async def save_kyc_state(
         tenant_id=tenant_id,
         keycloak_id=keycloak_id,
     )
-    
-    user = db.query(User).filter(User.keycloak_id == keycloak_id, User.tenant_id == context.tenant_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
 
-    user.kyc_verification_url = payload.get("url", "")
-    
-    try:
-        db.commit()
-        db.refresh(user)
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Database error during save_kyc_state: {e}")
-        raise HTTPException(status_code=500, detail="Failed to save user kyc state")
+    def _db_work():
+        user = db.query(User).filter(User.keycloak_id == keycloak_id, User.tenant_id == context.tenant_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user.kyc_verification_url = payload.get("url", "")
+
+        try:
+            db.commit()
+            db.refresh(user)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Database error during save_kyc_state: {e}")
+            raise HTTPException(status_code=500, detail="Failed to save user kyc state")
+        return user
+
+    user = await asyncio.to_thread(_db_work)
     
     # Publish KYC saved event
     KafkaClientInstance.publish_kyc_event(
@@ -195,19 +223,23 @@ async def complete_kyc(
         keycloak_id=keycloak_id,
     )
     
-    user = db.query(User).filter(User.keycloak_id == keycloak_id, User.tenant_id == context.tenant_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    def _db_work():
+        user = db.query(User).filter(User.keycloak_id == keycloak_id, User.tenant_id == context.tenant_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    user.kyc_verification_status = KycVerificationStatus.VERIFIED
-    
-    try:
-        db.commit()
-        db.refresh(user)
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Database error during complete_kyc: {e}")
-        raise HTTPException(status_code=500, detail="Failed to complete user kyc")
+        user.kyc_verification_status = KycVerificationStatus.VERIFIED
+
+        try:
+            db.commit()
+            db.refresh(user)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Database error during complete_kyc: {e}")
+            raise HTTPException(status_code=500, detail="Failed to complete user kyc")
+        return user
+
+    user = await asyncio.to_thread(_db_work)
     
     # Publish KYC completed event
     KafkaClientInstance.publish_kyc_event(
@@ -268,35 +300,39 @@ async def update_user(
 
     context = Context(tenant_id=tenant_id, keycloak_id=keycloak_id)
 
-    requesting_user = db.query(User).filter(
-        User.keycloak_id == keycloak_id,
-        User.tenant_id == tenant_id,
-    ).first()
+    def _db_work():
+        requesting_user = db.query(User).filter(
+            User.keycloak_id == keycloak_id,
+            User.tenant_id == tenant_id,
+        ).first()
 
-    if not requesting_user:
-        raise HTTPException(status_code=403, detail="Requesting user not found in tenant.")
+        if not requesting_user:
+            raise HTTPException(status_code=403, detail="Requesting user not found in tenant.")
 
-    user = db.query(User).filter(User.id == id, User.tenant_id == context.tenant_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        user = db.query(User).filter(User.id == id, User.tenant_id == context.tenant_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    is_self = str(requesting_user.id) == str(id)
-    is_privileged = requesting_user.user_role in (UserRole.ADMIN, UserRole.SUPERADMIN)
+        is_self = str(requesting_user.id) == str(id)
+        is_privileged = requesting_user.user_role in (UserRole.ADMIN, UserRole.SUPERADMIN)
 
-    if not is_self and not is_privileged:
-        raise HTTPException(status_code=403, detail="Cannot update another user's record.")
-    
-    update_data = payload.dict(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(user, key, value)
-    
-    try:
-        db.commit()
-        db.refresh(user)
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Database error during update_user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update user")
+        if not is_self and not is_privileged:
+            raise HTTPException(status_code=403, detail="Cannot update another user's record.")
+
+        update_data = payload.dict(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(user, key, value)
+
+        try:
+            db.commit()
+            db.refresh(user)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Database error during update_user: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update user")
+        return user, update_data
+
+    user, update_data = await asyncio.to_thread(_db_work)
     
     # Publish user updated event
     KafkaClientInstance.publish_user_event(
@@ -326,30 +362,34 @@ async def activate_user(
 
     context = Context(tenant_id=tenant_id, keycloak_id=keycloak_id)
 
-    requesting_user = db.query(User).filter(
-        User.keycloak_id == keycloak_id,
-        User.tenant_id == tenant_id,
-    ).first()
+    def _db_work():
+        requesting_user = db.query(User).filter(
+            User.keycloak_id == keycloak_id,
+            User.tenant_id == tenant_id,
+        ).first()
 
-    if not requesting_user:
-        raise HTTPException(status_code=403, detail="Requesting user not found in tenant.")
+        if not requesting_user:
+            raise HTTPException(status_code=403, detail="Requesting user not found in tenant.")
 
-    if requesting_user.user_role not in (UserRole.ADMIN, UserRole.SUPERADMIN):
-        raise HTTPException(status_code=403, detail="Insufficient permissions. Admin role required.")
+        if requesting_user.user_role not in (UserRole.ADMIN, UserRole.SUPERADMIN):
+            raise HTTPException(status_code=403, detail="Insufficient permissions. Admin role required.")
 
-    user = db.query(User).filter(User.id == id, User.tenant_id == context.tenant_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        user = db.query(User).filter(User.id == id, User.tenant_id == context.tenant_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    user.status = UserStatus.ACTIVE
-    
-    try:
-        db.commit()
-        db.refresh(user)
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Database error during update_user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update user")
+        user.status = UserStatus.ACTIVE
+
+        try:
+            db.commit()
+            db.refresh(user)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Database error during update_user: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update user")
+        return user
+
+    user = await asyncio.to_thread(_db_work)
     
     # Publish user activated event
     KafkaClientInstance.publish_user_event(
@@ -379,36 +419,40 @@ async def suspend_user(
 
     context = Context(tenant_id=tenant_id, keycloak_id=keycloak_id)
 
-    requesting_user = db.query(User).filter(
-        User.keycloak_id == keycloak_id,
-        User.tenant_id == tenant_id,
-    ).first()
+    def _db_work():
+        requesting_user = db.query(User).filter(
+            User.keycloak_id == keycloak_id,
+            User.tenant_id == tenant_id,
+        ).first()
 
-    if not requesting_user:
-        raise HTTPException(status_code=403, detail="Requesting user not found in tenant.")
+        if not requesting_user:
+            raise HTTPException(status_code=403, detail="Requesting user not found in tenant.")
 
-    if requesting_user.user_role not in (UserRole.ADMIN, UserRole.SUPERADMIN):
-        raise HTTPException(status_code=403, detail="Insufficient permissions. Admin role required.")
+        if requesting_user.user_role not in (UserRole.ADMIN, UserRole.SUPERADMIN):
+            raise HTTPException(status_code=403, detail="Insufficient permissions. Admin role required.")
 
-    user = db.query(User).filter(User.id == id, User.tenant_id == context.tenant_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        user = db.query(User).filter(User.id == id, User.tenant_id == context.tenant_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    if user.user_role == UserRole.SUPERADMIN:
-        raise HTTPException(status_code=403, detail="SUPERADMIN accounts cannot be suspended.")
+        if user.user_role == UserRole.SUPERADMIN:
+            raise HTTPException(status_code=403, detail="SUPERADMIN accounts cannot be suspended.")
 
-    if str(requesting_user.id) == str(id):
-        raise HTTPException(status_code=403, detail="Cannot suspend your own account.")
+        if str(requesting_user.id) == str(id):
+            raise HTTPException(status_code=403, detail="Cannot suspend your own account.")
 
-    user.status = UserStatus.SUSPENDED
-    
-    try:
-        db.commit()
-        db.refresh(user)
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Database error during update_user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update user")
+        user.status = UserStatus.SUSPENDED
+
+        try:
+            db.commit()
+            db.refresh(user)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Database error during update_user: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update user")
+        return user
+
+    user = await asyncio.to_thread(_db_work)
     
     # Publish user suspended event
     KafkaClientInstance.publish_user_event(
@@ -443,20 +487,24 @@ async def liveness_check(
     )
     
     # Get user
-    user = db.query(User).filter(User.keycloak_id == keycloak_id, User.tenant_id == context.tenant_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    def _db_work():
+        user = db.query(User).filter(User.keycloak_id == keycloak_id, User.tenant_id == context.tenant_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    # Set user verification status to NOT_VERIFIED
-    user.kyc_verification_status = KycVerificationStatus.NOT_VERIFIED
-    
-    try:
-        db.commit()
-        db.refresh(user)
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Database error during liveness_check: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update user verification status")
+        # Set user verification status to NOT_VERIFIED
+        user.kyc_verification_status = KycVerificationStatus.NOT_VERIFIED
+
+        try:
+            db.commit()
+            db.refresh(user)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Database error during liveness_check: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update user verification status")
+        return user
+
+    user = await asyncio.to_thread(_db_work)
     
     # Initialize verification with verification service
     verification_service_url = os.getenv("VERIFICATION_SERVICE_URL", "https://54agent.upi.dev/verification")
@@ -477,8 +525,10 @@ async def liveness_check(
             }
         )
         
-        # Call initialize-verification endpoint
-        verification_response = verification_client._post(
+        # Call initialize-verification endpoint (sync HTTP client; run off the
+        # event loop so a slow verification service does not stall the worker)
+        verification_response = await asyncio.to_thread(
+            verification_client._post,
             endpoint="/kyc/initialize-verification",
             data={
                 "user": {
@@ -497,12 +547,15 @@ async def liveness_check(
                 }
             }
         )
-        
+
         # Update user with verification URL
         if verification_response and verification_response.get("url"):
-            user.kyc_verification_url = verification_response.get("url")
-            db.commit()
-            db.refresh(user)
+            def _save_url():
+                user.kyc_verification_url = verification_response.get("url")
+                db.commit()
+                db.refresh(user)
+
+            await asyncio.to_thread(_save_url)
         
         # Publish liveness check event
         KafkaClientInstance.publish_kyc_event(

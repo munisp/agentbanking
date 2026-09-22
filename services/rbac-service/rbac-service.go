@@ -328,33 +328,6 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func rbac_serviceMain() {
-	rbacService := NewRBACService()
-
-	r := mux.NewRouter()
-
-	// Role management
-	r.HandleFunc("/roles", rbacService.CreateRole).Methods("POST")
-	r.HandleFunc("/roles", rbacService.ListRoles).Methods("GET")
-	r.HandleFunc("/roles/{roleId}", rbacService.GetRole).Methods("GET")
-
-	// User role assignment
-	r.HandleFunc("/users/{userId}/roles/{roleId}", rbacService.AssignRole).Methods("POST")
-	r.HandleFunc("/users/{userId}/roles/{roleId}", rbacService.RevokeRole).Methods("DELETE")
-	r.HandleFunc("/users/{userId}/roles", rbacService.GetUserRoles).Methods("GET")
-
-	// Authorization
-	r.HandleFunc("/authorize", rbacService.CheckAuthorization).Methods("POST")
-
-	// Permissions
-	r.HandleFunc("/permissions", rbacService.ListPermissions).Methods("GET")
-
-	// Health check
-	r.HandleFunc("/health", rbacService.HealthCheck).Methods("GET")
-
-	// Apply CORS middleware
-	handler := corsMiddleware(r)
-
-	log.Println("RBAC Service starting on port 8082...")
-	log.Fatal(http.ListenAndServe(":8082", handler))
-}
+// rbac_serviceMain was deleted: it was dead code (never called — verified by
+// repo-wide grep) containing a timeout-less http.ListenAndServe. The live
+// server with proper timeouts is in main.go.

@@ -75,7 +75,7 @@ export default function Savings() {
   useEffect(() => {
     fetchSavings(true);
     // Refresh every 10 seconds (silently in background)
-    const interval = setInterval(() => fetchSavings(false), 10000);
+    const interval = setInterval(() => fetchSavings(false), 30000);
     return () => clearInterval(interval);
   }, []);
 

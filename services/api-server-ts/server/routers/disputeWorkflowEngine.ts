@@ -173,8 +173,10 @@ export const disputeWorkflowEngineRouter = router({
           } as any)
           .returning();
         if (input.evidence?.length) {
-          for (const e of input.evidence) {
-            await db.insert(disputeMessages).values({
+          // Round-8 perf (R13): was a serial per-evidence INSERT loop (N+1).
+          // Single bulk insert with identical row content.
+          await db.insert(disputeMessages).values(
+            input.evidence.map(e => ({
               disputeId: d.id,
               authorName: ctx.user?.name ?? "System",
               authorRole: "customer",
@@ -182,8 +184,8 @@ export const disputeWorkflowEngineRouter = router({
               content: `Evidence: ${e}`,
               senderType: "customer",
               senderName: ctx.user?.name ?? "System",
-            } as any);
-          }
+            })) as any
+          );
         }
         try {
           await publishDisputeEvent({

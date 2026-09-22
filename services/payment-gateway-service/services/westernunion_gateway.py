@@ -8,7 +8,7 @@ from datetime import datetime
 import httpx
 import hashlib
 import hmac
-from ..base_gateway import BasePaymentGateway
+from ..base_gateway import BasePaymentGateway, get_shared_async_client
 
 class WesternUnionGateway(BasePaymentGateway):
     """
@@ -71,28 +71,28 @@ class WesternUnionGateway(BasePaymentGateway):
                 "timestamp": datetime.utcnow().isoformat()
             }
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{self.base_url}/transfers",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "X-Signature": self._generate_signature(json.dumps(payload)),
-                        "Content-Type": "application/json"
-                    },
-                    json=payload
-                )
-                response.raise_for_status()
-                result = response.json()
+            client = get_shared_async_client(timeout=30.0)
+            response = await client.post(
+                f"{self.base_url}/transfers",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "X-Signature": self._generate_signature(json.dumps(payload)),
+                    "Content-Type": "application/json"
+                },
+                json=payload
+            )
+            response.raise_for_status()
+            result = response.json()
                 
-                return {
-                    "transaction_id": result.get("id"),
-                    "status": result.get("status", "pending"),
-                    "amount": amount,
-                    "currency": currency,
-                    "fees": result.get("fees", 0),
-                    "exchange_rate": result.get("rate"),
-                    "estimated_delivery": result.get("delivery_time")
-                }
+            return {
+                "transaction_id": result.get("id"),
+                "status": result.get("status", "pending"),
+                "amount": amount,
+                "currency": currency,
+                "fees": result.get("fees", 0),
+                "exchange_rate": result.get("rate"),
+                "estimated_delivery": result.get("delivery_time")
+            }
                 
         except httpx.HTTPError as e:
             return {
@@ -114,21 +114,21 @@ class WesternUnionGateway(BasePaymentGateway):
             Dict containing current status and transaction details
         """
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.get(
-                    f"{self.base_url}/transfers/{transaction_id}",
-                    headers={"Authorization": f"Bearer {self.api_key}"}
-                )
-                response.raise_for_status()
-                result = response.json()
+            client = get_shared_async_client(timeout=15.0)
+            response = await client.get(
+                f"{self.base_url}/transfers/{transaction_id}",
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            response.raise_for_status()
+            result = response.json()
                 
-                return {
-                    "transaction_id": transaction_id,
-                    "status": result.get("status"),
-                    "current_state": result.get("state"),
-                    "last_updated": result.get("updated_at"),
-                    "tracking_number": result.get("tracking_id")
-                }
+            return {
+                "transaction_id": transaction_id,
+                "status": result.get("status"),
+                "current_state": result.get("state"),
+                "last_updated": result.get("updated_at"),
+                "tracking_number": result.get("tracking_id")
+            }
                 
         except Exception as e:
             return {"error": str(e), "status": "unknown"}
@@ -158,25 +158,25 @@ class WesternUnionGateway(BasePaymentGateway):
                 "timestamp": datetime.utcnow().isoformat()
             }
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{self.base_url}/refunds",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "X-Signature": self._generate_signature(json.dumps(payload)),
-                        "Content-Type": "application/json"
-                    },
-                    json=payload
-                )
-                response.raise_for_status()
-                result = response.json()
+            client = get_shared_async_client(timeout=30.0)
+            response = await client.post(
+                f"{self.base_url}/refunds",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "X-Signature": self._generate_signature(json.dumps(payload)),
+                    "Content-Type": "application/json"
+                },
+                json=payload
+            )
+            response.raise_for_status()
+            result = response.json()
                 
-                return {
-                    "refund_id": result.get("id"),
-                    "status": result.get("status"),
-                    "amount": result.get("amount"),
-                    "processing_time": result.get("processing_time")
-                }
+            return {
+                "refund_id": result.get("id"),
+                "status": result.get("status"),
+                "amount": result.get("amount"),
+                "processing_time": result.get("processing_time")
+            }
                 
         except Exception as e:
             return {"error": str(e), "status": "failed"}
@@ -193,24 +193,24 @@ class WesternUnionGateway(BasePaymentGateway):
             Dict containing validation result and account details
         """
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.get(
-                    f"{self.base_url}/accounts/validate",
-                    params={
-                        "account": account_number,
-                        "country": country_code
-                    },
-                    headers={"Authorization": f"Bearer {self.api_key}"}
-                )
-                response.raise_for_status()
-                result = response.json()
+            client = get_shared_async_client(timeout=15.0)
+            response = await client.get(
+                f"{self.base_url}/accounts/validate",
+                params={
+                    "account": account_number,
+                    "country": country_code
+                },
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            response.raise_for_status()
+            result = response.json()
                 
-                return {
-                    "valid": result.get("valid", False),
-                    "account_name": result.get("name"),
-                    "bank_name": result.get("bank"),
-                    "account_type": result.get("type")
-                }
+            return {
+                "valid": result.get("valid", False),
+                "account_name": result.get("name"),
+                "bank_name": result.get("bank"),
+                "account_type": result.get("type")
+            }
                 
         except Exception as e:
             return {"error": str(e), "valid": False}
@@ -240,22 +240,22 @@ class WesternUnionGateway(BasePaymentGateway):
             if amount:
                 params["amount"] = amount
                 
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    f"{self.base_url}/rates",
-                    params=params,
-                    headers={"Authorization": f"Bearer {self.api_key}"}
-                )
-                response.raise_for_status()
-                result = response.json()
+            client = get_shared_async_client(timeout=10.0)
+            response = await client.get(
+                f"{self.base_url}/rates",
+                params=params,
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            response.raise_for_status()
+            result = response.json()
                 
-                return {
-                    "rate": result.get("rate"),
-                    "from_currency": from_currency,
-                    "to_currency": to_currency,
-                    "converted_amount": result.get("converted_amount"),
-                    "valid_until": result.get("expires_at")
-                }
+            return {
+                "rate": result.get("rate"),
+                "from_currency": from_currency,
+                "to_currency": to_currency,
+                "converted_amount": result.get("converted_amount"),
+                "valid_until": result.get("expires_at")
+            }
                 
         except Exception as e:
             return {"error": str(e), "rate": None}
@@ -278,25 +278,25 @@ class WesternUnionGateway(BasePaymentGateway):
             Dict containing fee breakdown
         """
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    f"{self.base_url}/fees",
-                    params={
-                        "amount": amount,
-                        "currency": currency,
-                        "method": payment_method
-                    },
-                    headers={"Authorization": f"Bearer {self.api_key}"}
-                )
-                response.raise_for_status()
-                result = response.json()
+            client = get_shared_async_client(timeout=10.0)
+            response = await client.get(
+                f"{self.base_url}/fees",
+                params={
+                    "amount": amount,
+                    "currency": currency,
+                    "method": payment_method
+                },
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            response.raise_for_status()
+            result = response.json()
                 
-                return {
-                    "total_fees": result.get("total_fee"),
-                    "service_fee": result.get("service_fee"),
-                    "processing_fee": result.get("processing_fee"),
-                    "currency": currency
-                }
+            return {
+                "total_fees": result.get("total_fee"),
+                "service_fee": result.get("service_fee"),
+                "processing_fee": result.get("processing_fee"),
+                "currency": currency
+            }
                 
         except Exception as e:
             return {"error": str(e), "total_fees": 0}

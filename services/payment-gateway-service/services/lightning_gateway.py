@@ -7,6 +7,7 @@ import hashlib
 import secrets
 from typing import Dict, Optional
 import httpx
+from ..base_gateway import get_shared_async_client
 from datetime import datetime, timedelta
 
 
@@ -47,13 +48,13 @@ class LightningGateway:
         }
         
         try:
-            async with httpx.AsyncClient(verify=self.tls_cert_path if self.tls_cert_path else True) as client:
-                response = await client.post(
-                    f"{self.lnd_host}/v1/invoices",
-                    json=payload,
-                    headers=self.headers
-                )
-                result = response.json()
+            client = get_shared_async_client(verify=self.tls_cert_path if self.tls_cert_path else True)
+            response = await client.post(
+                f"{self.lnd_host}/v1/invoices",
+                json=payload,
+                headers=self.headers
+            )
+            result = response.json()
             
             if response.status_code == 200:
                 return {
@@ -83,12 +84,12 @@ class LightningGateway:
             payment_request: BOLT11 payment request string
         """
         try:
-            async with httpx.AsyncClient(verify=self.tls_cert_path if self.tls_cert_path else True) as client:
-                response = await client.get(
-                    f"{self.lnd_host}/v1/payreq/{payment_request}",
-                    headers=self.headers
-                )
-                result = response.json()
+            client = get_shared_async_client(verify=self.tls_cert_path if self.tls_cert_path else True)
+            response = await client.get(
+                f"{self.lnd_host}/v1/payreq/{payment_request}",
+                headers=self.headers
+            )
+            result = response.json()
             
             if response.status_code == 200:
                 return {
@@ -137,16 +138,13 @@ class LightningGateway:
             payload["amt"] = str(amount_sats)
         
         try:
-            async with httpx.AsyncClient(
-                verify=self.tls_cert_path if self.tls_cert_path else True,
-                timeout=60.0
-            ) as client:
-                response = await client.post(
-                    f"{self.lnd_host}/v1/channels/transactions",
-                    json=payload,
-                    headers=self.headers
-                )
-                result = response.json()
+            client = get_shared_async_client(verify=self.tls_cert_path if self.tls_cert_path else True, timeout=60.0)
+            response = await client.post(
+                f"{self.lnd_host}/v1/channels/transactions",
+                json=payload,
+                headers=self.headers
+            )
+            result = response.json()
             
             if response.status_code == 200:
                 if result.get("payment_error"):
@@ -180,12 +178,12 @@ class LightningGateway:
             r_hash: Payment hash (hex encoded)
         """
         try:
-            async with httpx.AsyncClient(verify=self.tls_cert_path if self.tls_cert_path else True) as client:
-                response = await client.get(
-                    f"{self.lnd_host}/v1/invoice/{r_hash}",
-                    headers=self.headers
-                )
-                result = response.json()
+            client = get_shared_async_client(verify=self.tls_cert_path if self.tls_cert_path else True)
+            response = await client.get(
+                f"{self.lnd_host}/v1/invoice/{r_hash}",
+                headers=self.headers
+            )
+            result = response.json()
             
             if response.status_code == 200:
                 state_map = {
@@ -218,12 +216,12 @@ class LightningGateway:
     async def get_balance(self) -> Dict:
         """Get Lightning wallet balance"""
         try:
-            async with httpx.AsyncClient(verify=self.tls_cert_path if self.tls_cert_path else True) as client:
-                response = await client.get(
-                    f"{self.lnd_host}/v1/balance/channels",
-                    headers=self.headers
-                )
-                result = response.json()
+            client = get_shared_async_client(verify=self.tls_cert_path if self.tls_cert_path else True)
+            response = await client.get(
+                f"{self.lnd_host}/v1/balance/channels",
+                headers=self.headers
+            )
+            result = response.json()
             
             if response.status_code == 200:
                 return {
@@ -245,12 +243,12 @@ class LightningGateway:
     async def get_node_info(self) -> Dict:
         """Get Lightning node information"""
         try:
-            async with httpx.AsyncClient(verify=self.tls_cert_path if self.tls_cert_path else True) as client:
-                response = await client.get(
-                    f"{self.lnd_host}/v1/getinfo",
-                    headers=self.headers
-                )
-                result = response.json()
+            client = get_shared_async_client(verify=self.tls_cert_path if self.tls_cert_path else True)
+            response = await client.get(
+                f"{self.lnd_host}/v1/getinfo",
+                headers=self.headers
+            )
+            result = response.json()
             
             if response.status_code == 200:
                 return {
@@ -282,12 +280,12 @@ class LightningGateway:
             max_payments: Maximum number of payments to return
         """
         try:
-            async with httpx.AsyncClient(verify=self.tls_cert_path if self.tls_cert_path else True) as client:
-                response = await client.get(
-                    f"{self.lnd_host}/v1/payments?max_payments={max_payments}",
-                    headers=self.headers
-                )
-                result = response.json()
+            client = get_shared_async_client(verify=self.tls_cert_path if self.tls_cert_path else True)
+            response = await client.get(
+                f"{self.lnd_host}/v1/payments?max_payments={max_payments}",
+                headers=self.headers
+            )
+            result = response.json()
             
             if response.status_code == 200:
                 payments = []
@@ -327,12 +325,12 @@ class LightningGateway:
         try:
             params = f"num_max_invoices={num_max_invoices}&pending_only={str(pending_only).lower()}"
             
-            async with httpx.AsyncClient(verify=self.tls_cert_path if self.tls_cert_path else True) as client:
-                response = await client.get(
-                    f"{self.lnd_host}/v1/invoices?{params}",
-                    headers=self.headers
-                )
-                result = response.json()
+            client = get_shared_async_client(verify=self.tls_cert_path if self.tls_cert_path else True)
+            response = await client.get(
+                f"{self.lnd_host}/v1/invoices?{params}",
+                headers=self.headers
+            )
+            result = response.json()
             
             if response.status_code == 200:
                 invoices = []

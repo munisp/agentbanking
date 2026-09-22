@@ -367,9 +367,20 @@ func NewDeliveryTracker() *DeliveryTracker {
 	return &DeliveryTracker{logs: make(map[string]*DeliveryLog)}
 }
 
+// Delivery tracker bounds (F15): the map previously grew one entry per
+// delivery report forever. Entries older than deliveryLogTTL are evicted, and
+// the map is hard-capped at maxDeliveryLogs (oldest-first eviction).
+const (
+	deliveryLogTTL  = 24 * time.Hour
+	maxDeliveryLogs = 10000
+)
+
 func (dt *DeliveryTracker) Update(report DeliveryReport) {
 	dt.mu.Lock()
 	defer dt.mu.Unlock()
+	if len(dt.logs) >= maxDeliveryLogs {
+		dt.evictLocked()
+	}
 	dt.logs[report.ID] = &DeliveryLog{
 		MessageID:  report.ID,
 		Phone:      report.PhoneNumber,
@@ -377,6 +388,28 @@ func (dt *DeliveryTracker) Update(report DeliveryReport) {
 		FailReason: report.FailReason,
 		RetryCount: report.RetryCount,
 		UpdatedAt:  time.Now(),
+	}
+}
+
+// evictLocked drops expired entries; if the map is still at the cap, evicts
+// the oldest entries until there is headroom. Caller must hold dt.mu (write).
+func (dt *DeliveryTracker) evictLocked() {
+	cutoff := time.Now().Add(-deliveryLogTTL)
+	for id, l := range dt.logs {
+		if l.UpdatedAt.Before(cutoff) {
+			delete(dt.logs, id)
+		}
+	}
+	for len(dt.logs) >= maxDeliveryLogs {
+		var oldestID string
+		var oldestTime time.Time
+		first := true
+		for id, l := range dt.logs {
+			if first || l.UpdatedAt.Before(oldestTime) {
+				oldestID, oldestTime, first = id, l.UpdatedAt, false
+			}
+		}
+		delete(dt.logs, oldestID)
 	}
 }
 
@@ -508,8 +541,23 @@ func main() {
 	http.HandleFunc("/sms/status", statusHandler)
 	http.HandleFunc("/health", healthHandler)
 
+	// F6: this endpoint is internet-facing (Africa's Talking callbacks) and
+	// each incoming SMS makes a synchronous POS API call — explicit timeouts
+	// bound Slowloris exposure and carrier-retry pileups.
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           http.DefaultServeMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	setupGracefulShutdown(srv)
+
 	log.Printf("[AT-SMS-Webhook] Starting on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
 }
 
 // --- Production: Graceful Shutdown ---

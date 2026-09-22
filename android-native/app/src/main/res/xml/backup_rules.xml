@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Backup rules referenced by AndroidManifest.xml
+  (android:fullBackupContent, used on API 30 and below).
+  Default template: include everything; no exclusions.
+-->
+<full-backup-content>
+</full-backup-content>

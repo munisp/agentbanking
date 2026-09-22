@@ -57,9 +57,10 @@ export default function POSShell() {
   >([]);
   const [generatingHomeUssd, setGeneratingHomeUssd] = useState(false);
   const [catFilter, setCatFilter] = useState<TileCategory | "all">("all");
-  const [tickerPos, setTickerPos] = useState(0);
   const [time, setTime] = useState(new Date());
   const tickerRef = useRef<HTMLDivElement>(null);
+  const tickerPosRef = useRef(0);
+  const tickerPeriodRef = useRef(1);
 
   // Live clock
   useEffect(() => {
@@ -103,10 +104,15 @@ export default function POSShell() {
     (successRateData as any)?.success_rate_pct ?? null;
   const successTier: string | null = (successRateData as any)?.tier ?? null;
 
-  // Ticker animation
+  // Ticker animation — direct DOM transform (no state) to avoid re-rendering
+  // the whole POS shell ~33x/s; same approach as POSShell.part8.tsx.
   useEffect(() => {
     const iv = setInterval(() => {
-      setTickerPos(p => p - 1);
+      tickerPosRef.current -= 1;
+      const el = tickerRef.current;
+      if (el) {
+        el.style.transform = `translateX(${tickerPosRef.current % tickerPeriodRef.current}px)`;
+      }
     }, 30);
     return () => clearInterval(iv);
   }, []);
@@ -511,6 +517,7 @@ export default function POSShell() {
   const tickerText = liveTickerItems
     .map(t => `${t.label}: ${t.value}  ${t.change}`)
     .join("   ·   ");
+  tickerPeriodRef.current = Math.max(tickerText.length * 8, 1);
 
   return (
     <div
@@ -1352,7 +1359,7 @@ export default function POSShell() {
           ref={tickerRef}
           className="flex items-center gap-6 whitespace-nowrap"
           style={{
-            transform: `translateX(${tickerPos % (tickerText.length * 8)}px)`,
+            transform: "translateX(0px)",
             transition: "none",
           }}
         >

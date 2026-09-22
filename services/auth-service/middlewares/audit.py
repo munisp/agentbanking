@@ -1,8 +1,10 @@
 import datetime
 import json
 import os
+import queue
 import re
 import threading
+import time
 import urllib.request
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -13,6 +15,14 @@ _SKIP_METHODS = {"GET", "HEAD", "OPTIONS"}
 _SKIP_PREFIXES = ("/health", "/metrics", "/dapr", "/docs", "/openapi")
 _UUID_RE = re.compile(r"/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 _INT_RE = re.compile(r"/\d+")
+
+# Queue-based audit sender: a single background thread drains this queue and
+# flushes in 100ms batching windows, instead of spawning a thread per request.
+_AUDIT_QUEUE = queue.Queue(maxsize=int(os.getenv("AUDIT_QUEUE_MAXSIZE", "10000")))
+_AUDIT_FLUSH_WINDOW_SECONDS = float(os.getenv("AUDIT_FLUSH_WINDOW_MS", "100")) / 1000.0
+_AUDIT_BATCH_MAX = 100
+_sender_thread = None
+_sender_lock = threading.Lock()
 
 
 def _path_to_event_type(method: str, path: str) -> str:
@@ -47,6 +57,43 @@ def _emit(actor_id: str, tenant_id: str, event_type: str, event_data: dict) -> N
         pass  # Audit failures must never affect core flow
 
 
+def _sender_loop() -> None:
+    """Drain the audit queue, flushing in ~100ms batching windows."""
+    while True:
+        batch = [_AUDIT_QUEUE.get()]  # blocks until first event
+        deadline = time.monotonic() + _AUDIT_FLUSH_WINDOW_SECONDS
+        while len(batch) < _AUDIT_BATCH_MAX:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                batch.append(_AUDIT_QUEUE.get(timeout=remaining))
+            except queue.Empty:
+                break
+        for actor_id, tenant_id, event_type, event_data in batch:
+            _emit(actor_id, tenant_id, event_type, event_data)
+
+
+def _ensure_sender() -> None:
+    global _sender_thread
+    if _sender_thread is not None:
+        return
+    with _sender_lock:
+        if _sender_thread is None:
+            _sender_thread = threading.Thread(
+                target=_sender_loop, name="audit-sender", daemon=True
+            )
+            _sender_thread.start()
+
+
+def _enqueue(actor_id: str, tenant_id: str, event_type: str, event_data: dict) -> None:
+    _ensure_sender()
+    try:
+        _AUDIT_QUEUE.put_nowait((actor_id, tenant_id, event_type, event_data))
+    except queue.Full:
+        pass  # Drop audit events under sustained overload; never block requests
+
+
 class AuditMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.method in _SKIP_METHODS:
@@ -70,11 +117,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
         if str(request.query_params):
             event_data["query"] = str(request.query_params)
 
-        threading.Thread(
-            target=_emit,
-            args=(actor_id, tenant_id, _path_to_event_type(request.method, path), event_data),
-            daemon=True,
-        ).start()
+        _enqueue(actor_id, tenant_id, _path_to_event_type(request.method, path), event_data)
 
         return response
 

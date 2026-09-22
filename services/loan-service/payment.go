@@ -10,13 +10,19 @@ import (
 )
 
 type PaymentStruct struct {
-	Recipient  string `json:"recipient"`
-	Amount string `json:"amount"`
-	Note   string `json:"note"`
-	TenantID   string `json:"tenant_id"`
-	KeycloakID   string `json:"keycloak_id"`
-	LedgerID   string `json:"ledger_id"`
-	MintAccountID   string `json:"mint_account_id"`
+	Recipient     string `json:"recipient"`
+	Amount        string `json:"amount"`
+	Note          string `json:"note"`
+	TenantID      string `json:"tenant_id"`
+	KeycloakID    string `json:"keycloak_id"`
+	LedgerID      string `json:"ledger_id"`
+	MintAccountID string `json:"mint_account_id"`
+}
+
+// paymentHTTPClient is shared across calls (F17): a per-call &http.Client{}
+// created a new Transport per call — no TCP/TLS reuse.
+var paymentHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
 }
 
 func Payment(payload *PaymentStruct) ([]byte, error) {
@@ -24,16 +30,12 @@ func Payment(payload *PaymentStruct) ([]byte, error) {
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
-		panic(err)
-	}
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
+		return nil, fmt.Errorf("marshal payment payload: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("build payment request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -43,7 +45,7 @@ func Payment(payload *PaymentStruct) ([]byte, error) {
 	req.Header.Set("x-ledger-id", payload.LedgerID)
 	req.Header.Set("x-mint-account-id", payload.MintAccountID)
 
-	resp, err := client.Do(req)
+	resp, err := paymentHTTPClient.Do(req)
 
 	if err != nil {
 		return nil, err

@@ -4,6 +4,14 @@ import { jwtVerify } from "jose";
 import { getAgentById } from "../db";
 import type { Agent } from "../../drizzle/schema";
 import { getJwtSecret } from "../lib/envValidation";
+import { withCacheTyped } from "../lib/cacheAside";
+
+// Round-8 perf: cache the per-request agent lookup for 15s (Redis,
+// type-preserving, singleflight). No invalidation hook exists on agent
+// writes, so the staleness bound is the TTL: suspension/role/float changes
+// take up to 15s to propagate to this middleware. Fail-open to DB on Redis
+// errors. NOTE: requireAgent's "Agent not found" case is never cached.
+const AGENT_LOOKUP_CACHE_TTL_S = 15;
 
 export interface AgentSession {
   id: number;
@@ -42,7 +50,11 @@ export async function requireAgent(req: Request): Promise<Agent> {
     err.code = "UNAUTHORIZED";
     throw err;
   }
-  const agent = await getAgentById(session.id);
+  const agent = await withCacheTyped(
+    `agent:id:${session.id}`,
+    AGENT_LOOKUP_CACHE_TTL_S,
+    () => getAgentById(session.id)
+  );
   if (!agent) {
     const err = new Error("Agent not found") as any;
     err.code = "NOT_FOUND";

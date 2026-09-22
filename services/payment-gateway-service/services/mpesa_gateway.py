@@ -7,6 +7,7 @@ import base64
 from datetime import datetime
 from typing import Dict, Optional
 import httpx
+from ..base_gateway import get_shared_async_client
 
 
 class MPesaGateway:
@@ -45,12 +46,12 @@ class MPesaGateway:
         auth_header = f"Basic {auth_bytes.decode('utf-8')}"
         
         # Request token
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.base_url}/oauth/v1/generate?grant_type=client_credentials",
-                headers={"Authorization": auth_header}
-            )
-            result = response.json()
+        client = get_shared_async_client()
+        response = await client.get(
+            f"{self.base_url}/oauth/v1/generate?grant_type=client_credentials",
+            headers={"Authorization": auth_header}
+        )
+        result = response.json()
         
         self.access_token = result.get("access_token")
         self.token_expiry = datetime.now().timestamp() + int(result.get("expires_in", 3600))
@@ -98,13 +99,13 @@ class MPesaGateway:
             "TransactionDesc": transaction_desc
         }
         
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/mpesa/stkpush/v1/processrequest",
-                json=payload,
-                headers={"Authorization": f"Bearer {access_token}"}
-            )
-            result = response.json()
+        client = get_shared_async_client()
+        response = await client.post(
+            f"{self.base_url}/mpesa/stkpush/v1/processrequest",
+            json=payload,
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        result = response.json()
         
         if result.get("ResponseCode") == "0":
             return {
@@ -138,13 +139,13 @@ class MPesaGateway:
             "CheckoutRequestID": checkout_request_id
         }
         
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/mpesa/stkpushquery/v1/query",
-                json=payload,
-                headers={"Authorization": f"Bearer {access_token}"}
-            )
-            result = response.json()
+        client = get_shared_async_client()
+        response = await client.post(
+            f"{self.base_url}/mpesa/stkpushquery/v1/query",
+            json=payload,
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        result = response.json()
         
         if result.get("ResponseCode") == "0":
             return {
@@ -197,13 +198,13 @@ class MPesaGateway:
             "Occasion": occasion
         }
         
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/mpesa/b2c/v1/paymentrequest",
-                json=payload,
-                headers={"Authorization": f"Bearer {access_token}"}
-            )
-            result = response.json()
+        client = get_shared_async_client()
+        response = await client.post(
+            f"{self.base_url}/mpesa/b2c/v1/paymentrequest",
+            json=payload,
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        result = response.json()
         
         if result.get("ResponseCode") == "0":
             return {
@@ -241,13 +242,13 @@ class MPesaGateway:
             "ValidationURL": validation_url
         }
         
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/mpesa/c2b/v1/registerurl",
-                json=payload,
-                headers={"Authorization": f"Bearer {access_token}"}
-            )
-            result = response.json()
+        client = get_shared_async_client()
+        response = await client.post(
+            f"{self.base_url}/mpesa/c2b/v1/registerurl",
+            json=payload,
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        result = response.json()
         
         if result.get("ResponseCode") == "0":
             return {
@@ -286,13 +287,13 @@ class MPesaGateway:
             "BillRefNumber": bill_ref_number
         }
         
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/mpesa/c2b/v1/simulate",
-                json=payload,
-                headers={"Authorization": f"Bearer {access_token}"}
-            )
-            result = response.json()
+        client = get_shared_async_client()
+        response = await client.post(
+            f"{self.base_url}/mpesa/c2b/v1/simulate",
+            json=payload,
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        result = response.json()
         
         if result.get("ResponseCode") == "0":
             return {
@@ -332,13 +333,13 @@ class MPesaGateway:
             "ResultURL": result_url
         }
         
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/mpesa/accountbalance/v1/query",
-                json=payload,
-                headers={"Authorization": f"Bearer {access_token}"}
-            )
-            result = response.json()
+        client = get_shared_async_client()
+        response = await client.post(
+            f"{self.base_url}/mpesa/accountbalance/v1/query",
+            json=payload,
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        result = response.json()
         
         if result.get("ResponseCode") == "0":
             return {
@@ -384,13 +385,13 @@ class MPesaGateway:
             "Occasion": "Transaction Status"
         }
         
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/mpesa/transactionstatus/v1/query",
-                json=payload,
-                headers={"Authorization": f"Bearer {access_token}"}
-            )
-            result = response.json()
+        client = get_shared_async_client()
+        response = await client.post(
+            f"{self.base_url}/mpesa/transactionstatus/v1/query",
+            json=payload,
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        result = response.json()
         
         if result.get("ResponseCode") == "0":
             return {

@@ -38,6 +38,15 @@ func NewLoanKafkaClient() *LoanKafkaClient {
 			Addr:     kafka.TCP(strings.Split(brokers, ",")...),
 			Topic:    topic,
 			Balancer: &kafka.LeastBytes{},
+			// F17: async writer — WriteMessages returns after queueing instead
+			// of paying up to +5s on the request path when Kafka is slow.
+			Async:        true,
+			BatchTimeout: 100 * time.Millisecond,
+			Completion: func(messages []kafka.Message, err error) {
+				if err != nil {
+					log.Printf("Kafka async delivery error (%d messages): %v", len(messages), err)
+				}
+			},
 		},
 	}
 }
@@ -49,6 +58,8 @@ func (c *LoanKafkaClient) PublishEvent(eventType string, event LoanEvent) {
 		log.Printf("Failed to marshal loan event: %v", err)
 		return
 	}
+	// With Async:true this only waits for local queueing; the 5s context is a
+	// safety bound, not the delivery path.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	err = c.writer.WriteMessages(ctx, kafka.Message{

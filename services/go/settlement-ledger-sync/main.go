@@ -8,10 +8,11 @@ package main
 
 import (
 	"bytes"
-	"database/sql"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -21,8 +22,15 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
+
+// tbCoreHTTPClient is shared across sync batches (connection reuse + timeout;
+// previously http.Post via DefaultClient with no timeout per entry).
+var tbCoreHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+// tbHTTPBatchLimit caps transfers per HTTP POST to the TB core bridge (F16).
+const tbHTTPBatchLimit = 3000
 
 type Config struct {
 	Port               string
@@ -77,19 +85,19 @@ const (
 )
 
 type BillingLedgerEntry struct {
-	ID              int64   `json:"id"`
-	TransactionID   string  `json:"transactionId"`
-	AgentID         string  `json:"agentId"`
-	ClientID        string  `json:"clientId"`
-	TransactionType string  `json:"transactionType"`
-	GrossAmount     int64   `json:"grossAmount"`
-	GrossFee        int64   `json:"grossFee"`
-	PlatformShare   int64   `json:"platformShare"`
-	ClientShare     int64   `json:"clientShare"`
-	AgentCommission int64   `json:"agentCommission"`
-	Currency        string  `json:"currency"`
-	BillingModel    string  `json:"billingModel"`
-	SyncStatus      string  `json:"syncStatus"`
+	ID              int64     `json:"id"`
+	TransactionID   string    `json:"transactionId"`
+	AgentID         string    `json:"agentId"`
+	ClientID        string    `json:"clientId"`
+	TransactionType string    `json:"transactionType"`
+	GrossAmount     int64     `json:"grossAmount"`
+	GrossFee        int64     `json:"grossFee"`
+	PlatformShare   int64     `json:"platformShare"`
+	ClientShare     int64     `json:"clientShare"`
+	AgentCommission int64     `json:"agentCommission"`
+	Currency        string    `json:"currency"`
+	BillingModel    string    `json:"billingModel"`
+	SyncStatus      string    `json:"syncStatus"`
 	ProcessedAt     time.Time `json:"processedAt"`
 }
 
@@ -133,6 +141,7 @@ func initDB(connStr string) {
 	pgDB.SetMaxOpenConns(15)
 	pgDB.SetMaxIdleConns(5)
 	pgDB.SetConnMaxLifetime(5 * time.Minute)
+	pgDB.SetConnMaxIdleTime(1 * time.Minute)
 
 	pgDB.Exec(`CREATE TABLE IF NOT EXISTS billing_ledger_entries (
 		id SERIAL PRIMARY KEY,
@@ -238,20 +247,10 @@ func (lse *LedgerSyncEngine) SyncPendingEntries(ctx context.Context) error {
 		return nil
 	}
 
-	// Step 2: Create TigerBeetle transfers for each entry
-	for _, entry := range entries {
-		tbErr := lse.createTigerBeetleTransfer(entry)
-		status := "synced"
-		errMsg := ""
-		if tbErr != nil {
-			status = "failed"
-			errMsg = tbErr.Error()
-			log.Printf("[LedgerSync] TigerBeetle transfer failed for tx %s: %v", entry.TransactionID, tbErr)
-		}
-		pgDB.Exec(`UPDATE billing_ledger_entries SET sync_status=$1, synced_at=NOW() WHERE id=$2`, status, entry.ID)
-		pgDB.Exec(`INSERT INTO tb_sync_log (batch_id, entry_id, tb_transfer_status, error_message) VALUES ($1, $2, $3, $4)`,
-			fmt.Sprintf("sync_%d", time.Now().Unix()), entry.ID, status, errMsg)
-	}
+	// Step 2 (F16): collect transfers for the whole batch and POST them in
+	// chunks (was one HTTP round trip per entry), then mark rows with a single
+	// UPDATE ... WHERE id = ANY($1) per outcome.
+	lse.createTigerBeetleTransfersBatch(entries)
 
 	// Step 3: Batch entries for settlement
 	batch := lse.createSettlementBatch(entries)
@@ -275,28 +274,81 @@ func (lse *LedgerSyncEngine) SyncPendingEntries(ctx context.Context) error {
 	return nil
 }
 
-func (lse *LedgerSyncEngine) createTigerBeetleTransfer(entry BillingLedgerEntry) error {
+// createTigerBeetleTransfersBatch collects the 3 double-entry legs of every
+// entry in the sync batch and POSTs them to the TB core bridge in chunks
+// (F16), then marks rows synced/failed with batched UPDATEs.
+func (lse *LedgerSyncEngine) createTigerBeetleTransfersBatch(entries []BillingLedgerEntry) {
 	tbCoreURL := getEnv("TB_CORE_URL", "http://tigerbeetle-core:8080")
 
-	transfers := []map[string]interface{}{
-		{"id": entry.ID*10 + 1, "debit_account_id": 1000, "credit_account_id": 4010, "amount": entry.PlatformShare, "ledger": 1, "code": 1},
-		{"id": entry.ID*10 + 2, "debit_account_id": 1000, "credit_account_id": 4011, "amount": entry.ClientShare, "ledger": 1, "code": 2},
-		{"id": entry.ID*10 + 3, "debit_account_id": 4011, "credit_account_id": 4012, "amount": entry.AgentCommission, "ledger": 1, "code": 3},
+	type transfer map[string]interface{}
+	all := make([]transfer, 0, len(entries)*3)
+	owner := make([]int, 0, len(entries)*3)
+	for i, entry := range entries {
+		legs := []transfer{
+			{"id": entry.ID*10 + 1, "debit_account_id": 1000, "credit_account_id": 4010, "amount": entry.PlatformShare, "ledger": 1, "code": 1},
+			{"id": entry.ID*10 + 2, "debit_account_id": 1000, "credit_account_id": 4011, "amount": entry.ClientShare, "ledger": 1, "code": 2},
+			{"id": entry.ID*10 + 3, "debit_account_id": 4011, "credit_account_id": 4012, "amount": entry.AgentCommission, "ledger": 1, "code": 3},
+		}
+		for _, t := range legs {
+			all = append(all, t)
+			owner = append(owner, i)
+		}
 	}
 
-	data, _ := json.Marshal(transfers)
-	resp, err := http.Post(fmt.Sprintf("%s/api/v1/transfers", tbCoreURL), "application/json", bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("TB core request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("TB core status: %d", resp.StatusCode)
+	failed := make(map[int]bool)
+	for start := 0; start < len(all); start += tbHTTPBatchLimit {
+		end := start + tbHTTPBatchLimit
+		if end > len(all) {
+			end = len(all)
+		}
+		data, _ := json.Marshal(all[start:end])
+		resp, err := tbCoreHTTPClient.Post(fmt.Sprintf("%s/api/v1/transfers", tbCoreURL), "application/json", bytes.NewReader(data))
+		if err == nil && resp.StatusCode >= 400 {
+			err = fmt.Errorf("TB core status: %d", resp.StatusCode)
+		}
+		if resp != nil {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
+		if err != nil {
+			log.Printf("[LedgerSync] TB core chunk failed: %v", err)
+			for j := start; j < end; j++ {
+				failed[owner[j]] = true
+			}
+		}
 	}
 
-	log.Printf("[TigerBeetle] Double-entry transfers for tx %s: platform=%d, client=%d, agent=%d",
-		entry.TransactionID, entry.PlatformShare, entry.ClientShare, entry.AgentCommission)
-	return nil
+	// Batch UPDATEs by outcome (F16: was one UPDATE per entry).
+	syncedIDs := make([]int64, 0, len(entries))
+	failedIDs := make([]int64, 0)
+	for i, entry := range entries {
+		if failed[i] {
+			failedIDs = append(failedIDs, entry.ID)
+		} else {
+			syncedIDs = append(syncedIDs, entry.ID)
+		}
+	}
+	if len(syncedIDs) > 0 {
+		pgDB.Exec(`UPDATE billing_ledger_entries SET sync_status='synced', synced_at=NOW() WHERE id = ANY($1)`, pq.Array(syncedIDs))
+	}
+	if len(failedIDs) > 0 {
+		pgDB.Exec(`UPDATE billing_ledger_entries SET sync_status='failed', synced_at=NOW() WHERE id = ANY($1)`, pq.Array(failedIDs))
+	}
+
+	// Per-entry audit log retained.
+	batchTag := fmt.Sprintf("sync_%d", time.Now().Unix())
+	for i, entry := range entries {
+		status := "synced"
+		errMsg := ""
+		if failed[i] {
+			status = "failed"
+			errMsg = "tb core batch post failed"
+			log.Printf("[LedgerSync] TigerBeetle transfer failed for tx %s", entry.TransactionID)
+		}
+		pgDB.Exec(`INSERT INTO tb_sync_log (batch_id, entry_id, tb_transfer_status, error_message) VALUES ($1, $2, $3, $4)`,
+			batchTag, entry.ID, status, errMsg)
+	}
+	log.Printf("[TigerBeetle] Posted %d transfers for %d/%d entries", len(all), len(syncedIDs), len(entries))
 }
 
 func (lse *LedgerSyncEngine) createSettlementBatch(entries []BillingLedgerEntry) SettlementBatch {
@@ -434,11 +486,16 @@ func (lse *LedgerSyncEngine) handleHealth(w http.ResponseWriter, r *http.Request
 }
 
 func (lse *LedgerSyncEngine) handleTriggerSync(w http.ResponseWriter, r *http.Request) {
-	if err := lse.SyncPendingEntries(r.Context()); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "synced"})
+	// F2: run the sync asynchronously (202 Accepted) — a full cycle can take
+	// minutes and must not run inside the HTTP request lifetime.
+	go func() {
+		if err := lse.SyncPendingEntries(context.Background()); err != nil {
+			log.Printf("[LedgerSync] triggered sync failed: %v", err)
+		}
+	}()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"status": "sync_started"})
 }
 
 func (lse *LedgerSyncEngine) handleGetBatches(w http.ResponseWriter, r *http.Request) {
@@ -534,7 +591,16 @@ func main() {
 	serveMux.HandleFunc("/api/v1/ledger/batches", engine.handleGetBatches)
 	serveMux.HandleFunc("/api/v1/ledger/settle", engine.handleSettleBatch)
 
-	server := &http.Server{Addr: ":" + cfg.Port, Handler: serveMux}
+	// F2: explicit server timeouts (Slowloris protection); the sync trigger is
+	// async (202) so WriteTimeout 60s is ample.
+	server := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           serveMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       90 * time.Second,
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

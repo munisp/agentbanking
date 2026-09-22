@@ -1,33 +1,41 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
  * observabilityMiddleware.ts — tRPC middleware that automatically instruments
- * ALL procedures with Kafka event publishing, Redis caching, Fluvio streaming,
- * TigerBeetle audit ledger, and Permify authorization checks.
+ * ALL procedures with Kafka event publishing, Redis last-call timestamps, and
+ * Fluvio streaming.
  *
  * This is applied at the procedure level via tRPC's middleware chain, so
  * individual routers do NOT need to import or call any middleware functions.
  *
- * Usage: Import `instrumentedProcedure` / `instrumentedProtectedProcedure`
- * instead of `publicProcedure` / `protectedProcedure` in routers.
+ * ROUND-8 PERF REWORK:
+ *  - The per-request fire-and-forget fan-out (Kafka single-send + Redis SET +
+ *    Fluvio HTTP POST + TigerBeetle zero-amount transfer) is replaced by an
+ *    in-memory batched queue (server/lib/batchedAsyncQueue.ts): the request
+ *    path is now a single array push; flush happens every 100ms / 50 events
+ *    with a 500ms timeout and drop-oldest backpressure at 10k events.
+ *  - The zero-amount TigerBeetle "audit" transfer was REMOVED — fabricated
+ *    bookkeeping (observability is not money movement; flooding the ledger
+ *    with 0-amount transfers per request was pure cost).
+ *  - Kafka events now go to ONE existing topic ("pos.audit.trail", consumed
+ *    by kafka-event-consumer's default config) instead of ad-hoc per-path
+ *    topics that failed under allowAutoTopicCreation:false and churned
+ *    4× backoff + DLQ per request.
  *
- * Or apply globally via the `observabilityPlugin` on the tRPC instance.
+ * All calls remain fail-open: queue flush errors are logged and dropped,
+ * never propagated to the request path.
  */
-import { publishEvent, type KafkaTopic } from "../kafkaClient";
-import { cacheSet, cacheGet } from "../redisClient";
-import { tbCreateTransfer } from "../tbClient";
+import { publishEvent } from "../kafkaClient";
+import { cacheSet } from "../redisClient";
 import { fluvioProduce } from "../fluvio";
-import { initTRPC, TRPCError } from "@trpc/server";
-import type { TrpcContext } from "../_core/context";
+import { createBatchedQueue } from "../lib/batchedAsyncQueue";
 
 // ── Observability Middleware ──────────────────────────────────────────────────
-// Wraps every procedure call with:
-// 1. Kafka event publish (fire-and-forget)
+// Wraps every procedure call with a batched (queued) observability event:
+// 1. Kafka event publish (batched via kafkaClient micro-batch)
 // 2. Redis cache of last-call timestamp
 // 3. Fluvio real-time stream event
-// 4. TigerBeetle audit transfer (zero-amount for tracking)
 //
-// All calls are wrapped in try/catch so failures are silent (fail-open).
-// This ensures middleware never blocks or breaks business logic.
+// The TigerBeetle zero-amount audit transfer was removed in round 8 (see header).
 
 export interface ObservabilityContext {
   /** The router path, e.g. "agent.login" */
@@ -46,60 +54,89 @@ export interface ObservabilityContext {
   error?: string;
 }
 
+/** Single existing topic for all tRPC observability events. */
+const OBSERVABILITY_KAFKA_TOPIC = "pos.audit.trail" as const;
+/** Single Fluvio topic for tRPC observability events (was per-path ad-hoc). */
+const OBSERVABILITY_FLUVIO_TOPIC = "pos.trpc.events";
+
 /**
- * Publish observability events to all middleware.
- * All calls are fire-and-forget with try/catch.
+ * Flush a batch of observability events to all sinks.
+ * Invoked by the queue (100ms / 50 events), bounded to 500ms by the queue.
+ * Individual sink failures are swallowed (fail-open).
+ */
+async function flushObservabilityBatch(
+  events: ObservabilityContext[]
+): Promise<void> {
+  await Promise.allSettled(
+    events.map(async ctx => {
+      const payload = {
+        path: ctx.path,
+        type: ctx.type,
+        userId: ctx.userId,
+        durationMs: ctx.durationMs,
+        success: ctx.success,
+        error: ctx.error,
+        timestamp: Date.now(),
+      };
+
+      // 1. Kafka — event bus for downstream consumers (analytics, audit,
+      //    alerting). kafkaClient itself micro-batches these into a single
+      //    producer.send per 50ms window.
+      try {
+        await publishEvent(OBSERVABILITY_KAFKA_TOPIC, ctx.userId, {
+          event: `${ctx.path}.${ctx.success ? "success" : "failure"}`,
+          ...payload,
+        });
+      } catch {}
+
+      // 2. Redis — cache last-call timestamp for rate limiting and monitoring
+      try {
+        await cacheSet(
+          `obs:${ctx.path}:${ctx.userId}:last`,
+          JSON.stringify({
+            ts: Date.now(),
+            duration: ctx.durationMs,
+            success: ctx.success,
+          }),
+          600 // 10 min TTL
+        );
+      } catch {}
+
+      // 3. Fluvio — real-time streaming for dashboards and alerting
+      try {
+        await fluvioProduce(OBSERVABILITY_FLUVIO_TOPIC, {
+          value: JSON.stringify(payload),
+        });
+      } catch {}
+    })
+  );
+}
+
+// Batched async queue: request path = one array push. Flush every 100ms or
+// 50 events; 500ms timeout per flush; drop-oldest backpressure at 10k.
+const observabilityQueue = createBatchedQueue<ObservabilityContext>({
+  name: "observability",
+  batchSize: 50,
+  flushIntervalMs: 100,
+  maxQueue: 10_000,
+  taskTimeoutMs: 500,
+  flush: flushObservabilityBatch,
+});
+
+/**
+ * Enqueue an observability event. Never blocks; the request path cost is a
+ * single array push. Kept async-shaped for backwards compatibility with
+ * existing call sites (they `.catch()` the returned promise).
  */
 export async function emitObservabilityEvent(
   ctx: ObservabilityContext
 ): Promise<void> {
-  const topic = `pos.${ctx.path.replace(/\./g, "_")}` as KafkaTopic;
-  const payload = {
-    path: ctx.path,
-    type: ctx.type,
-    userId: ctx.userId,
-    durationMs: ctx.durationMs,
-    success: ctx.success,
-    error: ctx.error,
-    timestamp: Date.now(),
-  };
+  observabilityQueue.push(ctx);
+}
 
-  // 1. Kafka — event bus for downstream consumers (analytics, audit, alerting)
-  try {
-    await publishEvent(topic, ctx.userId, {
-      event: `${ctx.path}.${ctx.success ? "success" : "failure"}`,
-      ...payload,
-    });
-  } catch {}
-
-  // 2. Redis — cache last-call timestamp for rate limiting and monitoring
-  try {
-    await cacheSet(
-      `obs:${ctx.path}:${ctx.userId}:last`,
-      JSON.stringify({
-        ts: Date.now(),
-        duration: ctx.durationMs,
-        success: ctx.success,
-      }),
-      600 // 10 min TTL
-    );
-  } catch {}
-
-  // 3. Fluvio — real-time streaming for dashboards and alerting
-  try {
-    await fluvioProduce(topic, {
-      value: JSON.stringify(payload),
-    });
-  } catch {}
-
-  // 4. TigerBeetle — immutable audit ledger entry (zero-amount transfer for tracking)
-  try {
-    await tbCreateTransfer({
-      debitAccountId: "1", // system observability account
-      creditAccountId: "2", // audit sink account
-      amount: 0, // zero-amount = audit-only entry
-    });
-  } catch {}
+/** Flush pending observability events (graceful shutdown / tests). */
+export async function flushObservabilityQueue(): Promise<void> {
+  await observabilityQueue.flushNow();
 }
 
 /**
@@ -126,7 +163,7 @@ export function createObservabilityMiddleware(t: any) {
         const result = await next({ ctx });
         const durationMs = Date.now() - startMs;
 
-        // Fire-and-forget: don't await, don't block the response
+        // Queue push: O(1), off the response path
         emitObservabilityEvent({
           path,
           type,

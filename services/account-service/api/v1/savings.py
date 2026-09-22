@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -37,18 +37,20 @@ def list_goals(
     agent_id: Optional[str] = None,
     db: Session = Depends(get_session),
     tenant_id: str = Header(..., alias="x-tenant-id"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
-    params: dict = {"tid": tenant_id}
+    params: dict = {"tid": tenant_id, "lim": limit, "off": offset}
     filters = ["tenant_id = :tid"]
     if agent_id and agent_id != "undefined":
         filters.append("agent_keycloak_id = :kid")
         params["kid"] = agent_id
     where = " AND ".join(filters)
     rows = db.execute(
-        text(f"SELECT * FROM agent_savings_goals WHERE {where} ORDER BY created_at DESC"),
+        text(f"SELECT * FROM agent_savings_goals WHERE {where} ORDER BY created_at DESC LIMIT :lim OFFSET :off"),
         params,
     ).mappings().all()
-    return {"goals": [_row(r) for r in rows]}
+    return {"goals": [_row(r) for r in rows], "limit": limit, "offset": offset}
 
 
 @savings_router.post("/goals", status_code=201)

@@ -100,7 +100,7 @@ export default function BankManagement() {
     fetchTenants(true);
     tenantService.getGlobalFeatures().then(setGlobalFeatures);
     // Refresh every 10 seconds (silently in background)
-    const interval = setInterval(() => fetchTenants(false), 10000);
+    const interval = setInterval(() => fetchTenants(false), 30000);
     return () => clearInterval(interval);
   }, []);
 

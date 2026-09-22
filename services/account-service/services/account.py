@@ -139,9 +139,11 @@ class AccountService:
 
         return account
 
-    def get_accounts(self, context: Context):
-        """Logic to get all accounts with balances"""
-        accounts = self.__account_repository.get_accounts(context.tenant_id)
+    def get_accounts(self, context: Context, limit: int | None = None, offset: int = 0):
+        """Logic to get all accounts with balances (optionally paginated)"""
+        accounts = self.__account_repository.get_accounts(
+            context.tenant_id, limit=limit, offset=offset
+        )
 
         if not accounts:
             return []

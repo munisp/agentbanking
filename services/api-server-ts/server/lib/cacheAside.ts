@@ -14,6 +14,7 @@
 
 import { cacheGet, cacheSet, cacheDel, cachePublish } from "../redisClient";
 import crypto from "crypto";
+import superjson from "superjson";
 
 const inflight = new Map<string, Promise<unknown>>();
 
@@ -63,6 +64,62 @@ export async function withCache<T>(
       // Store in Redis
       try {
         await cacheSet(key, JSON.stringify(result), ttlSeconds);
+      } catch {
+        // fail-open
+      }
+      inflight.delete(key);
+      return result;
+    })
+    .catch(err => {
+      inflight.delete(key);
+      throw err;
+    });
+
+  inflight.set(key, promise);
+  return promise;
+}
+
+/**
+ * withCacheTyped — same cache-aside + singleflight pattern as withCache, but
+ * serializes with superjson so Date/Map/undefined fields in Drizzle row
+ * objects round-trip correctly (withCache's JSON.stringify turns Dates into
+ * strings, which breaks callers that treat them as Date instances).
+ *
+ * Round-8 usage: hot identity lookups (session user, agent row) with a short
+ * 15s TTL. No invalidation hooks exist on the user/agent write paths, so the
+ * staleness bound IS the TTL: a suspended/updated principal may be served a
+ * stale row for up to 15s. Do NOT raise the TTL without adding invalidation.
+ */
+export async function withCacheTyped<T>(
+  key: string,
+  ttlSeconds: number,
+  fetchFn: () => Promise<T>
+): Promise<T> {
+  try {
+    const cached = await cacheGet(key);
+    if (cached !== null) {
+      metrics.hits++;
+      return superjson.parse(cached) as T;
+    }
+  } catch {
+    metrics.errors++;
+  }
+
+  metrics.misses++;
+
+  const existing = inflight.get(key);
+  if (existing) {
+    metrics.stampedePrevented++;
+    return existing as Promise<T>;
+  }
+
+  const promise = fetchFn()
+    .then(async result => {
+      try {
+        // Only cache defined results — misses/errors are never cached.
+        if (result !== undefined && result !== null) {
+          await cacheSet(key, superjson.stringify(result), ttlSeconds);
+        }
       } catch {
         // fail-open
       }

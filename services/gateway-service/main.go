@@ -34,31 +34,42 @@ func main() {
 		svcVersion = "1.0.0"
 	}
 	shutdownTracer := initTracer(svcName, svcVersion)
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = shutdownTracer(ctx)
+	fmt.Println("gateway-service starting...")
+
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status": "healthy", "service": "gateway-service"}`))
+	})
+
+	// Readiness — distinct from /health. gateway-service has no external
+	// datastore dependencies, so readiness == server initialized and serving.
+	http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status": "ready", "service": "gateway-service"}`))
+	})
+
+	// Prometheus metrics endpoint (canonical cross-language contract).
+	http.Handle("/metrics", promhttp.Handler())
+
+	// F5: explicit server timeouts (Slowloris protection), the previously
+	// dead rate-limit middleware wired around the OTel-traced handler chain,
+	// and graceful SIGTERM/SIGINT drain via the existing gracefulShutdown.
+	handler := rateLimitMiddleware(100, 200, otelMiddleware(svcName, http.DefaultServeMux))
+	srv := &http.Server{
+		Addr:              ":8080",
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       90 * time.Second,
+	}
+	go func() {
+		log.Println("gateway-service listening on :8080")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
 	}()
-    fmt.Println("gateway-service starting...")
-
-    http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-        w.WriteHeader(http.StatusOK)
-        w.Write([]byte(`{"status": "healthy", "service": "gateway-service"}`))
-    })
-
-    // Readiness — distinct from /health. gateway-service has no external
-    // datastore dependencies, so readiness == server initialized and serving.
-    http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
-        w.WriteHeader(http.StatusOK)
-        w.Write([]byte(`{"status": "ready", "service": "gateway-service"}`))
-    })
-
-    // Prometheus metrics endpoint (canonical cross-language contract).
-    http.Handle("/metrics", promhttp.Handler())
-
-    log.Println("gateway-service listening on :8080")
-    // Wire OTel tracing middleware around the whole handler chain.
-    log.Fatal(http.ListenAndServe(":8080", otelMiddleware(svcName, http.DefaultServeMux)))
+	gracefulShutdown(svcName, srv, shutdownTracer)
 }
 
 // initTracer initialises the OTLP trace exporter.
@@ -133,4 +144,3 @@ func gracefulShutdown(serviceName string, srv *http.Server, cleanup func(context
 	}
 	slog.Info("Server stopped gracefully", "service", serviceName)
 }
-

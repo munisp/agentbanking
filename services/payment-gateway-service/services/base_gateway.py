@@ -5,12 +5,66 @@ This module defines the abstract base class for all payment gateway integrations
 All payment gateways must implement this interface to ensure consistency.
 """
 
+import threading
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
 from decimal import Decimal
 from enum import Enum
 from dataclasses import dataclass
 from datetime import datetime
+
+import httpx
+
+
+# ---------------------------------------------------------------------------
+# Shared httpx.AsyncClient pool.
+#
+# Gateway implementations previously constructed a brand-new
+# ``httpx.AsyncClient`` per call (~40 sites), paying a fresh TCP+TLS handshake
+# and losing keep-alive on every operation. Clients are immutable after
+# construction and safe to share, so we keep a small process-wide pool keyed
+# by (timeout, verify) and hand the same client to every caller.
+# ---------------------------------------------------------------------------
+_async_client_pool: Dict[tuple, httpx.AsyncClient] = {}
+_async_client_pool_lock = threading.Lock()
+
+
+def get_shared_async_client(
+    timeout: float = 30.0, verify: Any = True, **kwargs: Any
+) -> httpx.AsyncClient:
+    """Return a shared httpx.AsyncClient for the given (timeout, verify) combo.
+
+    An explicit timeout is always applied (default 30s) so no call falls back
+    to httpx's 5s default.
+    """
+    key = (float(timeout), str(verify))
+    client = _async_client_pool.get(key)
+    if client is None or client.is_closed:
+        with _async_client_pool_lock:
+            client = _async_client_pool.get(key)
+            if client is None or client.is_closed:
+                client = httpx.AsyncClient(
+                    timeout=timeout,
+                    verify=verify,
+                    limits=httpx.Limits(
+                        max_connections=50, max_keepalive_connections=20
+                    ),
+                    **kwargs,
+                )
+                _async_client_pool[key] = client
+    return client
+
+
+async def close_shared_async_clients() -> None:
+    """Close all pooled clients (call from application shutdown)."""
+    with _async_client_pool_lock:
+        clients = list(_async_client_pool.values())
+        _async_client_pool.clear()
+    for client in clients:
+        try:
+            await client.aclose()
+        except Exception:
+            pass
 
 
 class PaymentStatus(str, Enum):

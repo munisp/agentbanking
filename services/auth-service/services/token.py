@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 import jwt
 import requests
@@ -58,24 +59,53 @@ class TokenService:
 
     # F10: process-local JWKS cache (realm URL -> (fetched_at_epoch, jwks_dict))
     _jwks_cache = {}
+    # Singleflight: one network fetch per realm URL at a time; concurrent
+    # callers wait on the lock and reuse the result (no thundering herd).
+    _jwks_locks = {}
+    _jwks_locks_guard = threading.Lock()
+    _jwks_session = requests.Session()
     _JWKS_CACHE_TTL_SECONDS = int(os.getenv("JWKS_CACHE_TTL_SECONDS", "3600"))
     _JWKS_FETCH_TIMEOUT_SECONDS = float(os.getenv("JWKS_FETCH_TIMEOUT_SECONDS", "5"))
 
-    def _fetch_jwks(self, jwks_url: str) -> dict:
+    @classmethod
+    def _lock_for(cls, jwks_url: str) -> threading.Lock:
+        with cls._jwks_locks_guard:
+            lock = cls._jwks_locks.get(jwks_url)
+            if lock is None:
+                lock = threading.Lock()
+                cls._jwks_locks[jwks_url] = lock
+            return lock
+
+    def _fetch_jwks(self, jwks_url: str, force_refresh: bool = False) -> dict:
         """Fetch JWKS with a bounded timeout and a TTL cache.
 
         Fails closed: a fetch error with no cached keys raises, rather than
-        silently accepting tokens.
+        silently accepting tokens. ``force_refresh`` bypasses the TTL (used
+        for refetch-on-unknown-kid after a key rotation).
         """
-        cached = self._jwks_cache.get(jwks_url)
         now = time.time()
-        if cached and (now - cached[0]) < self._JWKS_CACHE_TTL_SECONDS:
-            return cached[1]
-        resp = requests.get(jwks_url, timeout=self._JWKS_FETCH_TIMEOUT_SECONDS)
-        resp.raise_for_status()
-        jwks = resp.json()
-        self._jwks_cache[jwks_url] = (now, jwks)
-        return jwks
+        if not force_refresh:
+            cached = self._jwks_cache.get(jwks_url)
+            if cached and (now - cached[0]) < self._JWKS_CACHE_TTL_SECONDS:
+                return cached[1]
+
+        lock = self._lock_for(jwks_url)
+        with lock:
+            # Re-check inside the lock: another thread may have refreshed.
+            now = time.time()
+            cached = self._jwks_cache.get(jwks_url)
+            if cached and not force_refresh and (now - cached[0]) < self._JWKS_CACHE_TTL_SECONDS:
+                return cached[1]
+            if cached and force_refresh and (now - cached[0]) < 5:
+                # Another thread just refreshed while we waited on the lock.
+                return cached[1]
+            resp = self._jwks_session.get(
+                jwks_url, timeout=self._JWKS_FETCH_TIMEOUT_SECONDS
+            )
+            resp.raise_for_status()
+            jwks = resp.json()
+            self._jwks_cache[jwks_url] = (now, jwks)
+            return jwks
 
     def validate_token(self, token: str, context: Context):
         keycloak_base_url = os.getenv(
@@ -90,7 +120,18 @@ class TokenService:
         headers = jwt.get_unverified_header(token)
         kid = headers["kid"]
 
-        key_data = next(k for k in jwks["keys"] if k["kid"] == kid)
+        key_data = next((k for k in jwks["keys"] if k["kid"] == kid), None)
+        if key_data is None:
+            # Unknown kid: Keycloak may have rotated keys. Force-refetch once
+            # (singleflight-guarded) before giving up.
+            jwks = self._fetch_jwks(jwks_url, force_refresh=True)
+            key_data = next((k for k in jwks["keys"] if k["kid"] == kid), None)
+        if key_data is None:
+            raise ApiError(
+                message="Token signed with unknown key.",
+                status_code=401,
+                code="AUTH-TOKEN-INT-4010",
+            )
         pem_key = self.jwk_to_pem(key_data)
 
         # F10: verify issuer and (when configured) audience, not just expiry.

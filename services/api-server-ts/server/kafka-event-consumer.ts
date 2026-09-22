@@ -23,12 +23,16 @@ import type {
   Producer,
   Kafka as KafkaClient,
   EachMessagePayload,
+  EachBatchPayload,
 } from "kafkajs";
 import {
   claimIdempotencyKey,
+  claimIdempotencyKeysBatch,
   completeIdempotencyKey,
+  completeIdempotencyKeysBatch,
   failIdempotencyKey,
   hashIdempotencyPayload,
+  type BatchClaimOutcome,
 } from "./lib/transactionHelper";
 
 /**
@@ -257,8 +261,17 @@ export class PosEventConsumer {
 
       this.running = true;
       await this.consumer.run({
-        eachMessage: async (payload: EachMessagePayload) => {
-          await this.processMessage(payload);
+        // Round-8 perf: eachBatch instead of eachMessage. The declared
+        // batchSize (100) was previously unused; it now bounds the idempotency
+        // claim/complete SQL chunk size. Offsets are committed ONCE per batch
+        // (commitOffsetsIfNecessary) instead of per message, and idempotency
+        // claims/completions are batched (2 bulk writes per chunk instead of
+        // 2 per event). FF-17 fail-closed semantics preserved: an idempotency
+        // store failure throws before any offset is resolved, so the whole
+        // uncommitted batch is redelivered.
+        eachBatchAutoResolve: false,
+        eachBatch: async (payload: EachBatchPayload) => {
+          await this.processBatch(payload);
         },
       });
 
@@ -375,6 +388,196 @@ export class PosEventConsumer {
     const elapsed = Date.now() - startTime;
     this.metrics.avgProcessingTimeMs =
       (this.metrics.avgProcessingTimeMs * (this.metrics.messagesConsumed - 1) +
+        elapsed) /
+      this.metrics.messagesConsumed;
+  }
+
+  /**
+   * Round-8: batch processing entry point (eachBatch, eachBatchAutoResolve=false).
+   *
+   * Per batch:
+   *   1. Parse all messages.
+   *   2. ONE bulk idempotency claim (chunked at config.batchSize) — throws
+   *      KafkaIdempotencyStoreError on store failure BEFORE any offset is
+   *      resolved, so the uncommitted batch is redelivered (FF-17 fail-closed,
+   *      identical blast radius to the old per-message path).
+   *   3. Handlers run sequentially in offset order (partition ordering kept);
+   *      failures keep the old behavior: failIdempotencyKey + DLQ + resolve.
+   *   4. ONE bulk completion UPDATE for the successful claims.
+   *   5. ONE offset commit for the whole batch (commitOffsetsIfNecessary).
+   *
+   * Net PG traffic per 100-event chunk: ~3 round trips instead of ~200.
+   */
+  private async processBatch(payload: EachBatchPayload): Promise<void> {
+    const { batch, resolveOffset, heartbeat, commitOffsetsIfNecessary } =
+      payload;
+    const { topic, partition } = batch;
+    const startTime = Date.now();
+    const chunkSize = Math.max(1, this.config.batchSize || 100);
+    const HEARTBEAT_EVERY = 25;
+
+    interface WorkItem {
+      offset: string;
+      message: (typeof batch.messages)[number];
+      event: PosEvent;
+      idemKey: string;
+      requestHash: string;
+    }
+
+    const items: WorkItem[] = [];
+    const immediate: { offset: string; message: (typeof batch.messages)[number]; dlqError?: string }[] = [];
+
+    // ── 1. Parse ────────────────────────────────────────────────────────────
+    for (const message of batch.messages) {
+      this.metrics.messagesConsumed++;
+      const value = message.value?.toString();
+      if (!value) {
+        immediate.push({ offset: message.offset, message });
+        continue;
+      }
+      let event: PosEvent;
+      try {
+        event = JSON.parse(value);
+      } catch (parseErr) {
+        immediate.push({
+          offset: message.offset,
+          message,
+          dlqError: `JSON parse error: ${(parseErr as Error).message}`,
+        });
+        continue;
+      }
+      // In-memory fast-path cache (FF-17: cache only; DB claim is authoritative)
+      if (this.config.enableIdempotency && this.processedIds.has(event.id)) {
+        immediate.push({ offset: message.offset, message });
+        continue;
+      }
+      items.push({
+        offset: message.offset,
+        message,
+        event,
+        idemKey: `kafka:${event.id}`,
+        requestHash: hashIdempotencyPayload(event),
+      });
+    }
+
+    // ── 2. Bulk idempotency claim (fail-closed: nothing resolved yet) ────────
+    let claims: Map<string, BatchClaimOutcome> = new Map();
+    if (this.config.enableIdempotency && items.length > 0) {
+      try {
+        claims = await claimIdempotencyKeysBatch(
+          items.map(i => ({ key: i.idemKey, requestHash: i.requestHash })),
+          chunkSize
+        );
+      } catch (claimErr) {
+        // Fail CLOSED for money events: the processed-event record could not
+        // be verified. Rethrow before resolving/committing any offset so the
+        // whole batch is redelivered once the idempotency store recovers.
+        throw new KafkaIdempotencyStoreError(
+          `Idempotency batch claim failed on ${topic}:${partition} (${items.length} events) — refusing to process unverified: ${(claimErr as Error).message}`,
+          claimErr
+        );
+      }
+    }
+
+    // ── 3. Process in offset order ───────────────────────────────────────────
+    const completions: { key: string; requestHash: string; result: unknown }[] =
+      [];
+    let processed = 0;
+
+    const bumpCache = (eventId: string) => {
+      if (!this.config.enableIdempotency) return;
+      this.processedIds.add(eventId);
+      if (this.processedIds.size > 100_000) {
+        const arr = Array.from(this.processedIds);
+        this.processedIds = new Set(arr.slice(-50_000));
+      }
+    };
+
+    for (const imm of immediate) {
+      if (imm.dlqError) {
+        this.metrics.messagesFailed++;
+        await this.sendToDLQ(imm.message, topic, partition, imm.dlqError);
+      }
+      resolveOffset(imm.offset);
+    }
+
+    for (const item of items) {
+      processed++;
+      if (processed % HEARTBEAT_EVERY === 0) await heartbeat();
+
+      const handler = eventHandlers.get(item.event.type);
+      const claim = claims.get(item.idemKey);
+
+      if (this.config.enableIdempotency && claim?.kind === "replay") {
+        // Already processed durably — skip and cache locally.
+        bumpCache(item.event.id);
+        this.metrics.lastMessageAt = Date.now();
+        resolveOffset(item.offset);
+        continue;
+      }
+
+      if (this.config.enableIdempotency && claim?.kind === "conflict") {
+        // Old behavior: a CONFLICT from the claim path surfaced as a generic
+        // processing error → DLQ (never silently reprocessed).
+        this.metrics.messagesFailed++;
+        console.error(
+          `[Kafka Consumer] Idempotency conflict on ${topic}:${partition} for event ${item.event.id}: ${claim.reason}`
+        );
+        await this.sendToDLQ(item.message, topic, partition, claim.reason);
+        resolveOffset(item.offset);
+        continue;
+      }
+
+      if (!handler) {
+        console.warn(
+          `[Kafka Consumer] No handler for event type: ${item.event.type}`
+        );
+        resolveOffset(item.offset);
+        continue;
+      }
+
+      try {
+        await handler(item.event);
+        if (this.config.enableIdempotency) {
+          completions.push({
+            key: item.idemKey,
+            requestHash: item.requestHash,
+            result: null,
+          });
+          bumpCache(item.event.id);
+        }
+        this.metrics.messagesProcessed++;
+      } catch (handlerErr) {
+        const errMsg =
+          handlerErr instanceof Error ? handlerErr.message : String(handlerErr);
+        if (this.config.enableIdempotency) {
+          await failIdempotencyKey(item.idemKey, item.requestHash, errMsg);
+        }
+        this.metrics.messagesFailed++;
+        console.error(
+          `[Kafka Consumer] Processing error on ${topic}:${partition}:`,
+          errMsg
+        );
+        await this.sendToDLQ(item.message, topic, partition, errMsg);
+      }
+      resolveOffset(item.offset);
+    }
+
+    // ── 4. Bulk completion (before any commit, matching old write ordering) ──
+    if (completions.length > 0) {
+      await completeIdempotencyKeysBatch(completions, chunkSize);
+    }
+
+    // ── 5. Per-batch offset commit ───────────────────────────────────────────
+    await commitOffsetsIfNecessary();
+    this.metrics.lastMessageAt = Date.now();
+
+    // Update avg processing time (per batch)
+    const elapsed = Date.now() - startTime;
+    const n = Math.max(1, batch.messages.length);
+    this.metrics.avgProcessingTimeMs =
+      (this.metrics.avgProcessingTimeMs *
+        Math.max(0, this.metrics.messagesConsumed - n) +
         elapsed) /
       this.metrics.messagesConsumed;
   }

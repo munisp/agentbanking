@@ -10,6 +10,13 @@ import { agents, transactions, fraudAlerts, kycSessions } from "../../drizzle/sc
 import type { Agent, InsertAgent } from "../../drizzle/schema";
 import { BaseRepository } from "./base.repository";
 import { getDb, getReadDb } from "../db";
+import { withCacheTyped } from "../lib/cacheAside";
+
+// Round-8 perf: findByCode is a hot read (per-call agent resolution) with no
+// caching. Cache for 15s via Redis (type-preserving, singleflight). No
+// invalidation hook exists on agent writes — staleness bound is the TTL;
+// fail-open to the read replica on Redis errors.
+const AGENT_CODE_CACHE_TTL_S = 15;
 
 export class AgentRepository extends BaseRepository<
   typeof agents,
@@ -21,13 +28,19 @@ export class AgentRepository extends BaseRepository<
 
   // ── Find by agent code ──────────────────────────────────────────────────────
   async findByCode(agentCode: string): Promise<Agent | null> {
-    const db = await getReadDb();
-    const rows = await db
-      .select()
-      .from(agents)
-      .where(eq(agents.agentCode, agentCode))
-      .limit(1);
-    return rows[0] ?? null;
+    return withCacheTyped(
+      `agent:code:${agentCode}`,
+      AGENT_CODE_CACHE_TTL_S,
+      async () => {
+        const db = await getReadDb();
+        const rows = await db
+          .select()
+          .from(agents)
+          .where(eq(agents.agentCode, agentCode))
+          .limit(1);
+        return rows[0] ?? null;
+      }
+    );
   }
 
   // ── Find by phone ───────────────────────────────────────────────────────────

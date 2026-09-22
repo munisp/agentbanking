@@ -18,9 +18,64 @@
  * PostgreSQL table (migration 0047) for compliance and debugging.
  */
 import logger from "./logger";
+import { createBatchedQueue } from "../lib/batchedAsyncQueue";
 
 const PERMIFY_URL = process.env.PERMIFY_URL ?? "http://localhost:3476";
 const PERMIFY_TENANT_ID = process.env.PERMIFY_TENANT_ID ?? "t1";
+
+// ── Round-8 perf: short-TTL decision cache ────────────────────────────────────
+// permifyCheck was an uncached blocking HTTP RPC on EVERY protectedProcedure
+// (and twice for adminProcedure). Cache concrete allowed/denied verdicts for
+// 30s keyed by (tenant, subject, permission, resource). Errors and fallback
+// verdicts are NEVER cached — fail-closed semantics are preserved: a Permify
+// outage still denies (no stale "allow" can be synthesized from an error).
+const PERMIFY_CACHE_TTL_MS = 30_000;
+const PERMIFY_CACHE_MAX = 10_000;
+
+interface CacheEntry {
+  allowed: boolean;
+  expiresAt: number;
+}
+const decisionCache = new Map<string, CacheEntry>();
+
+function cacheKey(params: {
+  subjectType: string;
+  subjectId: string;
+  entityType: string;
+  entityId: string;
+  permission: string;
+}): string {
+  return [
+    PERMIFY_TENANT_ID,
+    params.subjectType,
+    params.subjectId,
+    params.permission,
+    params.entityType,
+    params.entityId,
+  ].join(":");
+}
+
+function cacheGetDecision(key: string): boolean | undefined {
+  const entry = decisionCache.get(key);
+  if (!entry) return undefined;
+  if (entry.expiresAt <= Date.now()) {
+    decisionCache.delete(key);
+    return undefined;
+  }
+  return entry.allowed;
+}
+
+function cacheSetDecision(key: string, allowed: boolean): void {
+  if (decisionCache.size >= PERMIFY_CACHE_MAX) {
+    // Cheap eviction sweep: drop expired entries; if still full, reset.
+    const now = Date.now();
+    for (const [k, v] of decisionCache) {
+      if (v.expiresAt <= now) decisionCache.delete(k);
+    }
+    if (decisionCache.size >= PERMIFY_CACHE_MAX) decisionCache.clear();
+  }
+  decisionCache.set(key, { allowed, expiresAt: Date.now() + PERMIFY_CACHE_TTL_MS });
+}
 
 interface PermifyCheckRequest {
   tenantId: string;
@@ -38,25 +93,33 @@ interface PermifyCheckResponse {
 }
 
 /**
- * Persist a Permify check result to the permify_check_log table.
- * Fire-and-forget — never blocks the authorization path.
+ * Persist Permify check results to the permify_check_log table.
+ *
+ * Round-8 perf: was one Postgres INSERT per check (a pool checkout + write on
+ * every protected request). Now buffered in memory and flushed as a single
+ * multi-row INSERT every 100ms / 50 rows (500ms timeout, drop-oldest at 10k).
+ * Fire-and-forget — never blocks the authorization path; audit-copy loss on
+ * crash is acceptable (the table is for compliance debugging, not the
+ * authoritative audit trail — that is audit_log / outbox).
  */
-async function persistCheckLog(params: {
+interface CheckLogRow {
   subjectType: string;
   subjectId: string;
   entityType: string;
   entityId: string;
   permission: string;
-  result: "allowed" | "denied" | "error" | "fallback_open";
+  result: "allowed" | "denied" | "error" | "fallback_open" | "fallback_closed";
   latencyMs?: number;
   errorMessage?: string;
-}): Promise<void> {
-  try {
-    const { getDb } = await import("../db");
-    const { permifyCheckLog } = await import("../../drizzle/schema");
-    const db = await getDb();
-    if (!db) return;
-    await db.insert(permifyCheckLog).values({
+}
+
+async function flushCheckLogBatch(rows: CheckLogRow[]): Promise<void> {
+  const { getDb } = await import("../db");
+  const { permifyCheckLog } = await import("../../drizzle/schema");
+  const db = await getDb();
+  if (!db || rows.length === 0) return;
+  await db.insert(permifyCheckLog).values(
+    rows.map(params => ({
       tenantId: PERMIFY_TENANT_ID,
       subjectType: params.subjectType,
       subjectId: params.subjectId,
@@ -67,10 +130,22 @@ async function persistCheckLog(params: {
       depth: 20,
       latencyMs: params.latencyMs,
       errorMessage: params.errorMessage,
-    });
-  } catch {
-    // Persistence failure must never break the authorization path
-  }
+    }))
+  );
+}
+
+const checkLogQueue = createBatchedQueue<CheckLogRow>({
+  name: "permifyCheckLog",
+  batchSize: 50,
+  flushIntervalMs: 100,
+  maxQueue: 10_000,
+  taskTimeoutMs: 500,
+  flush: flushCheckLogBatch,
+});
+
+async function persistCheckLog(params: CheckLogRow): Promise<void> {
+  // Queue push only — persistence failure must never break authorization.
+  checkLogQueue.push(params);
 }
 
 /**
@@ -84,6 +159,13 @@ export async function permifyCheck(params: {
   entityId: string;
   permission: string;
 }): Promise<boolean> {
+  // Round-8 perf: 30s decision cache (concrete verdicts only — never errors).
+  // Cache hits skip both the HTTP RPC and the audit-log write (the latter is
+  // what makes this a net write reduction, not just a latency one).
+  const key = cacheKey(params);
+  const cached = cacheGetDecision(key);
+  if (cached !== undefined) return cached;
+
   const body: PermifyCheckRequest = {
     tenantId: PERMIFY_TENANT_ID,
     metadata: {
@@ -121,6 +203,9 @@ export async function permifyCheck(params: {
 
     const json = (await res.json()) as PermifyCheckResponse;
     const allowed = json.can === "CHECK_RESULT_ALLOWED";
+    // Cache concrete verdicts only (allowed/denied). Errors and fail-open/
+    // fail-closed fallbacks are never cached, preserving fail-closed semantics.
+    cacheSetDecision(key, allowed);
     void persistCheckLog({ ...params, result: allowed ? "allowed" : "denied", latencyMs });
     return allowed;
   } catch (err) {

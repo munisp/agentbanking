@@ -248,6 +248,7 @@ export const simOrchestratorRouter = router({
           return {
             probeIntervalMs: 30000,
             relayEndpoint:
+              process.env.SIM_ORCHESTRATOR_INGEST_URL ||
               "https://api.54agent.io/api/trpc/simOrchestrator.ingestProbe",
             enabled: true,
           };
@@ -424,7 +425,8 @@ export const simOrchestratorRouter = router({
           .url()
           .max(256)
           .default(
-            "https://api.54agent.io/api/trpc/simOrchestrator.ingestProbe"
+            process.env.SIM_ORCHESTRATOR_INGEST_URL ||
+              "https://api.54agent.io/api/trpc/simOrchestrator.ingestProbe"
           ),
         apiKey: z
           .string()

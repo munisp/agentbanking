@@ -41,8 +41,10 @@ SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@healthplus.ng")
-FROM_NAME = os.getenv("FROM_NAME", "HealthPlus Pharmacy")
+# round-11 wave-3: neutral env-driven defaults, no fabricated business identity
+FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@54agent.io")
+FROM_NAME = os.getenv("FROM_NAME", "54Agent")
+TRACKING_BASE_URL = os.getenv("TRACKING_BASE_URL", "")
 
 # Jinja2 template environment
 template_loader = jinja2.DictLoader({})
@@ -430,10 +432,10 @@ async def send_order_confirmation(
         "total": total,
         "delivery_address": delivery_address,
         "estimated_delivery": "2-3 business days",
-        "tracking_url": f"https://track.example.com/{order_id}",
-        "support_email": "support@healthplus.ng",
-        "support_phone": "+234 803 123 4567",
-        "company_name": "HealthPlus Pharmacy"
+        "tracking_url": f"{TRACKING_BASE_URL.rstrip('/')}/{order_id}" if TRACKING_BASE_URL else "",
+        "support_email": os.getenv("SUPPORT_EMAIL", ""),
+        "support_phone": os.getenv("SUPPORT_PHONE", ""),
+        "company_name": FROM_NAME
     }
     
     html_content = render_template("order_confirmation", data)
@@ -463,8 +465,8 @@ async def send_shipping_update(
         "tracking_number": tracking_number,
         "delivery_address": delivery_address,
         "estimated_delivery": "Tomorrow",
-        "tracking_url": f"https://track.example.com/{tracking_number}",
-        "company_name": "HealthPlus Pharmacy"
+        "tracking_url": f"{TRACKING_BASE_URL.rstrip('/')}/{tracking_number}" if TRACKING_BASE_URL else "",
+        "company_name": FROM_NAME
     }
     
     html_content = render_template("shipping_update", data)
@@ -495,7 +497,7 @@ async def send_abandoned_cart(
         "checkout_url": cart_url,
         "discount_code": discount_code,
         "discount_percent": discount_percent,
-        "company_name": "HealthPlus Pharmacy"
+        "company_name": FROM_NAME
     }
     
     html_content = render_template("abandoned_cart", data)

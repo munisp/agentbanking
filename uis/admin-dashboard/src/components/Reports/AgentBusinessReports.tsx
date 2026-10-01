@@ -46,6 +46,9 @@ interface AgentBusinessData {
   recentTransactions: Transaction[];
 }
 
+const CORE_BANKING_URL =
+  import.meta.env.VITE_CORE_BANKING_URL || "https://54agent.upi.dev";
+
 const AgentBusinessReports: React.FC = () => {
   const [agentData, setAgentData] = useState<AgentBusinessData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -112,7 +115,7 @@ const AgentBusinessReports: React.FC = () => {
           if (agentAccount?.account_number) {
             try {
               const txnRes = await fetch(
-                `https://54agent.upi.dev/ledger/txn/account-number/${agentAccount.account_number}?limit=5&page=1`,
+                `${CORE_BANKING_URL}/ledger/txn/account-number/${agentAccount.account_number}?limit=5&page=1`,
                 {
                   headers: {
                     Authorization: `Bearer ${localStorage.getItem("auth_token")}`,

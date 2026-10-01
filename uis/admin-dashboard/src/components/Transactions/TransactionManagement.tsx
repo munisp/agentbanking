@@ -56,7 +56,8 @@ interface TransactionsResponse {
   transactions: Transaction[];
 }
 
-const CORE_BANKING_URL = "https://54agent.upi.dev";
+const CORE_BANKING_URL =
+  import.meta.env.VITE_CORE_BANKING_URL || "https://54agent.upi.dev";
 
 // Mock chart data - replace with real data when hourly metrics API is available
 const mockTransactionTrends = [

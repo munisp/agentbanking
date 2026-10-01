@@ -34,9 +34,11 @@
 
 import * as SecureStore from "expo-secure-store";
 
-const CORE_BANKING_BASE = "https://54agent.upi.dev";
-const AGENT_BANKING_BASE = "https://54agent.upi.dev";
-const REMITTANCE_BANKING_BASE = "https://54remit.upi.dev";
+const CORE_BANKING_BASE = process.env.EXPO_PUBLIC_PLATFORM_URL || "https://54agent.upi.dev";
+const AGENT_BANKING_BASE =
+  process.env.EXPO_PUBLIC_AGENT_BANKING_URL || "https://54agent.upi.dev";
+const REMITTANCE_BANKING_BASE =
+  process.env.EXPO_PUBLIC_REMITTANCE_URL || "https://54remit.upi.dev";
 const DEFAULT_TENANT_ID = "bpmgd";
 
 /**

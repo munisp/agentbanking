@@ -17,7 +17,8 @@
  *   /loyalty/*           → loyalty-service
  */
 
-const CORE_BANKING_BASE = "https://54agent.upi.dev";
+const CORE_BANKING_BASE =
+  import.meta.env.VITE_CORE_BANKING_URL || "https://54agent.upi.dev";
 const AGENT_BANKING_BASE =
   import.meta.env.VITE_API_URL || "https://54agent.upi.dev";
 

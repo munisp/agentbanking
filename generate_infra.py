@@ -13,6 +13,7 @@ CHARTS_DIR = os.path.join(BASE, "infrastructure/charts")
 ROUTES_DIR = os.path.join(BASE, "infrastructure/apisix-resources/routes")
 SERVICES_DIR = os.path.join(BASE, "services")
 TEMPLATE_CHART = "account-service"
+PLATFORM_HOST = os.getenv("PLATFORM_HOST", "54agent.upi.dev")
 
 DEPLOYABLE_MARKERS = [
     "Dockerfile", "main.go", "go.mod", "main.py",
@@ -158,7 +159,7 @@ def generate_route(svc: str) -> None:
             f"      priority: 10\n"
             f"      match:\n"
             f"        hosts:\n"
-            f"          - 54agent.upi.dev\n"
+            f"          - {PLATFORM_HOST}\n"
             f"        paths:\n"
             f"          - /{svc}/*\n"
             f"      backends:\n"

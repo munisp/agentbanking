@@ -10,6 +10,9 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { accountApi, authHeaders, inventoryApi } from "../utils/api";
 
+const CORE_BANKING_URL =
+  import.meta.env.VITE_CORE_BANKING_URL || "https://54agent.upi.dev";
+
 const ChartOfAccounts = () => {
   const { user } = useAuth();
   const [accounts, setAccounts] = useState([]);
@@ -47,7 +50,7 @@ const ChartOfAccounts = () => {
           if (store.account_number) {
             try {
               const response = await fetch(
-                `https://54agent.upi.dev/account/account/account-number/${store.account_number}`,
+                `${CORE_BANKING_URL}/account/account/account-number/${store.account_number}`,
                 {
                   headers: authHeaders(),
                 },

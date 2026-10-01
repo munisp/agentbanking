@@ -29,10 +29,10 @@ const simOrchestratorManager = {
     ]);
 
     SIMOrchestratorModule.start(
-      agentCode  || "AGT001",
+      agentCode || process.env.EXPO_PUBLIC_AGENT_CODE || "",
       terminalId || null,          // falls back to Build.SERIAL in Kotlin
-      "https://api.54agent.io",
-      "54agent-sim-orchestrator-default-key",
+      process.env.EXPO_PUBLIC_SIM_ORCHESTRATOR_URL || "https://api.54agent.io",
+      process.env.EXPO_PUBLIC_SIM_ORCHESTRATOR_KEY || "",
     );
   },
 

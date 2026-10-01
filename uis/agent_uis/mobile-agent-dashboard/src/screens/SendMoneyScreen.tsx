@@ -26,7 +26,7 @@ const PRIMARY_COLOR = '#6C63FF';
 const BACKGROUND_COLOR = colors.primary;
 const CARD_COLOR = '#FFFFFF';
 const TEXT_COLOR = colors.primary;
-const API_BASE_URL = 'https://api.54agent.io/v1';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.54agent.io/v1';
 
 interface Beneficiary {
   id: string;

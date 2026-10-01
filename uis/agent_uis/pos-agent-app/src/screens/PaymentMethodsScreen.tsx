@@ -114,7 +114,7 @@ const reducer = (state: State, action: Action): State => {
 
 // --- API and Storage Constants/Functions (Stubs) ---
 
-const API_BASE_URL = 'https://api.54agent.io/v1';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.54agent.io/v1';
 const PAYMENT_METHODS_STORAGE_KEY = '@PaymentMethods';
 const BIOMETRICS_KEY = 'payment_auth_key';
 

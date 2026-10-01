@@ -8,7 +8,7 @@ import os, re
 
 REGISTRY      = "registry.digitalocean.com/talentgraph-auth"
 NAMESPACE     = "54agent"
-HOST          = "54agent.upi.dev"
+HOST          = os.getenv("PLATFORM_HOST", "54agent.upi.dev")
 CHARTS_DIR    = "infrastructure/charts"
 ROUTES_DIR    = "infrastructure/apisix-resources/routes"
 

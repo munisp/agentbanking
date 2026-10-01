@@ -134,6 +134,9 @@ const parseDashboardTransactionDate = (txn: Transaction) => {
   return new Date(raw.includes("T") ? raw : raw.replace(" ", "T"));
 };
 
+const CORE_BANKING_URL =
+  import.meta.env.VITE_CORE_BANKING_URL || "https://54agent.upi.dev";
+
 const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d">("30d");
@@ -167,7 +170,7 @@ const Dashboard: React.FC = () => {
           api.getAgents(),
           api.getCustomers(),
           api.getAdmins(),
-          fetch(`https://54agent.upi.dev/ledger/txn/?page=1&limit=10`, {
+          fetch(`${CORE_BANKING_URL}/ledger/txn/?page=1&limit=10`, {
             headers: {
               ...tenantHeaders,
               Authorization: `Bearer ${token}`,

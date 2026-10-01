@@ -120,7 +120,7 @@ export default function EODWizardScreen({
         transaction_summary: txnSummary,
       };
       // Submit cash count EOD report (best-effort)
-      await fetch("https://54agent.upi.dev/agent/agent/eod-reports", {
+      await fetch(`${process.env.EXPO_PUBLIC_PLATFORM_URL || "https://54agent.upi.dev"}/agent/agent/eod-reports`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

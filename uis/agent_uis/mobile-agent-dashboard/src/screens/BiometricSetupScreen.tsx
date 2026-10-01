@@ -40,7 +40,7 @@ export const BiometricSetupScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const BASE_URL = 'https://api.54agent.io/v1';
+  const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.54agent.io/v1';
 
   useEffect(() => {
     fetchBiometricSettings();

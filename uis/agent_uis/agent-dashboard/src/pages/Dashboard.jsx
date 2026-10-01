@@ -17,6 +17,9 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { accountApi, agentApi, authHeaders, inventoryApi } from "../utils/api";
 
+const CORE_BANKING_URL =
+  import.meta.env.VITE_CORE_BANKING_URL || "https://54agent.upi.dev";
+
 const Dashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -85,7 +88,7 @@ const Dashboard = () => {
           if (accountNumber) {
             try {
               const res = await fetch(
-                `https://54agent.upi.dev/ledger/txn/account-number/${accountNumber}?limit=10&page=1`,
+                `${CORE_BANKING_URL}/ledger/txn/account-number/${accountNumber}?limit=10&page=1`,
                 {
                   headers: { ...authHeaders() },
                 },
@@ -109,7 +112,7 @@ const Dashboard = () => {
             if (store.account_number) {
               try {
                 const res = await fetch(
-                  `https://54agent.upi.dev/ledger/txn/account-number/${store.account_number}?limit=10&page=1`,
+                  `${CORE_BANKING_URL}/ledger/txn/account-number/${store.account_number}?limit=10&page=1`,
                   {
                     headers: { ...authHeaders() },
                   },

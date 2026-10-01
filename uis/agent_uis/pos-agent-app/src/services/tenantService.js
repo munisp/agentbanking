@@ -1,7 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 import { tenantApi } from "./apiService";
 
-const CORE_BANKING_BASE = "https://54agent.upi.dev";
+const CORE_BANKING_BASE = process.env.EXPO_PUBLIC_PLATFORM_URL || "https://54agent.upi.dev";
 const DEFAULT_TENANT_ID = "bpmgd";
 
 class TenantService {

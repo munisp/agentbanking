@@ -28,7 +28,7 @@ const LoadTestDashboard: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ targetUrl: "https://54agent.upi.dev/api/v1/transfer", virtualUsers: "200", durationSec: "300" });
+  const [form, setForm] = useState({ targetUrl: import.meta.env.VITE_LOADTEST_TARGET_URL || "https://54agent.upi.dev/api/v1/transfer", virtualUsers: "200", durationSec: "300" });
   const latest = runs.length ? runs[runs.length - 1] : null;
 
   

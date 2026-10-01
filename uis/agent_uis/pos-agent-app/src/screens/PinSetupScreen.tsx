@@ -19,7 +19,9 @@ const apiClient = new APIClient();
 
 // --- CONFIGURATION ---
 const PIN_LENGTH = 4;
-const API_ENDPOINT = 'https://api.54agent.io/v1/user/set-pin';
+const API_ENDPOINT =
+  process.env.EXPO_PUBLIC_SET_PIN_URL ||
+  `${process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.54agent.io/v1'}/user/set-pin`;
 const BIOMETRIC_KEY_ALIAS = 'userPinKey';
 
 // --- TYPESCRIPT INTERFACES ---

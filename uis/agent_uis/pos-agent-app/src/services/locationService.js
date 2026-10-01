@@ -224,7 +224,8 @@ class LocationService {
       } else {
         // Fallback to HTTP
         const response = await fetch(
-          "https://54agent.upi.dev/realtime/api/v1/location/update",
+          process.env.EXPO_PUBLIC_LOCATION_UPDATE_URL ||
+            "https://54agent.upi.dev/realtime/api/v1/location/update",
           {
             method: "POST",
             headers: {

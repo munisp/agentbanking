@@ -85,9 +85,6 @@ Production-ready with AI-powered translation
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app, enable_auth=True)
-setup_logging("translation-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -137,6 +134,10 @@ app = FastAPI(
     description="Multi-lingual translation for Nigerian languages",
     version="1.0.0"
 )
+
+apply_middleware(app, enable_auth=True)
+setup_logging("translation-service")
+app.include_router(metrics_router)
 
 @app.on_event("startup")
 async def _init_pg_pool():

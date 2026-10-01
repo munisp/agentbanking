@@ -29,9 +29,6 @@ import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("ocr-service-(production)")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 import httpx
@@ -961,6 +958,10 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
+apply_middleware(app)
+setup_logging("ocr-service-(production)")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

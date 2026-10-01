@@ -4,3 +4,6 @@ pydantic>=2.11.7
 httpx>=0.28.1
 python-multipart>=0.0.20
 PyJWT>=2.10.1  # Replaced python-jose: CVE-2024-33663 algorithm confusion
+# round-11: Postgres/Redis persistence for former in-memory stores
+sqlalchemy>=2.0
+psycopg2-binary>=2.9

@@ -5,7 +5,7 @@ Search and analytics engine for the remittance platform
 """
 
 from opensearchpy import OpenSearch
-from typing import Dict, List
+from typing import Dict, List, Any
 import json
 
 class OpenSearchIntegration:

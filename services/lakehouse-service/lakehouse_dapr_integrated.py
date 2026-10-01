@@ -15,9 +15,6 @@ This service integrates with:
 from fastapi import FastAPI, Depends, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("lakehouse-service-(dapr-integrated)")
-app.include_router(metrics_router)
 
 from fastapi.responses import JSONResponse
 from typing import Optional, Dict, Any, List
@@ -45,6 +42,10 @@ app = FastAPI(
     description="Data Lakehouse with Dapr service mesh and Permify authorization",
     version="2.0.0"
 )
+
+apply_middleware(app)
+setup_logging("lakehouse-service-(dapr-integrated)")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

@@ -19,12 +19,10 @@ import uuid
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("agent-banking-lakehouse")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 import uvicorn
+import os
 
 # Delta Lake and Iceberg imports (production-ready)
 try:
@@ -51,6 +49,10 @@ app = FastAPI(
     description="Production-ready data lakehouse with Delta Lake and Iceberg",
     version="2.0.0"
 )
+
+apply_middleware(app)
+setup_logging("agent-banking-lakehouse")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

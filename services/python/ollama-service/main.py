@@ -84,9 +84,6 @@ Provides local LLM inference using Ollama
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app, enable_auth=True)
-setup_logging("ollama-service")
-app.include_router(metrics_router)
 
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -147,6 +144,10 @@ app = FastAPI(
     description="Local LLM Service using Ollama",
     version="1.0.0"
 )
+
+apply_middleware(app, enable_auth=True)
+setup_logging("ollama-service")
+app.include_router(metrics_router)
 
 @app.on_event("startup")
 async def _init_pg_pool():

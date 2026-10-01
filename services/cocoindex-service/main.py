@@ -37,9 +37,6 @@ Provides semantic code search and intelligent code recommendations
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("cocoindex-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -67,6 +64,10 @@ app = FastAPI(
     description="Contextual Code Indexing and Retrieval Service",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("cocoindex-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

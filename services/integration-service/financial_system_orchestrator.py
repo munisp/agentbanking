@@ -22,9 +22,6 @@ import httpx
 from fastapi import FastAPI, HTTPException, BackgroundTasks, status
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("financial-system-orchestrator")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 
@@ -38,6 +35,10 @@ app = FastAPI(
     description="End-to-end integration of commission, settlement, and reconciliation",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("financial-system-orchestrator")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

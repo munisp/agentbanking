@@ -10,7 +10,7 @@ import logging
 import requests
 import time
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

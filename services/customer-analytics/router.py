@@ -12,13 +12,14 @@ from pydantic import conint
 from . import models
 from .config import get_db
 from .models import (
-    CustomerAnalytic, 
-    AnalyticActivityLog, 
-    CustomerAnalyticCreate, 
-    CustomerAnalyticUpdate, 
+    CustomerAnalytic,
+    AnalyticActivityLog,
+    CustomerAnalyticCreate,
+    CustomerAnalyticUpdate,
     CustomerAnalyticResponse,
     AnalyticActivityLogCreate,
-    AnalyticActivityLogResponse
+    AnalyticActivityLogResponse,
+    AnalyticActivityLogBase,
 )
 
 # Configure logging

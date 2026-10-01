@@ -330,7 +330,7 @@ class LoyaltyService:
                     "additional_perks": list(set(next_config["perks"]) - set(self.TIER_CONFIG[current_tier]["perks"]))
                 }
         except ValueError as e:
-            logging.warning(f"Invalid tier value for user {user_id}: {e}")
+            logging.warning(f"Invalid tier value {current_tier}: {e}")  # round-11: user_id not in scope here
             return None
         
         return None

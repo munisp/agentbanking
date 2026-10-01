@@ -17,9 +17,6 @@ import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("audit-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 import uvicorn
@@ -187,6 +184,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+apply_middleware(app)
+setup_logging("audit-service")
+app.include_router(metrics_router)
 
 # Add CORS middleware
 app.add_middleware(

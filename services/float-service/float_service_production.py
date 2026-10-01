@@ -33,9 +33,6 @@ import httpx
 from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("float-management-service-(production)")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field, validator
 from tenacity import retry, stop_after_attempt, wait_exponential, CircuitBreaker
@@ -1276,6 +1273,10 @@ app = FastAPI(
     description="Production-ready float management with PostgreSQL, TigerBeetle, idempotency, and payment rails",
     version="2.0.0"
 )
+
+apply_middleware(app)
+setup_logging("float-management-service-(production)")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

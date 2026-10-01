@@ -9,9 +9,6 @@ Port: 8160
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("tigerbeetle-zig")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -82,6 +79,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
+apply_middleware(app)
+setup_logging("tigerbeetle-zig")
+app.include_router(metrics_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("ALLOWED_ORIGINS","http://localhost:5173,http://localhost:5174,http://localhost:3000").split(","),
@@ -129,11 +130,11 @@ async def health_check():
 async def create_item(item: Item):
     """Create a new item"""
     stats["total_requests"] += 1
-    item_id = f"item_{len(storage) + 1}"
+    item_id = f"item_{len(storage_keys()) + 1}"
     item.id = item_id
     item.created_at = datetime.now()
     item.updated_at = datetime.now()
-    storage[item_id] = item.dict()
+    storage_set(item_id, item.dict())
     stats["total_items"] += 1
     return {"success": True, "item_id": item_id, "item": item}
 
@@ -141,10 +142,10 @@ async def create_item(item: Item):
 async def list_items(skip: int = 0, limit: int = 100):
     """List all items"""
     stats["total_requests"] += 1
-    items = list(storage.values())[skip:skip+limit]
+    items = [storage_get(k) for k in storage_keys()][skip:skip+limit]
     return {
         "success": True,
-        "total": len(storage),
+        "total": len(storage_keys()),
         "items": items,
         "skip": skip,
         "limit": limit
@@ -154,29 +155,29 @@ async def list_items(skip: int = 0, limit: int = 100):
 async def get_item(item_id: str):
     """Get a specific item"""
     stats["total_requests"] += 1
-    if item_id not in storage:
+    if storage_get(item_id) is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    return {"success": True, "item": storage[item_id]}
+    return {"success": True, "item": storage_get(item_id)}
 
 @app.put("/items/{item_id}")
 async def update_item(item_id: str, item: Item):
     """Update an item"""
     stats["total_requests"] += 1
-    if item_id not in storage:
+    if storage_get(item_id) is None:
         raise HTTPException(status_code=404, detail="Item not found")
     item.id = item_id
     item.updated_at = datetime.now()
-    item.created_at = storage[item_id].get("created_at", datetime.now())
-    storage[item_id] = item.dict()
+    item.created_at = storage_get(item_id).get("created_at", datetime.now())
+    storage_set(item_id, item.dict())
     return {"success": True, "item": item}
 
 @app.delete("/items/{item_id}")
 async def delete_item(item_id: str):
     """Delete an item"""
     stats["total_requests"] += 1
-    if item_id not in storage:
+    if storage_get(item_id) is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    del storage[item_id]
+    storage_delete(item_id)
     stats["total_items"] -= 1
     return {"success": True, "message": "Item deleted"}
 
@@ -196,7 +197,7 @@ async def process_data(data: Dict[str, Any]):
 async def search_items(query: str):
     """Search items"""
     stats["total_requests"] += 1
-    results = [item for item in storage.values() if query.lower() in str(item).lower()]
+    results = [it for it in (storage_get(k) for k in storage_keys()) if query.lower() in str(it).lower()]
     return {
         "success": True,
         "query": query,

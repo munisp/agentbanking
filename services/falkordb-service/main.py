@@ -37,9 +37,6 @@ Provides graph-based data storage and querying using FalkorDB
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("falkordb-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Union
@@ -62,6 +59,10 @@ app = FastAPI(
     description="Graph Database Service using FalkorDB",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("falkordb-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

@@ -16,6 +16,7 @@ from .models import (
     DiscordActivityLogCreate,
     DiscordActivityLogResponse,
     DiscordServerWithLogsResponse,
+    DiscordActivityLogBase,
 )
 
 # --- Logging Setup ---

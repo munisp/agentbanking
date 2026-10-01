@@ -4,3 +4,6 @@ httpx==0.28.1
 pydantic>=2.11.7
 asyncpg>=0.29.0
 gunicorn>=21.2
+# round-11: Postgres/Redis persistence for former in-memory stores
+sqlalchemy>=2.0
+psycopg2-binary>=2.9

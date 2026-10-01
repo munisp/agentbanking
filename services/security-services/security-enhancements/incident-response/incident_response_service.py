@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
 import json
+import os
+import uuid
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,6 +25,19 @@ class Severity(Enum):
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
+
+
+# round-11: IncidentType/IncidentSeverity were referenced but never defined.
+class IncidentType(Enum):
+    """Incident type classifications (members exactly as referenced by detection rules)."""
+    AUTHENTICATION_FAILURE = "authentication_failure"
+    INTRUSION_ATTEMPT = "intrusion_attempt"
+    MALWARE_DETECTED = "malware_detected"
+    POLICY_VIOLATION = "policy_violation"
+    SUSPICIOUS_ACTIVITY = "suspicious_activity"
+
+
+IncidentSeverity = Severity  # alias: severity enum already defined above
 
 
 class IncidentStatus(Enum):

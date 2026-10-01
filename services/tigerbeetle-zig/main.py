@@ -45,9 +45,6 @@ import uuid
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("tigerbeetle-service-(production)")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 import uvicorn
@@ -72,6 +69,10 @@ app = FastAPI(
     description="Production-ready Financial Ledger using TigerBeetle",
     version="2.0.0"
 )
+
+apply_middleware(app)
+setup_logging("tigerbeetle-service-(production)")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -199,15 +200,15 @@ class TigerBeetleManager:
         except ConnectionError as e:
             logger.error(f"Connection error to TigerBeetle cluster: {e}")
             logger.warning("Falling back to production client")
-            self.client = MockTigerBeetleClient()
+            self.client = FallbackTigerBeetleClient()
         except ValueError as e:
             logger.error(f"Invalid configuration for TigerBeetle: {e}")
             logger.warning("Falling back to production client")
-            self.client = MockTigerBeetleClient()
+            self.client = FallbackTigerBeetleClient()
         except Exception as e:
             logger.error(f"Unexpected error initializing TigerBeetle client: {e}")
             logger.warning("Falling back to production client")
-            self.client = MockTigerBeetleClient()
+            self.client = FallbackTigerBeetleClient()
     
     def generate_account_id(self) -> int:
         """Generate unique 128-bit account ID"""

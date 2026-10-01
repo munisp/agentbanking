@@ -18,6 +18,7 @@ import signal
 import sys
 import atexit
 import logging
+from datetime import timedelta
 
 _shutdown_handlers = []
 

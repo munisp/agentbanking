@@ -28,9 +28,6 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("notification-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field, EmailStr
 import httpx
@@ -1016,6 +1013,10 @@ class NotificationService:
 
 # FastAPI application
 app = FastAPI(title="Notification Service", version="1.0.0")
+
+apply_middleware(app)
+setup_logging("notification-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

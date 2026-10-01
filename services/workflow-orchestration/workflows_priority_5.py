@@ -15,6 +15,24 @@ import re
 import hashlib
 import httpx
 
+with workflow.unsafe.imports_passed_through():
+    from activities import (
+        calculate_and_credit_commission,
+        check_fraud,
+        check_transaction_limits,
+        generate_receipt,
+        process_ledger_transaction,
+        send_transaction_notifications,
+        update_transaction_analytics,
+        validate_customer_account,
+        verify_customer_pin,
+    )
+with workflow.unsafe.imports_passed_through():
+    from activities_next_5 import (
+        validate_customer_account,
+    )
+
+
 logger = logging.getLogger(__name__)
 
 # ============================================================================

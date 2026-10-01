@@ -36,6 +36,9 @@ settings = get_settings()
 # SQLAlchemy setup
 
 # SessionLocal is the factory for new Session objects
+# round-11: engine was referenced by sessionmaker but never created
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db() -> Generator[Session, None, None]:
@@ -52,6 +55,7 @@ def get_db() -> Generator[Session, None, None]:
 # Example of how to import and use the base for models (will be used in models.py)
 # from sqlalchemy.ext.declarative import declarative_base
 # Base = declarative_base()
+
 # NOTE: We will define Base in models.py to avoid circular imports if models.py imports config.py
 # However, for a clean structure, config.py only handles connection.
 # We will ensure models.py defines Base and imports engine from here if needed, or just uses the SessionLocal.

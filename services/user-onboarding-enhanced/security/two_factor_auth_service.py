@@ -13,6 +13,8 @@ Features:
 
 import asyncio
 import logging
+
+logger = logging.getLogger(__name__)  # round-11: logger was used but never created
 from typing import Dict, Any, List, Optional
 import secrets
 import hashlib

@@ -36,9 +36,6 @@ Real-time bidirectional communication service for Remittance Platform
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("websocket-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Set
@@ -47,6 +44,7 @@ import logging
 import json
 import asyncio
 import uuid
+import os
 
 # Configure logging
 logging.basicConfig(
@@ -60,6 +58,10 @@ app = FastAPI(
     description="Real-time bidirectional communication service",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("websocket-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

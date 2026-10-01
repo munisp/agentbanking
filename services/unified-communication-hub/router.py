@@ -15,6 +15,7 @@ from .models import (
     ActivityLog,
     LogAction,
 )
+from pydantic import Field
 
 router = APIRouter(
     prefix="/events",

@@ -23,9 +23,6 @@ import httpx
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("tigerbeetle-sync-manager")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 import uvicorn
@@ -76,6 +73,9 @@ class TigerBeetleSyncManager:
             description="Orchestrates bidirectional synchronization between TigerBeetle instances",
             version="1.0.0"
         )
+        apply_middleware(self.app)
+        setup_logging("tigerbeetle-sync-manager")
+        self.app.include_router(metrics_router)
         
         # Configuration
         self.database_url = os.getenv("DATABASE_URL", "postgresql://banking_user:secure_banking_password@localhost:5432/remittance")

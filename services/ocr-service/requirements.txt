@@ -44,3 +44,5 @@ httpx
 aiofiles
 python-jose[cryptography]
 passlib[bcrypt]
+# round-11: Postgres/Redis persistence for former in-memory stores
+psycopg2-binary>=2.9

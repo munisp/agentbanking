@@ -1032,7 +1032,9 @@ class PaymentService:
                     )
 
                     raise Exception(
-                        f"Cross-currency transfer failed during credit leg: {str(credit_error)}"
+                        # round-11: credit_error is deleted when the except block exits (Py3);
+                        # use the persisted saga field instead.
+                        f"Cross-currency transfer failed during credit leg: {saga_record.get('credit_error', 'unknown')}"
                     )
 
                     saga_record["status"] = "completed"

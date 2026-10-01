@@ -82,6 +82,7 @@ import logging
 
 import psycopg2
 import psycopg2.extras
+import os
 
 def _init_persistence():
     """Initialize PostgreSQL persistence for commission-calculator."""

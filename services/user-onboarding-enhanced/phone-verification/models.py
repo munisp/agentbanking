@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 
 from sqlalchemy import (
     Column, Integer, String, DateTime, Boolean, ForeignKey,

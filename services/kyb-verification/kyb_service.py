@@ -23,9 +23,6 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("kyb-verification-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field, validator
 from sqlalchemy import create_engine, Column, String, Float, DateTime, Text, Integer, Boolean, JSON
@@ -1095,6 +1092,10 @@ class KYBVerificationService:
 
 # FastAPI application
 app = FastAPI(title="KYB Verification Service", version="2.0.0")
+
+apply_middleware(app)
+setup_logging("kyb-verification-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

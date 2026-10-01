@@ -7,6 +7,7 @@ from utils import (
     AgentStatus,
     AgentOnboardingStatus,
     KycVerificationStatus,
+    AgentRole,
 )
 from adapters import AuditServiceAdapter, ComplianceServiceAdapter
 from database import get_session

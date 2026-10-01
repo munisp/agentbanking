@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
@@ -75,7 +75,7 @@ class PEPScreeningService:
             analyst_notes=update_data.analyst_notes
         )
 
-    def list_screening_results(self, limit: int, offset: int, sort_by: str, filter_status: Optional[ScreeningStatus]) -> List['ScreeningResultResponse']:
+    def list_screening_results(self, limit: int, offset: int, sort_by: str, filter_status: Optional["ScreeningStatus"]) -> List['ScreeningResultResponse']:
         logger.info(f"Listing results: limit={limit}, offset={offset}, sort_by={sort_by}, filter={filter_status}")
         # Simulate list logic
         return [
@@ -309,7 +309,7 @@ async def list_screening_results_endpoint(
     limit: int = Query(10, ge=1, le=100, description="Maximum number of results to return."),
     offset: int = Query(0, ge=0, description="The starting index for the results."),
     sort_by: str = Query("last_updated", description="Field to sort by (e.g., 'risk_level', 'last_updated')."),
-    filter_status: Optional[ScreeningStatus] = Query(None, description="Filter results by screening status."),
+    filter_status: Optional["ScreeningStatus"] = Query(None, description="Filter results by screening status."),
     service: PEPScreeningService = Depends(get_pep_screening_service),
     current_user: dict = Depends(get_current_user),
 ) -> None:

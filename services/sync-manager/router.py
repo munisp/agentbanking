@@ -179,8 +179,10 @@ def trigger_sync(
     # 1. Execute sync process
     start_time = datetime.utcnow()
     import time as _time; sync_start = _time.monotonic()
-    end_time = start_time + timedelta(seconds=duration)
     records_processed = 0
+    # round-11: `duration` was referenced but never computed; use measured elapsed time
+    duration = int(_time.monotonic() - sync_start)
+    end_time = datetime.utcnow()
     
     # 2. Update the SyncManager
     db_manager.last_sync_time = end_time

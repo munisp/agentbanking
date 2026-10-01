@@ -29,7 +29,11 @@ class Settings(BaseSettings):
 # Initialize settings
 settings = Settings()
 
+
 # SQLAlchemy setup
+
+# round-11: engine was referenced by sessionmaker but never created
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

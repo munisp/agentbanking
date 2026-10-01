@@ -49,6 +49,8 @@ logger = logging.getLogger(__name__)
 # --- PostgreSQL Persistence ---
 import asyncpg
 from contextlib import asynccontextmanager
+import os
+from datetime import timedelta
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/kyb_ballerina")
 _db_pool = None

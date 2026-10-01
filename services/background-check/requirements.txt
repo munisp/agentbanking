@@ -9,4 +9,6 @@ asyncpg>=0.30.0
 aiokafka>=0.12.0
 redis>=5.2.1
 prometheus-client==0.19.0
-
+# round-11: Postgres/Redis persistence for former in-memory stores
+sqlalchemy>=2.0
+psycopg2-binary>=2.9

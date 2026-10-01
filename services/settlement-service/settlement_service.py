@@ -22,9 +22,6 @@ import httpx
 from fastapi import FastAPI, HTTPException, Depends, Query, BackgroundTasks, Header, status
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("settlement-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, validator, Field
 import json
@@ -39,6 +36,10 @@ app = FastAPI(
     description="Commission settlement processing with TigerBeetle integration",
     version="2.0.0"
 )
+
+apply_middleware(app)
+setup_logging("settlement-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

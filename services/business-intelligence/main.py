@@ -36,9 +36,6 @@ BI and advanced analytics
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("business-intelligence")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from datetime import datetime
@@ -50,6 +47,10 @@ app = FastAPI(
     description="BI and advanced analytics",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("business-intelligence")
+app.include_router(metrics_router)
 
 # CORS
 app.add_middleware(

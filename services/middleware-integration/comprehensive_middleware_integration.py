@@ -11,9 +11,6 @@ Port: 8026
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("comprehensive-middleware-integration-layer")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -199,6 +196,10 @@ app = FastAPI(
     description="Integrates Kafka, Dapr, Fluvio, Temporal, Keycloak, Permify, Redis, APISIX",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("comprehensive-middleware-integration-layer")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

@@ -36,6 +36,9 @@ settings = get_settings()
 # Create the SQLAlchemy engine
 
 # Create a configured "SessionLocal" class
+# round-11: engine was referenced by sessionmaker but never created
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():

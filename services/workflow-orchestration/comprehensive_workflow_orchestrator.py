@@ -11,9 +11,6 @@ Port: 8023
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("comprehensive-workflow-orchestration-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -397,6 +394,10 @@ app = FastAPI(
     description="Temporal-based workflow orchestration for banking and e-commerce",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("comprehensive-workflow-orchestration-service")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

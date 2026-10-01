@@ -15,9 +15,6 @@ from typing import Dict, List, Any, Optional
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("agent-banking-lakehouse-(authenticated)")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 
@@ -28,6 +25,7 @@ from auth import (
     require_admin, require_data_engineer, require_analyst, require_any_role,
     login, refresh_access_token, log_access
 )
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,6 +35,10 @@ app = FastAPI(
     description="Production-ready lakehouse with JWT authentication and RBAC",
     version="2.1.0"
 )
+
+apply_middleware(app)
+setup_logging("agent-banking-lakehouse-(authenticated)")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

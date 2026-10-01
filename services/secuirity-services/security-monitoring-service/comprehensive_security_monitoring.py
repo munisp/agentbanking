@@ -11,9 +11,6 @@ Port: 8022
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("comprehensive-security-monitoring-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -309,6 +306,10 @@ app = FastAPI(
     description="Integrates Wazuh, OpenCTI, and OpenAppSec",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("comprehensive-security-monitoring-service")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

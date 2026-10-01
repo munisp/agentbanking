@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from . import models
 from .config import get_db, init_db
+from pydantic import Field
 
 # Initialize the database (create tables)
 init_db()

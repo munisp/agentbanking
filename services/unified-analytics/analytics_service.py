@@ -18,12 +18,10 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("unified-analytics-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 import uvicorn
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,6 +31,10 @@ app = FastAPI(
     description="Lakehouse-powered analytics for all domains",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("unified-analytics-service")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

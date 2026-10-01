@@ -41,9 +41,6 @@ from shared.middleware import SecurityMiddleware, setup_middleware
 from shared.models import Account, AccountStatus, AuditLog, Transaction, TransactionStatus, User
 from shared.monitoring import HealthChecker, MetricsCollector
 
-apply_middleware(app)
-setup_logging("core-banking")
-app.include_router(metrics_router)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -712,6 +709,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+apply_middleware(app)
+setup_logging("core-banking")
+app.include_router(metrics_router)
 
 # Add middleware
 setup_middleware(app)

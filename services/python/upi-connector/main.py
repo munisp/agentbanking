@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional, Union, Tuple
 
 import logging
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, HTTPException
 import sys as _sys2, os as _os2
 _sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
 from shared.middleware import apply_middleware, ErrorResponse

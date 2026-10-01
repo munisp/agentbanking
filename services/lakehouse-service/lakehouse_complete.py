@@ -14,9 +14,6 @@ from typing import Dict, Any
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("agent-banking-lakehouse-(complete)")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 
@@ -32,6 +29,7 @@ from database import (
     init_db_pool, close_db_pool, AuditLogDatabase
 )
 from mfa import MFASetupResponse, MFAVerifyRequest, MFAManager
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,6 +39,10 @@ app = FastAPI(
     description="Production-ready lakehouse with JWT authentication, MFA, and PostgreSQL",
     version="3.0.0"
 )
+
+apply_middleware(app)
+setup_logging("agent-banking-lakehouse-(complete)")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

@@ -10,6 +10,48 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from enum import Enum
 
+with workflow.unsafe.imports_passed_through():
+    from activities import (
+        activate_agent_account,
+        ai_document_validation,
+        assign_to_hierarchy,
+        calculate_and_credit_commission,
+        calculate_repayment_schedule,
+        check_agent_cash_availability,
+        check_fraud,
+        check_loan_eligibility,
+        check_loan_fraud,
+        check_transaction_limits,
+        create_agent_account,
+        create_dispute_ticket,
+        create_loan_record,
+        disburse_loan,
+        enroll_in_training,
+        generate_receipt,
+        get_transaction_details,
+        investigate_ledger_transaction,
+        notify_support_team,
+        perform_background_check,
+        perform_credit_scoring,
+        process_ledger_transaction,
+        process_refund,
+        register_biometric,
+        schedule_loan_collections,
+        send_notification,
+        send_transaction_notifications,
+        track_cash_disbursement,
+        update_dispute_status,
+        update_transaction_analytics,
+        upload_dispute_evidence,
+        validate_agent_float,
+        validate_customer_account,
+        validate_customer_balance,
+        validate_kyc_documents,
+        validate_personal_info,
+        verify_customer_pin,
+    )
+
+
 # ============================================================================
 # Workflow Data Classes
 # ============================================================================

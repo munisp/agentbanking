@@ -18,9 +18,6 @@ Integrates all communication services with:
 from fastapi import FastAPI, HTTPException, Depends, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("omni-channel-middleware-integration")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -420,6 +417,10 @@ app = FastAPI(
     description="Middleware integration layer for all communication services",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("omni-channel-middleware-integration")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

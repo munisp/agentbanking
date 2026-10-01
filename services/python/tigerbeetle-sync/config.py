@@ -30,9 +30,13 @@ settings = Settings()
 
 # For other databases (PostgreSQL, MySQL), this is not needed.
 
+# round-11: engine was referenced by sessionmaker but never created
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
 
 # --- Dependency ---
 

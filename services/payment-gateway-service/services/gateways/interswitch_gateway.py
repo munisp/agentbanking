@@ -55,7 +55,7 @@ class BasePaymentGateway:
 
     async def handle_webhook(self, headers: Dict[str, str], payload: Dict[str, Any]) -> Dict[str, Any]:
         """Handle and verify incoming webhooks."""
-        return await interswitch_gateway_impl.handle_webhook(payload=payload, signature=signature)
+        return await interswitch_gateway_impl.handle_webhook(headers=headers, payload=payload)
 
 # --- Interswitch Gateway Implementation ---
 

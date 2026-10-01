@@ -443,4 +443,113 @@ export const carrierCostRouter = router({
       .sort()
       .map(code => ({ code, name: COUNTRY_NAMES[code] ?? code }));
   }),
+
+  // Rate card for a country, from the `carrier_rate_%` systemConfig store
+  // (same store carrierLivePricing.listRates/updateRate use).
+  listRates: protectedProcedure
+    .input(
+      z
+        .object({
+          country: z.string().optional(),
+          limit: z.number().default(100),
+        })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db
+        .select()
+        .from(systemConfig)
+        .where(sql`${systemConfig.key} LIKE 'carrier_rate_%'`)
+        .limit(input?.limit ?? 100);
+      const rates = [];
+      for (const r of rows) {
+        try {
+          const parsed = JSON.parse(String(r.value ?? "{}"));
+          const carrier =
+            parsed.carrier ?? r.key.replace("carrier_rate_", "");
+          if (input?.country && parsed.country !== input.country) continue;
+          rates.push({
+            carrier,
+            country: parsed.country ?? null,
+            smsPerMessage: Number(
+              parsed.smsPerMessage ?? parsed.smsRate ?? 0
+            ),
+            dataPerMb: Number(parsed.dataPerMb ?? parsed.dataRatePerMb ?? 0),
+            ussdPerSession: Number(
+              parsed.ussdPerSession ?? parsed.ussdRate ?? 0
+            ),
+            voicePerMinute: Number(
+              parsed.voicePerMinute ?? parsed.voiceRatePerMin ?? 0
+            ),
+            currency: parsed.currency ?? "USD",
+          });
+        } catch {
+          // skip malformed rows
+        }
+      }
+      return rates;
+    }),
+
+  // Rank carriers by total cost for a given usage profile
+  compareForUsage: protectedProcedure
+    .input(
+      z.object({
+        country: z.string().optional(),
+        smsCount: z.number().min(0).default(0),
+        dataMb: z.number().min(0).default(0),
+        ussdSessions: z.number().min(0).default(0),
+        voiceMinutes: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db
+        .select()
+        .from(systemConfig)
+        .where(sql`${systemConfig.key} LIKE 'carrier_rate_%'`)
+        .limit(200);
+      const results = [];
+      for (const r of rows) {
+        try {
+          const parsed = JSON.parse(String(r.value ?? "{}"));
+          if (input.country && parsed.country !== input.country) continue;
+          const smsRate = Number(parsed.smsPerMessage ?? parsed.smsRate ?? 0);
+          const dataRate = Number(parsed.dataPerMb ?? parsed.dataRatePerMb ?? 0);
+          const ussdRate = Number(
+            parsed.ussdPerSession ?? parsed.ussdRate ?? 0
+          );
+          const voiceRate = Number(
+            parsed.voicePerMinute ?? parsed.voiceRatePerMin ?? 0
+          );
+          const sms = input.smsCount * smsRate;
+          const data = input.dataMb * dataRate;
+          const ussd = input.ussdSessions * ussdRate;
+          const voice = input.voiceMinutes * voiceRate;
+          results.push({
+            carrier: parsed.carrier ?? r.key.replace("carrier_rate_", ""),
+            breakdown: { sms, data, ussd, voice },
+            totalCostUsd: sms + data + ussd + voice,
+            currency: parsed.currency ?? "USD",
+          });
+        } catch {
+          // skip malformed rows
+        }
+      }
+      results.sort((a, b) => a.totalCostUsd - b.totalCostUsd);
+      const worst =
+        results.length > 0
+          ? results[results.length - 1].totalCostUsd
+          : 0;
+      return results.map((r, i) => ({
+        carrier: r.carrier,
+        rank: i + 1,
+        breakdown: r.breakdown,
+        totalCostUsd: r.totalCostUsd,
+        savingsVsWorst: Math.max(0, worst - r.totalCostUsd),
+        currency: r.currency,
+      }));
+    }),
 });

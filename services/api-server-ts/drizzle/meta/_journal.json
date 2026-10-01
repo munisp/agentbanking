@@ -421,6 +421,13 @@
       "when": 1778948945315,
       "tag": "0065_performance_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1790871469174,
+      "tag": "0066_alignment_tables",
+      "breakpoints": true
     }
   ]
 }

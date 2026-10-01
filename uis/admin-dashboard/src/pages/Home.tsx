@@ -66,7 +66,7 @@ const STACK = [
   "HashiCorp Vault",
   "Keycloak IAM",
   "Permify RBAC",
-  "Apache Sedona",
+  "Apache Sedona (roadmap)",
   "Prometheus + Grafana",
 ];
 

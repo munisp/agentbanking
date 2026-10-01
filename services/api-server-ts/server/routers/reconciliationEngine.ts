@@ -315,4 +315,115 @@ export const reconciliationEngineRouter = router({
 
       return results;
     }),
+
+  // Aggregate stats for the Reconciliation Engine dashboard
+  getStats: protectedProcedure.query(async () => {
+    try {
+      const database = await getDb();
+      if (!database)
+        return {
+          totalBatches: 0,
+          matched: 0,
+          mismatched: 0,
+          inProgress: 0,
+          matchRate: 0,
+        };
+      const [totals] = await database
+        .select({
+          totalBatches: count(),
+          matched: sql<number>`COALESCE(SUM(${reconciliationBatches.matchedCount}), 0)`,
+          unmatched: sql<number>`COALESCE(SUM(${reconciliationBatches.unmatchedCount}), 0)`,
+          discrepancies: sql<number>`COALESCE(SUM(${reconciliationBatches.discrepancyCount}), 0)`,
+        })
+        .from(reconciliationBatches);
+      const [inProgressRow] = await database
+        .select({ count: count() })
+        .from(reconciliationBatches)
+        .where(
+          sql`${reconciliationBatches.status} IN ('pending', 'processing', 'in_progress')`
+        );
+      const matched = Number(totals.matched ?? 0);
+      const mismatched = Number(totals.unmatched ?? 0) + Number(totals.discrepancies ?? 0);
+      const matchRate =
+        matched + mismatched > 0
+          ? Math.round((matched / (matched + mismatched)) * 1000) / 10
+          : 0;
+      return {
+        totalBatches: Number(totals.totalBatches ?? 0),
+        matched,
+        mismatched,
+        inProgress: Number(inProgressRow?.count ?? 0),
+        matchRate,
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }),
+
+  // Create a reconciliation batch (input shape from ReconciliationEnginePage
+  // form: {source, target, period_start, period_end, description}). NOTE: the
+  // table has no target/period/description columns; source+target are
+  // combined into source_type.
+  createBatch: protectedProcedure
+    .input(
+      z.object({
+        source: z.string().min(1),
+        target: z.string().optional(),
+        period_start: z.string().optional(),
+        period_end: z.string().optional(),
+        description: z.string().optional(),
+        file_name: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const database = await getDb();
+        if (!database) throw new Error("Database unavailable");
+        const batchReference = `RECON-${Date.now()}`;
+        const [batch] = await database
+          .insert(reconciliationBatches)
+          .values({
+            batchReference,
+            sourceType: input.target
+              ? `${input.source}:${input.target}`
+              : input.source,
+            fileName: input.file_name ?? null,
+            totalRecords: 0,
+            matchedCount: 0,
+            unmatchedCount: 0,
+            discrepancyCount: 0,
+            status: "pending",
+            processedBy: Number.isFinite(Number((ctx as any)?.user?.id))
+              ? Number((ctx as any)?.user?.id)
+              : null,
+          })
+          .returning();
+        await database.insert(auditLog).values({
+          action: "reconciliation_engine.create_batch",
+          resource: "reconciliation_batches",
+          resourceId: batchReference,
+          status: "success",
+          metadata: {
+            source: input.source,
+            target: input.target ?? null,
+            periodStart: input.period_start ?? null,
+            periodEnd: input.period_end ?? null,
+            description: input.description ?? null,
+          },
+        });
+        return { success: true, batch };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
 });

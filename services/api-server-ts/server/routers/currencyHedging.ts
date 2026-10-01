@@ -333,4 +333,63 @@ export const currencyHedgingRouter = router({
     activeRecords: 0,
     lastUpdated: new Date().toISOString(),
   })),
+
+  // Create a currency hedge position. There is no dedicated hedge table in
+  // the drizzle schema; the hedge request is persisted as an audit_log entry
+  // (the router's existing audit pattern) and the position descriptor is
+  // returned to the caller.
+  createHedge: protectedProcedure
+    .input(
+      z
+        .object({
+          baseCurrency: z.string().length(3).default("NGN"),
+          targetCurrency: z.string().length(3).default("USD"),
+          amount: z.number().positive().optional(),
+          hedgeType: z.string().optional(),
+          tenorDays: z.number().int().positive().optional(),
+          notes: z.string().optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = await getDb();
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database unavailable",
+          });
+        const hedge = {
+          baseCurrency: input?.baseCurrency ?? "NGN",
+          targetCurrency: input?.targetCurrency ?? "USD",
+          amount: input?.amount ?? null,
+          hedgeType: input?.hedgeType ?? "forward",
+          tenorDays: input?.tenorDays ?? null,
+          notes: input?.notes ?? null,
+          status: "pending",
+          createdAt: new Date().toISOString(),
+        };
+        const [entry] = await db
+          .insert(auditLog)
+          .values({
+            action: "currency_hedging.create_hedge",
+            resource: "currency_hedge",
+            resourceId: `${hedge.baseCurrency}-${hedge.targetCurrency}`,
+            status: "success",
+            metadata: {
+              ...hedge,
+              actor: (ctx as any)?.user?.email ?? "system",
+            },
+          })
+          .returning();
+        return { success: true, hedge, auditId: entry?.id ?? null };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
 });

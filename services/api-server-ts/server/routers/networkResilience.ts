@@ -490,9 +490,70 @@ export const networkResilienceRouter = router({
     };
   }),
 
+  // Resilience status per region for the Network Diagnostic page.
+  // NOTE: connectivity_log has no region/bandwidth columns, so a single
+  // aggregate "primary" region is derived from the last 24h of samples
+  // (same source and derivation rules as getConnectionMetrics above).
+  getResilienceStatus: protectedProcedure.query(async () => {
+    const emptyRegion = {
+      region: "primary",
+      status: "healthy" as string,
+      avgLatencyMs: 0,
+      packetLossPct: 0,
+      bandwidthKbps: 0,
+      recommendedProtocol: "websocket",
+      activeAgents: 0,
+    };
+    const db = await getDb();
+    if (!db) return { regions: [emptyRegion] };
+    const since = new Date(Date.now() - 24 * 3600 * 1000);
+    const rows = await db
+      .select()
+      .from(connectivityLog)
+      .where(gte(connectivityLog.recordedAt, since))
+      .orderBy(desc(connectivityLog.recordedAt))
+      .limit(1000);
+    if (rows.length === 0) return { regions: [emptyRegion] };
+    const latencies = rows
+      .map(r => r.latencyMs)
+      .filter((v): v is number => v != null);
+    const avgLatencyMs =
+      latencies.length > 0
+        ? Math.round(
+            latencies.reduce((a: number, b: number) => a + b, 0) /
+              latencies.length
+          )
+        : 0;
+    const offline = rows.filter(r => r.quality === "Offline").length;
+    const degraded = rows.filter(
+      r => r.quality === "Poor" || r.quality === "Offline"
+    ).length;
+    const packetLossPct = Math.round((offline / rows.length) * 1000) / 10;
+    const degradedPct = (degraded / rows.length) * 100;
+    const activeAgents = new Set(
+      rows.filter(r => r.quality !== "Offline").map(r => r.agentCode)
+    ).size;
+    const status =
+      degradedPct > 50 ? "down" : degradedPct > 20 ? "degraded" : "healthy";
+    const recommendedProtocol =
+      avgLatencyMs > 500 || packetLossPct > 10 ? "long-poll" : "websocket";
+    return {
+      regions: [
+        {
+          region: "primary",
+          status,
+          avgLatencyMs,
+          packetLossPct,
+          bandwidthKbps: 0,
+          recommendedProtocol,
+          activeAgents,
+        },
+      ],
+    };
+  }),
+
   // Bandwidth tuning config persisted in systemConfig under `bandwidth_%` keys
-  getBandwidthConfig: protectedProcedure.query(async () => {
-    const defaults = {
+  getBandwidthConfig: protectedProcedure.query(async () => {    const defaults = {
       adaptiveBandwidth: false,
       compressionEnabled: false,
       lowBandwidthThresholdKbps: 256,

@@ -560,6 +560,54 @@ export const agentLoanFacilityRouter = router({
       activeLoans: active.count || 0,
     };
   }),
+
+  // Aggregate stats for the Agent Loan Facility dashboard
+  getStats: protectedProcedure.query(async () => {
+    try {
+      const db = (await getDb())!;
+      if (!db)
+        return {
+          totalLoans: 0,
+          totalDisbursed: 0,
+          totalRepaid: 0,
+          pending: 0,
+          active: 0,
+          defaulted: 0,
+          completed: 0,
+        };
+      const [totals] = await db
+        .select({
+          totalLoans: count(),
+          totalDisbursed: sum(agentLoans.principalAmount),
+          totalRepaid: sum(agentLoans.amountRepaid),
+        })
+        .from(agentLoans);
+      const statusRows = await db
+        .select({ status: agentLoans.status, count: count() })
+        .from(agentLoans)
+        .groupBy(agentLoans.status);
+      const byStatus = (s: string[]) =>
+        statusRows
+          .filter(r => s.includes(String(r.status)))
+          .reduce((acc, r) => acc + (r.count || 0), 0);
+      return {
+        totalLoans: totals.totalLoans || 0,
+        totalDisbursed: parseFloat(String(totals.totalDisbursed || "0")),
+        totalRepaid: parseFloat(String(totals.totalRepaid || "0")),
+        pending: byStatus(["pending", "submitted", "under_review"]),
+        active: byStatus(["approved", "disbursed", "repaying"]),
+        defaulted: byStatus(["defaulted"]),
+        completed: byStatus(["completed"]),
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }),
 });
 
 async function calculateCreditScore(db: any, agentId: number): Promise<number> {

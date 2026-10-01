@@ -38,8 +38,8 @@ export default function NfcTapToPayScreen() {
   const loadData = useCallback(async () => {
     try {
       const [statsRes, listRes] = await Promise.all([
-        fetch(`${API_BASE}/nfc_tap_to_pay.getStats`).then(r => r.json()),
-        fetch(`${API_BASE}/nfc_tap_to_pay.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
+        fetch(`${API_BASE}/nfcTapToPay.getStats`).then(r => r.json()),
+        fetch(`${API_BASE}/nfcTapToPay.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
       ]);
       setStats(statsRes?.result?.data ?? {});
       setItems(listRes?.result?.data?.items ?? []);

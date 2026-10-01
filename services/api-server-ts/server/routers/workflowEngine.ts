@@ -248,6 +248,64 @@ export const workflowEngineRouter = router({
       }
     }),
 
+  // Trigger a workflow definition (snake_case input as sent by
+  // WorkflowEnginePage: { definition_id }). Mirrors startInstance.
+  triggerWorkflow: protectedProcedure
+    .input(
+      z.object({
+        definition_id: z.number(),
+        entity_type: z.string().default("general"),
+        entity_id: z.number().default(0),
+      })
+    )
+    .mutation(async ({ input }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database unavailable",
+          });
+        const [def] = await db
+          .select()
+          .from(workflowDefinitions)
+          .where(eq(workflowDefinitions.id, input.definition_id))
+          .limit(1);
+        if (!def)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `Workflow definition ${input.definition_id} not found`,
+          });
+        if (def.isActive === false)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Workflow definition ${input.definition_id} is inactive`,
+          });
+        const slaHours = def.slaHours || 24;
+        const slaDeadline = new Date(Date.now() + slaHours * 3600000);
+        const [instance] = await db
+          .insert(workflowInstances)
+          .values({
+            definitionId: input.definition_id,
+            entityType: input.entity_type,
+            entityId: input.entity_id,
+            status: "active",
+            currentStep: 0,
+            startedAt: new Date(),
+            slaDeadline,
+          })
+          .returning();
+        return { success: true, instance };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
   listInstances: protectedProcedure
     .input(
       z.object({

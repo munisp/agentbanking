@@ -38,8 +38,8 @@ export default function AiCreditScoringScreen() {
   const loadData = useCallback(async () => {
     try {
       const [statsRes, listRes] = await Promise.all([
-        fetch(`${API_BASE}/ai_credit_scoring.getStats`).then(r => r.json()),
-        fetch(`${API_BASE}/ai_credit_scoring.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
+        fetch(`${API_BASE}/aiCreditScoring.getStats`).then(r => r.json()),
+        fetch(`${API_BASE}/aiCreditScoring.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
       ]);
       setStats(statsRes?.result?.data ?? {});
       setItems(listRes?.result?.data?.items ?? []);

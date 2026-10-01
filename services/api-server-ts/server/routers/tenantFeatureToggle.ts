@@ -254,6 +254,101 @@ export const tenantFeatureToggleRouter = router({
       }
     }),
 
+  // Create a feature toggle (TenantFeatureTogglePage form shape:
+  // {feature_key, feature_name, description, is_enabled, tenant_id,
+  // rollout_percentage}). tenant_id empty => 0 (platform-wide).
+  createToggle: protectedProcedure
+    .input(
+      z.object({
+        feature_key: z.string().optional(),
+        feature_name: z.string().min(1),
+        description: z.string().optional(),
+        is_enabled: z.boolean().default(false),
+        tenant_id: z.union([z.string(), z.number()]).optional(),
+        rollout_percentage: z.union([z.string(), z.number()]).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) throw new Error("Database unavailable");
+        const tenantId = Number(input.tenant_id);
+        const featureKey =
+          input.feature_key && input.feature_key.length > 0
+            ? input.feature_key
+            : input.feature_name
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "_")
+                .replace(/^_+|_+$/g, "");
+        const rollout = Number(input.rollout_percentage ?? 100);
+        const [toggle] = await db
+          .insert(tenantFeatureToggles)
+          .values({
+            tenantId: Number.isFinite(tenantId) ? tenantId : 0,
+            featureKey,
+            enabled: input.is_enabled,
+            enabledBy: Number.isFinite(Number((ctx as any)?.user?.id))
+              ? Number((ctx as any)?.user?.id)
+              : null,
+            enabledAt: input.is_enabled ? new Date() : null,
+            config: JSON.stringify({
+              featureName: input.feature_name,
+              description: input.description ?? null,
+              rolloutPercentage: Number.isFinite(rollout) ? rollout : 100,
+            }),
+          })
+          .returning();
+        return { success: true, toggle };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  // Flip a toggle's enabled state
+  flipToggle: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) throw new Error("Database unavailable");
+        const [existing] = await db
+          .select()
+          .from(tenantFeatureToggles)
+          .where(eq(tenantFeatureToggles.id, input.id))
+          .limit(1);
+        if (!existing)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `Toggle ${input.id} not found`,
+          });
+        const newEnabled = !existing.enabled;
+        const [toggle] = await db
+          .update(tenantFeatureToggles)
+          .set({
+            enabled: newEnabled,
+            enabledBy: Number.isFinite(Number((ctx as any)?.user?.id))
+              ? Number((ctx as any)?.user?.id)
+              : null,
+            enabledAt: newEnabled ? new Date() : existing.enabledAt,
+          })
+          .where(eq(tenantFeatureToggles.id, input.id))
+          .returning();
+        return { success: true, toggle, enabled: newEnabled };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
   update: protectedProcedure
     .input(
       z.object({

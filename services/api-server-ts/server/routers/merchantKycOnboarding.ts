@@ -465,4 +465,176 @@ export const merchantKycOnboardingRouter = router({
 
   docTypes: protectedProcedure.query(() => KYC_DOC_TYPES),
   stages: protectedProcedure.query(() => KYC_STAGES),
+
+  // Aggregate stats for the Merchant KYC Onboarding dashboard
+  getStats: protectedProcedure.query(async () => {
+    try {
+      const db = (await getDb())!;
+      if (!db)
+        return { totalDocs: 0, verified: 0, pending: 0, rejected: 0, expired: 0 };
+      const statusRows = await db
+        .select({ status: merchantKycDocs.status, count: count() })
+        .from(merchantKycDocs)
+        .groupBy(merchantKycDocs.status);
+      const countOf = (statuses: string[]) =>
+        statusRows
+          .filter(r => statuses.includes(String(r.status)))
+          .reduce((acc, r) => acc + Number(r.count), 0);
+      const [expiredRow] = await db
+        .select({ count: count() })
+        .from(merchantKycDocs)
+        .where(lte(merchantKycDocs.expiresAt, new Date()));
+      const totalDocs = statusRows.reduce((acc, r) => acc + Number(r.count), 0);
+      return {
+        totalDocs,
+        verified: countOf(["approved", "verified"]),
+        pending: countOf(["pending"]),
+        rejected: countOf(["rejected"]),
+        expired: Number(expiredRow?.count ?? 0),
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }),
+
+  // Upload a KYC document (snake_case input as sent by MerchantKycOnboardingPage)
+  uploadDocument: protectedProcedure
+    .input(
+      z.object({
+        merchant_id: z.number(),
+        doc_type: z.string().min(1),
+        doc_number: z.string().optional(),
+        doc_url: z.string().optional(),
+        expiry_date: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) throw new Error("Database unavailable");
+        // Duplicate pending-doc guard (same rule as uploadDoc)
+        const [pendingDoc] = await db
+          .select({ id: merchantKycDocs.id })
+          .from(merchantKycDocs)
+          .where(
+            and(
+              eq(merchantKycDocs.merchantId, input.merchant_id),
+              eq(merchantKycDocs.docType, input.doc_type),
+              eq(merchantKycDocs.status, "pending")
+            )
+          )
+          .limit(1);
+        if (pendingDoc)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "A pending document of this type already exists for this merchant",
+          });
+        const [doc] = await db
+          .insert(merchantKycDocs)
+          .values({
+            merchantId: input.merchant_id,
+            docType: input.doc_type,
+            // doc_url is NOT NULL in the schema; fall back to a document-number
+            // reference when the client uploads metadata only.
+            docUrl:
+              input.doc_url ??
+              (input.doc_number ? `docref:${input.doc_number}` : "pending-upload"),
+            expiresAt:
+              input.expiry_date && !isNaN(new Date(input.expiry_date).getTime())
+                ? new Date(input.expiry_date)
+                : null,
+            status: "pending",
+          })
+          .returning();
+        return { success: true, doc };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  // Verify (approve) a pending KYC document
+  verifyDocument: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) throw new Error("Database unavailable");
+        const [updated] = await db
+          .update(merchantKycDocs)
+          .set({
+            status: "approved",
+            verifiedBy: ctx.user.id,
+            verifiedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(merchantKycDocs.id, input.id),
+              eq(merchantKycDocs.status, "pending")
+            )
+          )
+          .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "KYC document not found or already decided — cannot verify",
+          });
+        return { success: true, doc: updated };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
+  // Reject a pending KYC document with a reason
+  rejectDocument: adminProcedure
+    .input(z.object({ id: z.number(), reason: z.string().min(1) }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) throw new Error("Database unavailable");
+        const [updated] = await db
+          .update(merchantKycDocs)
+          .set({
+            status: "rejected",
+            rejectionReason: input.reason,
+            verifiedBy: ctx.user.id,
+            verifiedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(merchantKycDocs.id, input.id),
+              eq(merchantKycDocs.status, "pending")
+            )
+          )
+          .returning();
+        if (!updated)
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "KYC document not found or already decided — cannot reject",
+          });
+        return { success: true, doc: updated };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
 });

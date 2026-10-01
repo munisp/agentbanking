@@ -11,6 +11,7 @@ import { getCacheMetrics } from "../lib/cacheAside";
 import { redisIsHealthy } from "../redisClient";
 import { getQueryMetrics } from "../middleware/queryTracker";
 import { getHardeningMetrics } from "../middleware/productionHardeningMiddleware";
+import os from "os";
 import { getDb } from "../db";
 import { count, eq, gte, lte, desc, sql } from "drizzle-orm";
 import { users, transactions, agents, auditLog } from "../../drizzle/schema";
@@ -539,5 +540,57 @@ export const platformHealthRouter = router({
 
   hardeningMetrics: protectedProcedure.query(async () => {
     return getHardeningMetrics();
+  }),
+
+  // Platform metrics for the Platform Health dashboard. Built from real
+  // runtime sources: process memory/CPU via os, the query tracker, cache
+  // metrics, and hardening counters. Latency percentiles and connection
+  // counts are not instrumented in this deployment and return 0.
+  getMetrics: protectedProcedure.query(async () => {
+    try {
+      const cache = getCacheMetrics();
+      const queries = getQueryMetrics();
+      const hardening = getHardeningMetrics();
+      const mem = process.memoryUsage();
+      const totalMem = os.totalmem();
+      const freeMem = os.freemem();
+      const memoryUsage =
+        totalMem > 0
+          ? Math.round(((totalMem - freeMem) / totalMem) * 1000) / 10
+          : 0;
+      const cpus = os.cpus().length || 1;
+      // 1-minute load average as a rough CPU utilization proxy
+      const cpuUsage =
+        Math.round(Math.min((os.loadavg()[0] / cpus) * 100, 100) * 10) / 10;
+      return {
+        timestamp: new Date().toISOString(),
+        cpuUsage,
+        memoryUsage,
+        heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
+        activeConnections: 0,
+        p50: 0,
+        p95: 0,
+        p99: 0,
+        error4xx: 0,
+        error5xx: 0,
+        timeoutRate: 0,
+        requestsPerMinute: hardening.totalQueries + hardening.totalMutations,
+        dbQueriesPerMinute: queries.totalQueries,
+        cacheHitRate: Math.round(cache.hitRate * 1000) / 10,
+        queueDepth: 0,
+        activeSessions: 0,
+        diskIO: 0,
+        slowQueries: queries.totalSlowQueries,
+        uptimeSeconds: Math.round(process.uptime()),
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
   }),
 });

@@ -406,6 +406,42 @@ export const customerJourneyAnalyticsRouter = router({
     "churn_prevention",
   ]),
 
+  // Conversion funnel: step counts grouped by step type, descending
+  getFunnel: protectedProcedure
+    .input(
+      z
+        .object({ period: z.enum(["7d", "30d", "90d"]).default("30d") })
+        .optional()
+    )
+    .query(async ({ input }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) return [];
+        const periodDays = { "7d": 7, "30d": 30, "90d": 90 };
+        const since = new Date(
+          Date.now() - periodDays[input?.period ?? "30d"] * 86400000
+        );
+        const rows = await db
+          .select({
+            stage: customerJourneySteps.stepType,
+            count: count(),
+          })
+          .from(customerJourneySteps)
+          .where(gte(customerJourneySteps.createdAt, since))
+          .groupBy(customerJourneySteps.stepType);
+        return rows
+          .map(r => ({ stage: String(r.stage), count: Number(r.count) }))
+          .sort((a, b) => b.count - a.count);
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
   // Raw journey events from customer_journey_events
   listEvents: protectedProcedure
     .input(z.object({ limit: z.number().default(100) }).optional())

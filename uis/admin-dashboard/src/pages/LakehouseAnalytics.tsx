@@ -4,7 +4,7 @@
  * Production-grade Data Lakehouse dashboard for the 54Link POS Shell.
  * Covers:
  *  1. Snapshot Browser  — list/download MinIO snapshots per bucket
- *  2. Spatial Heatmap   — transaction density map (Sedona-style grid)
+ *  2. Spatial Heatmap   — transaction density map (grid aggregation; Apache Sedona integration is roadmap-only, not wired)
  *  3. Gold-Layer Metrics — daily agent summary + hourly tx metrics
  *  4. DataFusion Console — ad-hoc SQL against Iceberg tables
  *  5. Manual Snapshot Triggers — admin-only on-demand uploads
@@ -522,9 +522,9 @@ function SpatialHeatmap() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Spatial queries use Apache Sedona PostGIS when the Python
-        lakehouse-service is available, falling back to haversine/PostgreSQL
-        aggregation. Grid cells represent ~{Math.round(cellDeg * 111)}km ×{" "}
+        Spatial aggregation currently uses haversine/PostgreSQL grid math.
+        Apache Sedona / PostGIS acceleration is a roadmap integration point
+        and is not currently wired into the lakehouse-service. Grid cells represent ~{Math.round(cellDeg * 111)}km ×{" "}
         {Math.round(cellDeg * 111)}km areas.
       </p>
     </div>
@@ -910,7 +910,7 @@ export default function LakehouseAnalytics() {
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               Bronze → Silver → Gold medallion pipeline · Apache Iceberg on
-              MinIO · Sedona spatial queries · DataFusion ad-hoc SQL
+              MinIO · grid spatial heatmaps (Sedona: roadmap, not wired) · DataFusion ad-hoc SQL
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1000,7 +1000,7 @@ export default function LakehouseAnalytics() {
                   <MapPin className="w-3 h-3" /> Spatial Stack
                 </div>
                 <ul className="space-y-0.5 text-muted-foreground">
-                  <li>Apache Sedona (PostGIS ST_DWithin)</li>
+                  <li>Apache Sedona (PostGIS ST_DWithin) — roadmap, not installed</li>
                   <li>H3 hexagonal grid (0.1° cells)</li>
                   <li>Haversine fallback (no PostGIS)</li>
                   <li>Nigeria bounding box: 4°N–14°N</li>

@@ -26,7 +26,12 @@ KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "kafka:9092")
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "54link-admin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "54link-minio-secret-2024")
-ICEBERG_CATALOG_URI = os.getenv("ICEBERG_CATALOG_URI", "http://nessie:19120/api/v1")
+# Deployed catalog is the tabulario/iceberg-rest service declared in
+# infra/lakehouse/ha/docker-compose.lakehouse-ha.yml (port 8181, pos54-net).
+# Nessie remains available as an opt-in override, e.g.:
+#   ICEBERG_CATALOG_TYPE=nessie ICEBERG_CATALOG_URI=http://nessie:19120/api/v1
+ICEBERG_CATALOG_TYPE = os.getenv("ICEBERG_CATALOG_TYPE", "rest")
+ICEBERG_CATALOG_URI = os.getenv("ICEBERG_CATALOG_URI", "http://iceberg-rest:8181")
 CHECKPOINT_LOCATION = os.getenv("CHECKPOINT_LOCATION", "s3a://54link-lakehouse/checkpoints/bronze-to-silver")
 
 TX_SCHEMA = StructType([
@@ -55,7 +60,7 @@ def create_spark_session() -> SparkSession:
         .appName("54link-bronze-to-silver")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.sql.catalog.54link", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.54link.type", "nessie")
+        .config("spark.sql.catalog.54link.type", ICEBERG_CATALOG_TYPE)
         .config("spark.sql.catalog.54link.uri", ICEBERG_CATALOG_URI)
         .config("spark.sql.catalog.54link.warehouse", "s3a://54link-lakehouse/warehouse")
         .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)

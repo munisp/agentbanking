@@ -447,6 +447,93 @@ export const alertNotificationsRouter = router({
       }
     }),
 
+  getDeliveryStats: protectedProcedure.query(async () => {
+    try {
+      const db = await getDb();
+      if (!db)
+        return {
+          totalSent: 0,
+          totalDelivered: 0,
+          totalFailed: 0,
+          last24h: { sent: 0, delivered: 0, failed: 0 },
+          byChannel: {} as Record<
+            string,
+            { sent: number; delivered: number; failed: number }
+          >,
+        };
+      const statusRows = await db
+        .select({ status: notification_logs.status, count: count() })
+        .from(notification_logs)
+        .groupBy(notification_logs.status);
+      const countOf = (statuses: string[]) =>
+        statusRows
+          .filter(r => statuses.includes(String(r.status)))
+          .reduce((acc, r) => acc + Number(r.count), 0);
+      const totalSent = countOf(["sent", "delivered", "failed"]);
+      const totalDelivered = countOf(["delivered"]);
+      const totalFailed = countOf(["failed"]);
+
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const last24Rows = await db
+        .select({ status: notification_logs.status, count: count() })
+        .from(notification_logs)
+        .where(gte(notification_logs.createdAt, since))
+        .groupBy(notification_logs.status);
+      const last24Of = (statuses: string[]) =>
+        last24Rows
+          .filter(r => statuses.includes(String(r.status)))
+          .reduce((acc, r) => acc + Number(r.count), 0);
+
+      const channelRows = await db
+        .select({
+          channel: notification_logs.channelId,
+          status: notification_logs.status,
+          count: count(),
+        })
+        .from(notification_logs)
+        .groupBy(notification_logs.channelId, notification_logs.status);
+      const byChannel: Record<
+        string,
+        { sent: number; delivered: number; failed: number }
+      > = {};
+      for (const row of channelRows) {
+        const key =
+          row.channel != null ? String(row.channel) : ("in_app" as string);
+        if (!byChannel[key])
+          byChannel[key] = { sent: 0, delivered: 0, failed: 0 };
+        const n = Number(row.count);
+        if (row.status === "delivered") {
+          byChannel[key].sent += n;
+          byChannel[key].delivered += n;
+        } else if (row.status === "failed") {
+          byChannel[key].sent += n;
+          byChannel[key].failed += n;
+        } else if (row.status === "sent") {
+          byChannel[key].sent += n;
+        }
+      }
+
+      return {
+        totalSent,
+        totalDelivered,
+        totalFailed,
+        last24h: {
+          sent: last24Of(["sent", "delivered", "failed"]),
+          delivered: last24Of(["delivered"]),
+          failed: last24Of(["failed"]),
+        },
+        byChannel,
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }),
+
   updateEscalationRule: protectedProcedure
     .input(z.object({ ruleId: z.string(), enabled: z.boolean() }))
     .mutation(async ({ input, ctx }) => {

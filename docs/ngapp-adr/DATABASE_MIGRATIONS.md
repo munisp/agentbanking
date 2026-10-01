@@ -10,6 +10,35 @@ The platform uses **Drizzle ORM** with a PostgreSQL database. This document defi
 - Development uses `npx drizzle-kit push` for rapid iteration
 - Production MUST use versioned migrations for audit trail and rollback capability
 
+## Python Services Schema Drift (Known, Pending Architecture Decision)
+
+> **Status: documented drift, not a defect to fix ad hoc.** Convergence of the
+> python-owned schemas with the Drizzle schema is a pending architecture decision.
+> Do NOT attempt piecemeal convergence via individual migrations.
+
+The Drizzle schema and journaled migrations in `services/api-server-ts/drizzle/`
+manage **only the api-server-ts schema**. The python services operate **parallel
+private schemas** that are intentionally outside Drizzle's management today:
+
+- **674 SQLAlchemy models** are defined across the python services (162 of 322
+  python service dirs use the SQLAlchemy ORM; 110 also execute raw SQL).
+- **609 of those 674 models have NO corresponding Drizzle table**; only 65 align
+  with a drizzle table name.
+- **41 python-owned private tables** appear in SQL references that exist outside
+  both the Drizzle schema and all journaled migrations — these are service-private
+  schemas, not dangling references.
+- **Only 3** of the 609 drifted tables exist even in the journaled migrations
+  (`reconciliation_reports`, `fx_rates` ×2).
+
+Known divergent duplicates: python `agent-embedded-finance` persists BNPL as
+`agent_bnpl_orders`/`agent_bnpl_installments` while Drizzle defines unused
+`bnpl_transactions`/`bnpl_repayments`; python `security-services` defines its own
+`roles`/`users` models alongside the Drizzle `roles`/`users` tables.
+
+Until the convergence decision is made, treat python service tables as owned by
+their services: do not add Drizzle migrations for them, and do not point
+api-server-ts routers at them without an explicit integration design.
+
 ## Migration Workflow
 
 ### 1. Generate Migration

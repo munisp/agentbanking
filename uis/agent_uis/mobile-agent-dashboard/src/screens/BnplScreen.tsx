@@ -31,8 +31,8 @@ export default function BnplScreen() {
   const loadData = useCallback(async () => {
     try {
       const [statsRes, listRes] = await Promise.all([
-        fetch(`${API_BASE}/bnpl_engine.getStats`).then(r => r.json()),
-        fetch(`${API_BASE}/bnpl_engine.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
+        fetch(`${API_BASE}/bnplEngine.getStats`).then(r => r.json()),
+        fetch(`${API_BASE}/bnplEngine.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
       ]);
       setStats(statsRes?.result?.data ?? {});
       setItems(listRes?.result?.data?.items ?? []);

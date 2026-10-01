@@ -353,6 +353,80 @@ export const agentScorecardRouter = router({
       lastUpdated: new Date().toISOString(),
     };
   }),
+
+  // Per-agent score lookup; accepts numeric agent id or agent code (e.g. "AGT-001")
+  getAgentScore: protectedProcedure
+    .input(z.object({ agentId: z.union([z.number(), z.string()]) }))
+    .query(async ({ input }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) return null;
+        const isNumeric =
+          typeof input.agentId === "number" ||
+          /^\d+$/.test(String(input.agentId));
+        const [agent] = await db
+          .select()
+          .from(agents)
+          .where(
+            isNumeric
+              ? eq(agents.id, Number(input.agentId))
+              : eq(agents.agentCode, String(input.agentId))
+          )
+          .limit(1);
+        if (!agent)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `Agent ${input.agentId} not found`,
+          });
+        const [stored] = await db
+          .select()
+          .from(agentPerformanceScores)
+          .where(eq(agentPerformanceScores.agentId, agent.id))
+          .orderBy(desc(agentPerformanceScores.id))
+          .limit(1);
+        const [txStats] = await db
+          .select({ txCount: count(), volume: sum(transactions.amount) })
+          .from(transactions)
+          .where(eq(transactions.agentId, agent.id))
+          .limit(100);
+        const [successTx] = await db
+          .select({ cnt: count() })
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.agentId, agent.id),
+              eq(transactions.status, "success")
+            )
+          )
+          .limit(100);
+        const successRate =
+          Number(txStats.txCount) > 0
+            ? Math.round((Number(successTx.cnt) / Number(txStats.txCount)) * 100)
+            : 100;
+        return {
+          agentId: agent.id,
+          agentCode: agent.agentCode,
+          name: agent.name,
+          tier: agent.tier,
+          overallScore: stored
+            ? Number(stored.overallScore)
+            : agent.creditScore ?? 0,
+          metrics: {
+            txCount: Number(txStats.txCount),
+            volume: Number(txStats.volume ?? 0),
+            successRate,
+          },
+          scorecard: stored ?? null,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
   refreshScorecard: protectedProcedure
     .input(z.object({ agentId: z.number() }))
     .mutation(async ({ input, ctx }) => {

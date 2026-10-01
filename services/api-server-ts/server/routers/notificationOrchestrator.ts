@@ -534,4 +534,88 @@ export const notificationOrchestratorRouter = router({
       delete TEMPLATES[input.id];
       return { success: true, id: input.id };
     }),
+
+  // Send a notification to an address (email/phone) using a template.
+  // Input shape mirrors NotificationOrchestratorPage's "Send Test" call:
+  // { templateId, recipient, variables }.
+  sendNotification: protectedProcedure
+    .input(
+      z.object({
+        templateId: z.union([z.string(), z.number()]).optional(),
+        recipient: z.string().min(1),
+        variables: z.record(z.string(), z.any()).optional(),
+        channel: z.enum(["sms", "email", "push", "whatsapp", "in_app"]).optional(),
+        subject: z.string().optional(),
+        body: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) throw new Error("Database unavailable");
+        const templateId =
+          input.templateId != null ? String(input.templateId) : undefined;
+        const tmpl = templateId ? TEMPLATES[templateId] : undefined;
+        if (templateId && !tmpl)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `Template ${templateId} not found`,
+          });
+        let subject = input.subject ?? tmpl?.subject ?? null;
+        let body = input.body ?? tmpl?.body ?? "";
+        if (input.variables) {
+          for (const [key, value] of Object.entries(input.variables)) {
+            body = body.replace(
+              new RegExp(`\\{\\{${key}\\}\\}`, "g"),
+              String(value)
+            );
+            if (subject)
+              subject = subject.replace(
+                new RegExp(`\\{\\{${key}\\}\\}`, "g"),
+                String(value)
+              );
+          }
+        }
+        if (!body)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "A body or a valid templateId is required",
+          });
+        const channel =
+          input.channel ??
+          (tmpl?.channel as
+            | "sms"
+            | "email"
+            | "push"
+            | "whatsapp"
+            | "in_app"
+            | undefined) ??
+          (input.recipient.includes("@") ? "email" : "sms");
+        const [notification] = await db
+          .insert(notificationDispatchLog)
+          .values({
+            recipientId: null,
+            recipientType: "customer",
+            channel,
+            templateId: templateId ?? null,
+            subject,
+            body,
+            status: "queued",
+            maxRetries: MAX_RETRIES,
+            metadata: JSON.stringify({
+              recipient: input.recipient,
+              variables: input.variables ?? {},
+            }),
+          } as any)
+          .returning();
+        return { success: true, notification, queued: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
 });

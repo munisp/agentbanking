@@ -18,12 +18,6 @@ import {
   withTransaction,
   withIdempotency,
 } from "../lib/transactionHelper";
-import {
-  calculateFee,
-  calculateCommission,
-  calculateTax,
-  calculateLatePenalty,
-} from "../lib/domainCalculations";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["active", "completed", "cancelled", "rejected"],
@@ -263,19 +257,24 @@ export const multiSimFailoverRouter = router({
         if (!terminal) throw new TRPCError({ code: "NOT_FOUND" });
 
         const config = terminal.configJson as Record<string, unknown> | null;
-        const sims = (config?.sims as Array<{
+        const configured = config?.sims as Array<{
           slot: number;
           iccid: string;
           provider: string;
           active: boolean;
-          signalStrength: number;
-        }>) ?? [
+          signalStrength: number | null;
+        }> | undefined;
+
+        // Round-10 hardcoding fix: never fabricate carrier/signal values.
+        // When the terminal has no configured SIM profile, return only real
+        // persisted data (simIccid) with explicit nulls for unknown fields.
+        const sims = configured ?? [
           {
             slot: 1,
-            iccid: terminal.simIccid ?? "unknown",
-            provider: "MTN",
+            iccid: terminal.simIccid ?? null,
+            provider: null,
             active: true,
-            signalStrength: -65,
+            signalStrength: null,
           },
         ];
 
@@ -283,6 +282,7 @@ export const multiSimFailoverRouter = router({
           terminalId: input.terminalId,
           sims,
           activeSim: sims.find(s => s.active)?.slot ?? 1,
+          source: configured ? "terminal_config" : "unavailable",
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -303,24 +303,51 @@ export const multiSimFailoverRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const _fees = calculateFee(
-        typeof input === "object" && "amount" in input
-          ? Number((input as Record<string, unknown>).amount)
-          : 0,
-        "transfer"
-      );
-      const _commission = calculateCommission(_fees.fee, "transfer");
-      const _tax = calculateTax(_fees.fee, "vat");
-      auditFinancialAction(
-        "UPDATE",
-        "multiSimFailover",
-        "mutation",
-        "Executed multiSimFailover mutation"
-      );
-
+      // Round-10 hardcoding fix: removed dead fee/commission/tax math
+      // (SIM failover is not a financial transaction) and the fabricated
+      // "switched" response — the slot change is now persisted for real.
       try {
         const session = await getAgentFromCookie(ctx.req);
         if (!session) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+        const db = (await getDb())!;
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        const [terminal] = await db
+          .select({
+            simIccid: posTerminals.simIccid,
+            configJson: posTerminals.configJson,
+          })
+          .from(posTerminals)
+          .where(eq(posTerminals.id, input.terminalId))
+          .limit(1);
+        if (!terminal) throw new TRPCError({ code: "NOT_FOUND" });
+
+        const config = (terminal.configJson ?? {}) as Record<string, unknown>;
+        const sims = (config.sims as Array<{
+          slot: number;
+          iccid: string;
+          provider: string | null;
+          active: boolean;
+          signalStrength: number | null;
+        }>) ?? [];
+        const target = sims.find(s => s.slot === input.targetSlot);
+        if (sims.length > 0 && !target) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Slot ${input.targetSlot} is not configured on this terminal`,
+          });
+        }
+        const nextSims = sims.map(s => ({ ...s, active: s.slot === input.targetSlot }));
+
+        await db
+          .update(posTerminals)
+          .set({
+            simIccid: target?.iccid ?? terminal.simIccid,
+            configJson: sql`jsonb_set(COALESCE(${posTerminals.configJson}::jsonb, '{}'::jsonb), '{sims}', ${JSON.stringify(nextSims)}::jsonb)`,
+            updatedAt: new Date(),
+          })
+          .where(eq(posTerminals.id, input.terminalId));
 
         await writeAuditLog({
           agentId: session.id,

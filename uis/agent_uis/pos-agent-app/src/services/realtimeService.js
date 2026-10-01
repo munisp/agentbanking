@@ -7,7 +7,7 @@
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 
-const WEBSOCKET_URL = "wss://54agent.upi.dev/realtime/ws";
+const WEBSOCKET_URL = process.env.EXPO_PUBLIC_REALTIME_WS_URL || "wss://54agent.upi.dev/realtime/ws";
 const RECONNECT_INTERVAL = 5000; // 5 seconds
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 const MAX_RECONNECT_ATTEMPTS = 10;

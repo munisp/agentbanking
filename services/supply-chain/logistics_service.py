@@ -279,7 +279,7 @@ class LogisticsManager:
             {
                 "shipment_id": uuid.UUID(data.shipment_id),
                 "tracking_number": tracking_number,
-                "tracking_url": f"https://track.example.com/{tracking_number}",
+                "tracking_url": f"{TRACKING_BASE_URL.rstrip('/')}/{tracking_number}" if TRACKING_BASE_URL else "",
                 "carrier": data.carrier.value,
                 "service_level": data.service_level.value
             }
@@ -293,7 +293,7 @@ class LogisticsManager:
             "shipment_id": data.shipment_id,
             "shipment_number": shipment.shipment_number,
             "tracking_number": tracking_number,
-            "tracking_url": f"https://track.example.com/{tracking_number}",
+            "tracking_url": f"{TRACKING_BASE_URL.rstrip('/')}/{tracking_number}" if TRACKING_BASE_URL else "",
             "label_url": label_url,
             "carrier": data.carrier.value,
             "service_level": data.service_level.value,

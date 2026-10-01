@@ -33,6 +33,7 @@ app.add_middleware(
 )
 
 # Configuration
+STORE_BUSINESS_NAME = os.getenv("STORE_BUSINESS_NAME", "your store")  # round-11 wave-3: tenant business name, no fabricated default
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 ECOMMERCE_API_URL = os.getenv("ECOMMERCE_API_URL", "http://localhost:8030")
@@ -356,7 +357,7 @@ def create_cart_keyboard():
 async def handle_start_command(chat_id: int, username: str):
     """Handle /start command"""
     welcome_message = f"""
-👋 <b>Welcome to HealthPlus Pharmacy, {username}!</b>
+👋 <b>Welcome to {STORE_BUSINESS_NAME}, {username}!</b>
 
 I'm your personal shopping assistant. I can help you:
 
@@ -533,7 +534,16 @@ async def handle_my_orders(chat_id: int, user_id: int):
 
 async def handle_help(chat_id: int):
     """Handle help action"""
-    help_message = """
+    # round-11 wave-3: support contact from env; omit section when unset
+    _support_phone = os.getenv("STORE_SUPPORT_CONTACT", "").strip()
+    _support_email = os.getenv("SUPPORT_EMAIL", "").strip()
+    _contact_lines = []
+    if _support_phone:
+        _contact_lines.append(f"Contact us: {_support_phone}")
+    if _support_email:
+        _contact_lines.append(f"Email: {_support_email}")
+    support_contact_block = "\n".join(_contact_lines) or "Contact your store administrator for support."
+    help_message = f"""
 ℹ️ <b>How to Use This Bot</b>
 
 <b>Commands:</b>
@@ -553,8 +563,7 @@ async def handle_help(chat_id: int):
 4. Checkout
 
 <b>Need Help?</b>
-Contact us: +234 803 123 4567
-Email: support@healthplus.ng
+{support_contact_block}
 """
     await send_telegram_message(chat_id, help_message, create_main_menu_keyboard())
 

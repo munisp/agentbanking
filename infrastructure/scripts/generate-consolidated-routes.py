@@ -14,7 +14,7 @@ import os, re, glob
 
 ROUTES_DIR = "infrastructure/apisix-resources/routes"
 NAMESPACE  = "54agent"
-HOST       = "54agent.upi.dev"
+HOST       = os.getenv("PLATFORM_HOST", "54agent.upi.dev")
 
 # ── Group definitions (must match docker-compose.consolidated.yml order) ──────
 

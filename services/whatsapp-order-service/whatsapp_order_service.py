@@ -448,12 +448,37 @@ async def execute_quick_action(order_id: str, action_req: QuickActionRequest):
     
     order = orders_db[order_id]
     
+    # round-11 wave-3: no fabricated rider/contact/bank details — everything
+    # customer-facing comes from env-configured merchant settlement/contact
+    # settings; unset values omit the section instead of sending fake data.
+    store_contact = os.getenv("STORE_SUPPORT_CONTACT", "").strip()
+    tracking_base = os.getenv("ORDER_TRACKING_BASE_URL", "").rstrip("/")
+    pay_bank = os.getenv("MERCHANT_BANK_NAME", "").strip()
+    pay_acct = os.getenv("MERCHANT_ACCOUNT_NUMBER", "").strip()
+    pay_name = os.getenv("MERCHANT_ACCOUNT_NAME", "").strip()
+
+    ship_lines = [f"📦 Your order is on the way!\n\nOrder #{order_id}"]
+    if store_contact:
+        ship_lines.append(f"Store contact: {store_contact}")
+    if tracking_base:
+        ship_lines.append(f"Track your order: {tracking_base}/{order_id}")
+    tracking_lines = ["🚚 Track your order:"]
+    if tracking_base:
+        tracking_lines.append(f"{tracking_base}/{order_id}")
+    else:
+        tracking_lines.append("Your tracking link will be shared once dispatch is confirmed.")
+    payment_lines = [f"💳 Payment Request\n\nOrder #{order_id}\nAmount: ₦{order.total:,.0f}"]
+    if pay_bank and pay_acct and pay_name:
+        payment_lines.append(f"Transfer to:\nBank: {pay_bank}\nAccount: {pay_acct}\nName: {pay_name}")
+    else:
+        payment_lines.append("Please request the store's current payment details before transferring.")
+
     # Define quick action messages
     action_messages = {
         "confirm": f"✅ Order confirmed! We're preparing your items.\n\nOrder #{order_id}\nTotal: ₦{order.total:,.0f}\n\nEstimated ready time: 20 minutes.",
-        "ship": f"📦 Your order is on the way!\n\nOrder #{order_id}\nRider: Chidi Okafor\nPhone: +234 801 234 5678\nETA: 30 minutes\n\nTrack your order: https://track.example.com/{order_id}",
-        "tracking": f"🚚 Track your order:\nhttps://track.example.com/{order_id}\n\nLive location: https://maps.example.com/{order_id}",
-        "payment": f"💳 Payment Request\n\nOrder #{order_id}\nAmount: ₦{order.total:,.0f}\n\n[QR Code would be sent here]\n\nOr transfer to:\nBank: GTBank\nAccount: 0123456789\nName: HealthPlus Pharmacy",
+        "ship": "\n".join(ship_lines),
+        "tracking": "\n".join(tracking_lines),
+        "payment": "\n".join(payment_lines),
         "info": "📋 Please provide the following information:\n• Full delivery address\n• Preferred delivery time\n• Any special instructions",
         "cancel": f"❌ Order Cancelled\n\nOrder #{order_id} has been cancelled.\n\nReason: {action_req.custom_message or 'Customer request'}\n\nRefund will be processed within 24 hours if payment was made."
     }

@@ -44,7 +44,7 @@ const QRCodeScannerScreen: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const response = await fetch('https://api.54agent.io/v1/payments/resolve-qr', {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.54agent.io/v1'}/payments/resolve-qr`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -38,7 +38,7 @@ export default function AgentPerformanceLeaderboardPage() {
     setLoading(true);
     try {
       const res = await fetch(
-        `https://54agent.upi.dev/performance/api/v1/agents/leaderboard?days=30&sort_by=volume&limit=50`,
+        `${CORE_BANKING_URL}/performance/api/v1/agents/leaderboard?days=30&sort_by=volume&limit=50`,
         { headers: authHeaders() }
       );
       if (res.ok) {

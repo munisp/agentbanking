@@ -10,7 +10,9 @@ import {
 
 const PAYMENT_HUB_SWITCH_NAME = "mojaloop";
 const PAYMENT_HUB_AMS_NAME = "core_banking";
-const TRANSFER_ENDPOINT = "https://54agent.upi.dev/payment-hub/api/v1/transfers/initiate";
+const TRANSFER_ENDPOINT =
+  process.env.EXPO_PUBLIC_TRANSFER_URL ||
+  "https://54agent.upi.dev/payment-hub/api/v1/transfers/initiate";
 
 async function paymentHubHeaders() {
   const headers = await authHeaders();
@@ -224,7 +226,7 @@ class TransactionService {
   async getTransactionsByAccountNumber(accountNumber, page = 1, limit = 20) {
     try {
       const headers = await authHeaders();
-      const baseUrl = "https://54agent.upi.dev";
+      const baseUrl = process.env.EXPO_PUBLIC_PLATFORM_URL || "https://54agent.upi.dev";
       const url = `${baseUrl}/ledger/txn/account-number/${accountNumber}?limit=${limit}&page=${page}`;
 
       const response = await fetch(url, {

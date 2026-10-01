@@ -1,6 +1,7 @@
 import { tenantApi } from "../utils/api";
 
-const CORE_BANKING_BASE = "https://54agent.upi.dev";
+const CORE_BANKING_BASE =
+  import.meta.env.VITE_CORE_BANKING_URL || "https://54agent.upi.dev";
 
 class TenantService {
   TENANT_CONFIG_KEY = "tenant_config";

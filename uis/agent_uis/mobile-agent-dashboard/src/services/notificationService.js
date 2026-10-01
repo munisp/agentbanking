@@ -2,10 +2,10 @@ import { Audio } from "expo-av";
 import * as SecureStore from "expo-secure-store";
 import { accountApi, authHeaders, networkOperationsApi } from "./apiService";
 
-const BASE_URL = "https://54agent.upi.dev";
+const BASE_URL = process.env.EXPO_PUBLIC_PLATFORM_URL || "https://54agent.upi.dev";
 const DEFAULT_TENANT_ID = "bpmgd";
 // WebSocket URL for realtime-notification-service (via APISIX gateway)
-const NOTIFICATION_WS_URL = "wss://54agent.upi.dev/realtime/ws";
+const NOTIFICATION_WS_URL = process.env.EXPO_PUBLIC_REALTIME_WS_URL || "wss://54agent.upi.dev/realtime/ws";
 
 class NotificationService {
   constructor() {

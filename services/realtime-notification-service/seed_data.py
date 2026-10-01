@@ -627,12 +627,11 @@ def main():
         print(f"  • Violations: {len(violations)}")
         print(f"  • Transaction notifications: {len(notifications)}")
         print("\nTest with:")
-        print(
-            "  curl https://54agent.upi.dev/realtime/api/v1/admin/violations/active?hours=48"
+        realtime_base = os.getenv(
+            "REALTIME_BASE_URL", "https://54agent.upi.dev/realtime"
         )
-        print(
-            f"  curl https://54agent.upi.dev/realtime/api/v1/geofence/list/{SAMPLE_AGENTS[0]['agent_id']}"
-        )
+        print(f"  curl {realtime_base}/api/v1/admin/violations/active?hours=48")
+        print(f"  curl {realtime_base}/api/v1/geofence/list/{SAMPLE_AGENTS[0]['agent_id']}")
 
     except Exception as e:
         print(f"\n❌ Error during seeding: {e}")

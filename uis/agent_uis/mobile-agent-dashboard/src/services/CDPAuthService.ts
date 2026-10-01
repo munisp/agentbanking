@@ -2,7 +2,8 @@ import axios, { AxiosInstance, AxiosError } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage'; // Common storage for RN
 
 // --- Configuration ---
-const API_BASE_URL = 'https://api.54agent.io/cdp/v1';
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_CDP_API_URL || 'https://api.54agent.io/cdp/v1';
 const AUTH_TOKEN_KEY = '@CdpAuth:Token';
 const REFRESH_TOKEN_KEY = '@CdpAuth:RefreshToken';
 

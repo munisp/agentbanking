@@ -33,7 +33,7 @@ const COLORS = {
   success: '#4CAF50',
 };
 
-const BASE_URL = 'https://api.54agent.io/v1';
+const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.54agent.io/v1';
 
 export const AddBeneficiaryScreen = () => {
   const { colors } = useTheme();

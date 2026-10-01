@@ -1,4 +1,4 @@
-const PING_URL = "https://54agent.upi.dev";
+const PING_URL = process.env.EXPO_PUBLIC_PING_URL || "https://54agent.upi.dev";
 const PING_TIMEOUT_MS = 5000;
 const POLL_INTERVAL_MS = 30_000;
 

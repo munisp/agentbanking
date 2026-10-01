@@ -43,6 +43,9 @@ interface MetricsResponse {
   };
 }
 
+const CORE_BANKING_URL =
+  import.meta.env.VITE_CORE_BANKING_URL || "https://54agent.upi.dev";
+
 const Transactions: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -62,7 +65,7 @@ const Transactions: React.FC = () => {
     try {
       const token = localStorage.getItem("auth_token");
       const tenantHeaders = getTenantHeadersFromStorage();
-      const res = await fetch(`https://54agent.upi.dev/ledger/txn/metrics`, {
+      const res = await fetch(`${CORE_BANKING_URL}/ledger/txn/metrics`, {
         headers: {
           ...tenantHeaders,
           Authorization: `Bearer ${token}`,
@@ -92,7 +95,7 @@ const Transactions: React.FC = () => {
         tenantHeaders,
       );
       const res = await fetch(
-        `https://54agent.upi.dev/ledger/txn/?page=${page}&limit=${limit}`,
+        `${CORE_BANKING_URL}/ledger/txn/?page=${page}&limit=${limit}`,
         {
           headers: {
             ...tenantHeaders,

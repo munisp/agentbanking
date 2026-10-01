@@ -885,7 +885,10 @@ async def create_transfer_order(
         "pin": order_request.pin,
     }
 
-    transfer_url = "https://54agent.upi.dev/payment-processing/payment/transfer"
+    transfer_url = os.getenv(
+        "PAYMENT_TRANSFER_URL",
+        "https://54agent.upi.dev/payment-processing/payment/transfer",
+    )
     transfer_status = "pending"
     transfer_response = None
     try:

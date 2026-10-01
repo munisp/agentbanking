@@ -8,7 +8,7 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/prometheus/client_golang v1.21.1
 	github.com/redis/go-redis/v9 v9.19.0
-	github.com/tigerbeetle/tigerbeetle-go v0.16.78
+	github.com/tigerbeetle/tigerbeetle-go v0.16.43
 )
 
 require (

@@ -259,4 +259,80 @@ export const auditTrailExportRouter = router({
         procedure: "config",
       };
     }),
+
+  // Export audit trail entries as CSV for a date range
+  export: protectedProcedure
+    .input(
+      z
+        .object({
+          from: z.string().optional(),
+          to: z.string().optional(),
+          limit: z.number().min(1).max(10000).default(5000),
+        })
+        .optional()
+    )
+    .mutation(async ({ input }) => {
+      try {
+        const db = await getDb();
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database unavailable",
+          });
+        const conditions = [];
+        const from = input?.from ? new Date(input.from) : null;
+        const to = input?.to ? new Date(input.to) : null;
+        if (from && !isNaN(from.getTime()))
+          conditions.push(gte(auditLog.createdAt, from));
+        if (to && !isNaN(to.getTime())) {
+          // Inclusive of the whole "to" day when a bare date is supplied
+          if (input!.to!.length <= 10) to.setHours(23, 59, 59, 999);
+          conditions.push(lte(auditLog.createdAt, to));
+        }
+        const rows = await db
+          .select()
+          .from(auditLog)
+          .where(conditions.length > 0 ? and(...conditions) : undefined)
+          .orderBy(desc(auditLog.createdAt))
+          .limit(input?.limit ?? 5000);
+
+        const csvEscape = (v: unknown) => {
+          const s = v == null ? "" : String(v);
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const header =
+          "id,createdAt,agentId,agentCode,action,resource,resourceId,status,ipAddress";
+        const lines = rows.map(r =>
+          [
+            r.id,
+            r.createdAt?.toISOString() ?? "",
+            r.agentId ?? "",
+            csvEscape(r.agentCode),
+            csvEscape(r.action),
+            csvEscape(r.resource),
+            csvEscape(r.resourceId),
+            csvEscape(r.status),
+            csvEscape(r.ipAddress),
+          ].join(",")
+        );
+        const csv = [header, ...lines].join("\n");
+        const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        const filename = `audit_export_${input?.from || "all"}_${input?.to || stamp}.csv`;
+        return {
+          success: true,
+          filename,
+          rowCount: rows.length,
+          csv,
+          from: input?.from ?? null,
+          to: input?.to ?? null,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
 });

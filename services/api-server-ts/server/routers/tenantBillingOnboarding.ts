@@ -484,11 +484,123 @@ export const tenantBillingOnboardingRouter = router({
       }
     }),
 
+  // Provision billing for a tenant by name (TenantBillingOnboardingPage call
+  // shape). Resolves or creates the tenant row, then runs the same
+  // provisioning pipeline as provisionBilling.
+  provisionTenantBilling: protectedProcedure
+    .input(
+      z.object({
+        tenantName: z.string().min(1),
+        billingModel: z.enum(["revenue_share", "subscription", "hybrid"]),
+        revenueSharePercentage: z.number().min(0).max(100).optional(),
+        subscriptionFeeMonthly: z.number().min(0).optional(),
+        region: z.string().optional(),
+        currency: z.string().length(3).default("NGN"),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const database = await db();
+        // Resolve tenant by name or derived slug; create if absent
+        const slug =
+          input.tenantName
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "") || `tenant-${Date.now()}`;
+        let [tenant] = await database
+          .select()
+          .from(tenants)
+          .where(eq(tenants.slug, slug))
+          .limit(1);
+        if (!tenant) {
+          [tenant] = await database
+            .insert(tenants)
+            .values({
+              slug,
+              name: input.tenantName,
+              currency: input.currency,
+            })
+            .returning();
+        }
+
+        const [existing] = await database
+          .select()
+          .from(tenantBillingConfig)
+          .where(eq(tenantBillingConfig.tenantId, tenant.id))
+          .limit(1);
+        if (existing) {
+          return {
+            success: false,
+            error: "Billing already provisioned for this tenant",
+            configId: existing.id,
+            tenantId: tenant.id,
+          };
+        }
+
+        const template = BILLING_TEMPLATES[input.billingModel];
+        const customConfig: Record<string, unknown> = {
+          currency: input.currency,
+          region: input.region ?? null,
+        };
+        if (template.revenueShareConfig)
+          customConfig.revenueShareConfig = {
+            ...template.revenueShareConfig,
+            ...(input.revenueSharePercentage != null
+              ? { agentSharePct: input.revenueSharePercentage }
+              : {}),
+          };
+        if (template.subscriptionConfig)
+          customConfig.subscriptionConfig = {
+            ...template.subscriptionConfig,
+            ...(input.subscriptionFeeMonthly != null
+              ? { perAgentFee: input.subscriptionFeeMonthly }
+              : {}),
+          };
+        if (template.hybridConfig)
+          customConfig.hybridConfig = { ...template.hybridConfig };
+
+        const result = await executeBillingProvisioning({
+          tenantId: tenant.id,
+          billingModel: input.billingModel,
+          customConfig,
+          provisionedBy: Number((ctx as any)?.user?.id) || 0,
+        });
+
+        await recordBillingAudit({
+          ctx: {
+            userId: (ctx as any)?.user?.id,
+            userName: (ctx as any)?.user?.name || "unknown",
+            tenantId: tenant.id,
+          },
+          action: "tenant_billing_provisioned",
+          resourceType: "tenant_billing_config",
+          resourceId: String(result.configId),
+          afterState: {
+            tenantName: input.tenantName,
+            billingModel: input.billingModel,
+            steps: result.steps.length,
+          },
+          metadata: {
+            region: input.region ?? null,
+            currency: input.currency,
+          },
+        });
+
+        return { ...result, tenantId: tenant.id, tenantSlug: tenant.slug };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
   // Get billing config for a tenant
   getConfig: protectedProcedure
     .input(z.object({ tenantId: z.number() }))
-    .query(async ({ ctx, input }) => {
-      try {
+    .query(async ({ ctx, input }) => {      try {
         await requireBillingPermission(
           ctx.user.id,
           input.tenantId,

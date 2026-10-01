@@ -519,6 +519,23 @@ import { pensionMicroRouter } from "./routers/pensionMicro";
 import { carbonCreditMarketplaceRouter } from "./routers/carbonCreditMarketplace";
 import { tokenizedAssetsRouter } from "./routers/tokenizedAssets";
 import { coalitionLoyaltyRouter } from "./routers/coalitionLoyalty";
+// Round-9 Wave B1b: Orphan-table CRUD routers (tables had zero code accessors)
+import { transactionLimitsCrudRouter } from "./routers/transactionLimitsCrud";
+import { billingReconciliationReportsCrudRouter } from "./routers/billingReconciliationReportsCrud";
+import { ecommerceInteractionsCrudRouter } from "./routers/ecommerceInteractionsCrud";
+import { agentFloatAccountsCrudRouter } from "./routers/agentFloatAccountsCrud";
+import { agentFloatInsuranceClaimsCrudRouter } from "./routers/agentFloatInsuranceClaimsCrud";
+import { agentClustersCrudRouter } from "./routers/agentClustersCrud";
+import { agentClusterMembersCrudRouter } from "./routers/agentClusterMembersCrud";
+import { agentGamificationCrudRouter } from "./routers/agentGamificationCrud";
+import { bnplTransactionsCrudRouter } from "./routers/bnplTransactionsCrud";
+import { bnplRepaymentsCrudRouter } from "./routers/bnplRepaymentsCrud";
+import { amlScreeningResultsCrudRouter } from "./routers/amlScreeningResultsCrud";
+import { commissionStructuresCrudRouter } from "./routers/commissionStructuresCrud";
+import { userNotifPreferencesCrudRouter } from "./routers/userNotifPreferencesCrud";
+import { notificationInboxCrudRouter } from "./routers/notificationInboxCrud";
+import { systemSettingsCrudRouter } from "./routers/systemSettingsCrud";
+import { tenantSettingsCrudRouter } from "./routers/tenantSettingsCrud";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -1145,6 +1162,25 @@ export const appRouter = router({
   carbonCreditMarketplace: carbonCreditMarketplaceRouter,
   tokenizedAssets: tokenizedAssetsRouter,
   coalitionLoyalty: coalitionLoyaltyRouter,
+  // Round-9 Wave B1b: Orphan-table CRUD routers (Crud-suffixed keys avoid
+  // collisions with existing bare-name registrations, e.g. notificationInbox,
+  // agentGamification, agentFloatInsuranceClaims)
+  transactionLimitsCrud: transactionLimitsCrudRouter,
+  billingReconciliationReportsCrud: billingReconciliationReportsCrudRouter,
+  ecommerceInteractionsCrud: ecommerceInteractionsCrudRouter,
+  agentFloatAccountsCrud: agentFloatAccountsCrudRouter,
+  agentFloatInsuranceClaimsCrud: agentFloatInsuranceClaimsCrudRouter,
+  agentClustersCrud: agentClustersCrudRouter,
+  agentClusterMembersCrud: agentClusterMembersCrudRouter,
+  agentGamificationCrud: agentGamificationCrudRouter,
+  bnplTransactionsCrud: bnplTransactionsCrudRouter,
+  bnplRepaymentsCrud: bnplRepaymentsCrudRouter,
+  amlScreeningResultsCrud: amlScreeningResultsCrudRouter,
+  commissionStructuresCrud: commissionStructuresCrudRouter,
+  userNotifPreferencesCrud: userNotifPreferencesCrudRouter,
+  notificationInboxCrud: notificationInboxCrudRouter,
+  systemSettingsCrud: systemSettingsCrudRouter,
+  tenantSettingsCrud: tenantSettingsCrudRouter,
 });
 
 export type AppRouter = typeof appRouter;

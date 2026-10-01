@@ -367,6 +367,58 @@ export const announcementReactionsRouter = router({
       });
     }),
 
+  // Add a comment to an announcement (comments stored in chatMessages,
+  // keyed by the numeric announcement id as sessionId — same store used by
+  // deleteComment).
+  comment: protectedProcedure
+    .input(
+      z.object({
+        announcementId: z.union([z.number(), z.string()]),
+        userId: z.string().optional(),
+        userName: z.string().optional(),
+        text: z.string().min(1),
+      })
+    )
+    .mutation(async ({ input }) => {
+      try {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+        const sessionId = Number(input.announcementId);
+        if (!Number.isFinite(sessionId))
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Invalid announcementId",
+          });
+        const [created] = await db
+          .insert(chatMessages)
+          .values({
+            sessionId,
+            senderType: "agent",
+            senderName: input.userName ?? input.userId ?? "Anonymous",
+            content: input.text,
+          })
+          .returning();
+        await db.insert(auditLog).values({
+          action: "announcement_comment_added",
+          resource: "chat_messages",
+          resourceId: String(created?.id ?? ""),
+          status: "success",
+          metadata: {
+            announcementId: String(input.announcementId),
+            userId: input.userId ?? null,
+          },
+        });
+        return { success: true, comment: created };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
   getReactions: protectedProcedure.query(async () => {
     return { data: [], total: 0 };
   }),

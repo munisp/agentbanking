@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agents } from "../../drizzle/schema";
+import { agents, agentOnboardingProgress } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import {
   calculateFee,
@@ -310,5 +310,100 @@ export const agentOnboardingWorkflowRouter = router({
         .limit(input.limit);
 
       return results;
+    }),
+
+  // Advance an agent to the next onboarding step
+  advance: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      try {
+        const database = await getDb();
+        if (!database)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database unavailable",
+          });
+        const ONBOARDING_STEPS = [
+          "profile",
+          "kyc",
+          "float",
+          "terminal",
+          "training",
+          "activated",
+        ] as const;
+        // Flag set when the named step is completed (i.e. when moving past it)
+        const STEP_COMPLETION_FLAGS: Record<string, string> = {
+          profile: "profileComplete",
+          kyc: "kycComplete",
+          float: "floatFunded",
+          terminal: "terminalAssigned",
+          training: "trainingComplete",
+        };
+
+        const [progress] = await database
+          .select()
+          .from(agentOnboardingProgress)
+          .where(eq(agentOnboardingProgress.agentId, input.id))
+          .limit(1);
+
+        if (!progress) {
+          // No progress row yet — initialize one, marking profile complete and
+          // moving the agent onto the KYC step.
+          const [agent] = await database
+            .select()
+            .from(agents)
+            .where(eq(agents.id, input.id))
+            .limit(1);
+          if (!agent)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: `Agent ${input.id} not found`,
+            });
+          const [created] = await database
+            .insert(agentOnboardingProgress)
+            .values({
+              agentId: agent.id,
+              agentCode: agent.agentCode,
+              currentStep: "kyc",
+              profileComplete: true,
+            })
+            .returning();
+          logOperation("advance", { agentId: input.id, to: "kyc" });
+          return { success: true, progress: created };
+        }
+
+        const currentIdx = ONBOARDING_STEPS.indexOf(
+          progress.currentStep as (typeof ONBOARDING_STEPS)[number]
+        );
+        if (currentIdx < 0 || currentIdx >= ONBOARDING_STEPS.length - 1) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Agent onboarding is already complete",
+          });
+        }
+        const currentStep = ONBOARDING_STEPS[currentIdx];
+        const nextStep = ONBOARDING_STEPS[currentIdx + 1];
+        const setFields: Record<string, unknown> = {
+          currentStep: nextStep,
+          updatedAt: new Date(),
+        };
+        const completedFlag = STEP_COMPLETION_FLAGS[currentStep];
+        if (completedFlag) setFields[completedFlag] = true;
+        if (nextStep === "activated") setFields.activatedAt = new Date();
+
+        const [updated] = await database
+          .update(agentOnboardingProgress)
+          .set(setFields)
+          .where(eq(agentOnboardingProgress.id, progress.id))
+          .returning();
+        logOperation("advance", {
+          agentId: input.id,
+          from: currentStep,
+          to: nextStep,
+        });
+        return { success: true, progress: updated };
+      } catch (error) {
+        handleError(error, "advance");
+      }
     }),
 });

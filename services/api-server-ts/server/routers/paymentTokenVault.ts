@@ -2,7 +2,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { transactions, auditLog } from "../../drizzle/schema";
+import { randomBytes } from "crypto";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import {
   calculateFee,
@@ -318,4 +319,61 @@ export const paymentTokenVaultRouter = router({
     activeRecords: 0,
     lastUpdated: new Date().toISOString(),
   })),
+
+  // Create a payment token. There is no dedicated token-vault table in the
+  // drizzle schema (this router is backed by `transactions`), so the token
+  // record is persisted as an audit_log entry (never store raw PAN data) and
+  // the token descriptor is returned to the caller.
+  createToken: protectedProcedure
+    .input(
+      z
+        .object({
+          customerId: z.union([z.number(), z.string()]).optional(),
+          cardRef: z.string().optional(),
+          tokenType: z.string().default("card"),
+          metadata: z.record(z.string(), z.any()).optional(),
+        })
+        .optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = await getDb();
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database unavailable",
+          });
+        const tokenValue = `tok_${randomBytes(16).toString("hex")}`;
+        const token = {
+          token: tokenValue,
+          tokenType: input?.tokenType ?? "card",
+          customerId: input?.customerId ?? null,
+          cardRef: input?.cardRef ?? null,
+          status: "active",
+          createdAt: new Date().toISOString(),
+        };
+        const [entry] = await db
+          .insert(auditLog)
+          .values({
+            action: "payment_token_vault.create_token",
+            resource: "payment_token",
+            resourceId: tokenValue,
+            status: "success",
+            metadata: {
+              ...token,
+              // never persist raw card data — token only
+              actor: (ctx as any)?.user?.email ?? "system",
+            },
+          })
+          .returning();
+        return { success: true, token, auditId: entry?.id ?? null };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
 });

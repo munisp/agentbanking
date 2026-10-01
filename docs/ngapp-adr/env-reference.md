@@ -106,7 +106,7 @@ Generate keys with: `npx web-push generate-vapid-keys`
 | `FRAUD_SERVICE_URL`      | `http://fraud-detection:8004`    | Fraud detection       |
 | `AGENT_PERFORMANCE_URL`  | `http://agent-performance:8005`  | Agent performance     |
 | `CREDIT_SCORING_URL`     | `http://credit-scoring:8006`     | Credit scoring        |
-| `GEOSPATIAL_SERVICE_URL` | `http://geospatial-service:8007` | Geospatial/Sedona     |
+| `GEOSPATIAL_SERVICE_URL` | `http://geospatial-service:8007` | Geospatial (Sedona integration is roadmap — not currently wired) |
 | `ANALYTICS_PLATFORM_URL` | `http://analytics-platform:8008` | DataFusion analytics  |
 | `CBN_REPORTING_URL`      | `http://cbn-reporting:8009`      | CBN reporting         |
 | `WORKFLOW_SERVICE_URL`   | `http://workflow-service:8010`   | Workflow orchestrator |

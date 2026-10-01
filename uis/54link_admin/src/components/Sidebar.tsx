@@ -80,6 +80,7 @@ const sections: Section[] = [
     label: "Developer",
     items: [
       { path: "/developer-platform", label: "Developer Platform", icon: Code2, tourId: "nav-developer", featureFlag: "developer_platform", permission: PERMISSION_MAP.DEVELOPER_PLATFORM },
+      { path: "/api-explorer", label: "API Explorer", icon: Code2, tourId: "nav-api-explorer", permission: PERMISSION_MAP.VIEW_ALL_DATA },
     ],
   },
 ];

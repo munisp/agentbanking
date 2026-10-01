@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agentSuspensionLog } from "../../drizzle/schema";
+import { agentSuspensionLog, agents } from "../../drizzle/schema";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {
@@ -148,6 +148,61 @@ const getStats = protectedProcedure
         recentItems: recent,
         summary: { active: total, lastUpdated: new Date().toISOString() },
       };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  });
+
+const reinstate = protectedProcedure
+  .input(
+    z.object({
+      id: z.number(),
+      reason: z.string().optional(),
+    })
+  )
+  .mutation(async ({ input, ctx }) => {
+    try {
+      const db = (await getDb())!;
+      if (!db) throw new Error("Database unavailable");
+      // id refers to the agent_suspension_log row shown in the list view
+      const [logRow] = await db
+        .select()
+        .from(agentSuspensionLog)
+        .where(eq(agentSuspensionLog.id, input.id))
+        .limit(1);
+      if (!logRow)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Suspension record ${input.id} not found`,
+        });
+      const performerId = Number((ctx as any)?.user?.id);
+      // Reactivate the agent and record the reinstatement in the log
+      await db
+        .update(agents)
+        .set({
+          isActive: true,
+          floatLocked: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(agents.id, logRow.agentId));
+      const [entry] = await db
+        .insert(agentSuspensionLog)
+        .values({
+          agentId: logRow.agentId,
+          action: "reactivate",
+          reason: input.reason ?? "Agent reinstated",
+          performedBy: Number.isFinite(performerId) ? performerId : 0,
+          previousStatus: "suspended",
+          newStatus: "active",
+        })
+        .returning();
+      logOperation("reinstate", { agentId: logRow.agentId, logId: entry?.id });
+      return { success: true, entry };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({
@@ -358,5 +413,6 @@ export const agentSuspensionWorkflowRouter = router({
   suspend,
   lift,
   escalate,
+  reinstate,
   getStats,
 });

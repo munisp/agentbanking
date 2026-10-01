@@ -80,6 +80,7 @@ const CBNComplianceCheckerWorkspace = lazy(() => import("./pages/CBNComplianceCh
 // Developer Platform
 import { useTemporalAccessPolling } from "./_core/hooks/useTemporalAccess";
 const Analytics = lazy(() => import("./pages/Analytics"));
+const ApiExplorer = lazy(() => import("./pages/ApiExplorer"));
 const AppReview = lazy(() => import("./pages/AppReview"));
 const DeveloperManagement = lazy(() =>
   import("./pages/DeveloperManagement").then((m) => ({ default: m.DeveloperManagement }))
@@ -262,6 +263,7 @@ function Router() {
           <Route path="/developer-platform/security" component={Security} />
           <Route path="/developer-platform/analytics" component={Analytics} />
           <Route path="/developer-platform/apps" component={AppReview} />
+          <Route path="/api-explorer" component={ApiExplorer} />
 
           {/* Auth & Utility */}
           <Route path="/login" component={Login} />

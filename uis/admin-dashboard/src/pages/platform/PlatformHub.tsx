@@ -112,7 +112,7 @@ const PORTALS: PortalCard[] = [
   {
     title: "Data Lakehouse",
     description:
-      "Bronze→Silver→Gold medallion pipeline. Sedona spatial heatmaps, DataFusion SQL console, daily snapshots on MinIO/Iceberg.",
+      "Bronze→Silver→Gold medallion pipeline. Grid spatial heatmaps (Apache Sedona integration on roadmap, not currently wired), DataFusion SQL console, daily snapshots on MinIO/Iceberg.",
     path: "/lakehouse",
     icon: "🏔️",
     badge: "Analytics",

@@ -26,8 +26,8 @@ export default function EducationPaymentsScreen() {
   const loadData = useCallback(async () => {
     try {
       const [statsRes, listRes] = await Promise.all([
-        fetch(`${API_BASE}/education_payments.getStats`).then(r => r.json()),
-        fetch(`${API_BASE}/education_payments.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
+        fetch(`${API_BASE}/educationPayments.getStats`).then(r => r.json()),
+        fetch(`${API_BASE}/educationPayments.list?input=${encodeURIComponent(JSON.stringify({ limit: 20, offset: 0 }))}`).then(r => r.json()),
       ]);
       setStats(statsRes?.result?.data ?? {});
       setItems(listRes?.result?.data?.items ?? []);

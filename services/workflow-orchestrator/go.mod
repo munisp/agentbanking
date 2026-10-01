@@ -13,7 +13,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/segmentio/kafka-go v0.4.50
 	github.com/spf13/viper v1.21.0
-	github.com/tigerbeetle/tigerbeetle-go v0.16.78
+	github.com/tigerbeetle/tigerbeetle-go v0.16.43
 	go.temporal.io/sdk v1.42.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.80.0

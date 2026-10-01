@@ -220,7 +220,7 @@ Honest status as of this branch. "Wired" = instrumentation code/config present o
 | **OpenAppSec** | ❌ GAP | No native OTel support. k8s CRD logs ship to `opensearch:5140`; best-effort log correlation only. See gaps doc. |
 | **APISIX** | ✅ Full | Native `opentelemetry` plugin + `plugin_attr` → `http://otel-collector:4318` (root + HA configs; HA zipkin plugin removed); `prometheus` plugin scraped at `apisix:9091/apisix/prometheus/metrics`. |
 | **TigerBeetle** | ❌ GAP (mitigated) | 0.16.43 exposes **no metrics endpoint**. Covered indirectly via tigerbeetle-core/-edge service metrics and CIPS/PAPSS TB-balance gauges. `TigerBeetleSidecarDown` alert is armed but intentionally silent until a sidecar exists. Upgrade path in gaps doc. |
-| **Apache Sedona** | ➖ N/A (library) | Sedona is a Spark library with no own metrics server — covered via the Spark PrometheusServlet below. |
+| **Apache Sedona** | ➖ N/A (not installed) | Roadmap/external integration point: Sedona is a Spark library, but no Sedona jar or package is installed (the spark-submit `--packages` list excludes it), so there is currently nothing to monitor. |
 | **Spark / Lakehouse** | ✅ Metrics | NEW `infra/lakehouse/spark/metrics.properties` enables PrometheusServlet; scrape `spark-master:4040/metrics`. MinIO: `/minio/v2/metrics/cluster` scrape. Iceberg REST: HTTP spans via the reverse proxy (APISIX) in front of it. |
 | **GeoLibre** | 📄 External — documented | External OSS GIS app (github.com/opengeos/GeoLibre). Instrumentation guide: [docs/observability/geolibre-instrumentation.md](docs/observability/geolibre-instrumentation.md). |
 | **OTel collector itself** | ✅ | Internal telemetry (`otelcol_*`) scraped from `:8889`; `CollectorDroppingSpans` / `CollectorQueueFull` alerts. |

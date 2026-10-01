@@ -515,4 +515,64 @@ export const dynamicFeeEngineRouter = router({
       avgFeeRate: Math.round(avgFeeRate * 100) / 100,
     };
   }),
+
+  // Simulate the fee for an amount/transaction type against active fee_rules.
+  // Implemented as a query because the frontend calls it via useQuery +
+  // refetch() ("Calculate Fee" button).
+  simulateFee: protectedProcedure
+    .input(
+      z.object({
+        amount: z.number().min(0),
+        transaction_type: z.string().default("transfer"),
+      })
+    )
+    .query(async ({ input }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db)
+          return {
+            amount: input.amount,
+            transactionType: input.transaction_type,
+            fee: 0,
+            rule: null,
+          };
+        const rules = await db
+          .select()
+          .from(feeRules)
+          .where(
+            and(
+              eq(feeRules.txType, input.transaction_type),
+              eq(feeRules.isActive, true)
+            )
+          )
+          .orderBy(desc(feeRules.priority));
+        const applicable = rules.filter(r => {
+          const min = Number(r.minAmount ?? 0);
+          const max = r.maxAmount != null ? Number(r.maxAmount) : Infinity;
+          return input.amount >= min && input.amount <= max;
+        });
+        const rule = applicable[0] ?? null;
+        let fee = 0;
+        if (rule) {
+          const value = Number(rule.feeValue);
+          fee =
+            rule.feeType === "flat" ? value : input.amount * (value / 100);
+          if (rule.minFee != null) fee = Math.max(fee, Number(rule.minFee));
+          if (rule.maxFee != null) fee = Math.min(fee, Number(rule.maxFee));
+        }
+        return {
+          amount: input.amount,
+          transactionType: input.transaction_type,
+          fee: Math.round(fee * 100) / 100,
+          rule,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
 });

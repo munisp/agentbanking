@@ -287,6 +287,85 @@ export const generalLedgerRouter = router({
       }
     }),
 
+  createEntry: protectedProcedure
+    .input(
+      z.object({
+        account_code: z.string().min(1),
+        description: z.string().optional(),
+        debit_amount: z.number().min(0).default(0),
+        credit_amount: z.number().min(0).default(0),
+        reference: z.string().optional(),
+        entry_date: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const db = (await getDb())!;
+        if (!db) throw new Error("Database unavailable");
+        if (input.debit_amount <= 0 && input.credit_amount <= 0)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "A debit_amount or credit_amount greater than 0 is required",
+          });
+        // Resolve account name from the chart of accounts when available
+        const [account] = await db
+          .select()
+          .from(gl_accounts)
+          .where(eq(gl_accounts.accountCode, input.account_code))
+          .limit(1);
+        const accountName = account?.accountName ?? input.account_code;
+        const reference =
+          input.reference && input.reference.length > 0
+            ? input.reference
+            : `GL-${Date.now()}`;
+        const periodDate =
+          input.entry_date && !isNaN(new Date(input.entry_date).getTime())
+            ? new Date(input.entry_date)
+            : new Date();
+        const postedByRaw = Number((ctx as any)?.user?.id);
+        const records = [] as Array<Record<string, unknown>>;
+        if (input.debit_amount > 0)
+          records.push({
+            accountCode: input.account_code,
+            accountName,
+            entryType: "debit",
+            amount: String(input.debit_amount),
+            reference,
+            description: input.description ?? null,
+            periodDate,
+            postedBy: Number.isFinite(postedByRaw) ? postedByRaw : null,
+          });
+        if (input.credit_amount > 0)
+          records.push({
+            accountCode: input.account_code,
+            accountName,
+            entryType: "credit",
+            amount: String(input.credit_amount),
+            reference,
+            description: input.description ?? null,
+            periodDate,
+            postedBy: Number.isFinite(postedByRaw) ? postedByRaw : null,
+          });
+        const inserted = await db
+          .insert(glEntries)
+          .values(records as any)
+          .returning();
+        return {
+          success: true,
+          reference,
+          entriesPosted: inserted.length,
+          entries: inserted,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+        });
+      }
+    }),
+
   trialBalance: protectedProcedure
     .input(
       z.object({

@@ -5,3 +5,7 @@ python-multipart>=0.0.20
 requests>=2.32.4
 aiohttp>=3.11.18
 
+
+# round-11: Postgres persistence for business-data stores
+sqlalchemy>=2.0
+psycopg2-binary>=2.9

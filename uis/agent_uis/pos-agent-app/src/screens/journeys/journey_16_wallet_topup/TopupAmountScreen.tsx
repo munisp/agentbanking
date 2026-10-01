@@ -14,7 +14,7 @@ import {
   TextInput,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { APIClient } from '../../lib/APIClient';
+import { APIClient } from '../../../lib/APIClient';
 const apiClient = new APIClient();
 
 

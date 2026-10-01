@@ -20,9 +20,6 @@ import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Depends, Query, Path, Body, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("commission-calculation-engine")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, validator, Field
 import json
@@ -38,6 +35,10 @@ app = FastAPI(
     description="Advanced commission calculation and rules management system",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("commission-calculation-engine")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

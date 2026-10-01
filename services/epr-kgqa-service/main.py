@@ -42,9 +42,6 @@ statistics, fraud verdicts, or confidence scores.
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("epr-kgqa-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Tuple
@@ -68,6 +65,10 @@ app = FastAPI(
     description="Knowledge Graph Question Answering Service",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("epr-kgqa-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

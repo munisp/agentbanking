@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 # --- PostgreSQL Persistence ---
 import asyncpg
 from contextlib import asynccontextmanager
+import os
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/deepseek_ocr_service")
 _db_pool = None

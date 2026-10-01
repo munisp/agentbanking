@@ -197,7 +197,7 @@ def calculate_score(request: ScoreCalculationRequest, db: Session = Depends(get_
     # In a real system, this would be an async call to a scoring engine.
     
     # Execute scoring calculation
-    import random
+    score_data = {}  # round-11: data-source fetch not implemented; component defaults below apply
     payment_history = score_data.get("payment_history_score", 0.35)
     credit_utilization = score_data.get("credit_utilization", 0.30)
     credit_age = score_data.get("credit_age_score", 0.15)

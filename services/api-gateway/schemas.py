@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, HttpUrl, validator
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from datetime import datetime
 
 # --- Custom JSON Type for SQLAlchemy/Pydantic Compatibility ---

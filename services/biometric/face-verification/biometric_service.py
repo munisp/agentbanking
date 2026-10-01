@@ -583,7 +583,7 @@ class BiometricVerificationEngine:
             deepface_data["model"] = deepface_verify.get("model", "ArcFace")
 
             # If primary face matching failed but DeepFace agrees, boost confidence
-            if not face_match_ok and deepface_verify.get("verified", False):
+            if not face_match_data.get("match", False) and deepface_verify.get("verified", False):  # round-11: face_match_ok not yet assigned here
                 face_match_data["deepface_override"] = True
                 face_match_data["deepface_distance"] = deepface_verify.get("distance", 0)
 
@@ -623,7 +623,7 @@ class BiometricVerificationEngine:
                 "faces_checked": deepface_antispoof.get("faces_count", 0),
             }
             # If DeepFace anti-spoof disagrees with liveness, flag for review
-            if not deepface_antispoof.get("is_real", True) and liveness_ok:
+            if not deepface_antispoof.get("is_real", True) and liveness_data.get("is_live", False):  # round-11: liveness_ok not yet assigned here
                 deepface_data["spoof_disagreement"] = True
 
         # ── Step 6: Determine Overall Verdict ──

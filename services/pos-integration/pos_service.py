@@ -25,9 +25,6 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("pos-integration-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field, validator
 from sqlalchemy import create_engine, Column, String, Float, DateTime, Text, Integer, Boolean, JSON
@@ -1830,6 +1827,10 @@ class POSIntegrationService:
 
 # FastAPI application
 app = FastAPI(title="POS Integration Service", version="1.0.0")
+
+apply_middleware(app)
+setup_logging("pos-integration-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

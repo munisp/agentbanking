@@ -24,9 +24,6 @@ import networkx as nx
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("hybrid-fraud-detection-engine")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 import httpx
@@ -38,7 +35,7 @@ from sqlalchemy.orm import sessionmaker, Session
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, GATConv, SAGEConv
+from torch_geometric.nn import GCNConv, GATConv, SAGEConv, global_mean_pool
 from torch_geometric.data import Data, DataLoader
 import torch_geometric.transforms as T
 from sklearn.ensemble import RandomForestClassifier, IsolationForest, GradientBoostingClassifier
@@ -801,7 +798,7 @@ class FraudGNNModel(nn.Module):
         # Global pooling (mean pooling over all nodes)
         batch_size = data.batch.max().item() + 1 if hasattr(data, 'batch') else 1
         if hasattr(data, 'batch'):
-            x = torch_geometric.nn.global_mean_pool(x, data.batch)
+            x = global_mean_pool(x, data.batch)  # round-11: torch_geometric module itself was never imported
         else:
             x = x.mean(dim=0, keepdim=True)
         
@@ -1256,6 +1253,10 @@ class HybridFraudDetectionEngine:
 
 # FastAPI application
 app = FastAPI(title="Hybrid Fraud Detection Engine", version="1.0.0")
+
+apply_middleware(app)
+setup_logging("hybrid-fraud-detection-engine")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

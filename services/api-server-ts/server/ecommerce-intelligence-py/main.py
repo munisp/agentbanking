@@ -20,11 +20,9 @@ from analytics import SalesAnalytics
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ecommerce-intelligence")
 
-recommendation_engine: RecommendationEngine
-pricing_engine: DynamicPricingEngine
-sales_analytics: SalesAnalytics
-
-
+recommendation_engine = None  # round-11: initialized; assigned in startup handler
+pricing_engine = None  # round-11: initialized; assigned in startup handler
+sales_analytics = None  # round-11: initialized; assigned in startup handler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global recommendation_engine, pricing_engine, sales_analytics

@@ -84,9 +84,6 @@ Real-time bidirectional communication service for Remittance Platform
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app, enable_auth=True)
-setup_logging("websocket-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Set
@@ -145,6 +142,10 @@ app = FastAPI(
     description="Real-time bidirectional communication service",
     version="1.0.0"
 )
+
+apply_middleware(app, enable_auth=True)
+setup_logging("websocket-service")
+app.include_router(metrics_router)
 
 @app.on_event("startup")
 async def _init_pg_pool():

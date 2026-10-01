@@ -15,9 +15,6 @@ This service integrates with:
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("unified-analytics-service-(dapr-integrated)")
-app.include_router(metrics_router)
 
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel
@@ -42,6 +39,10 @@ app = FastAPI(
     description="Analytics API with Dapr service mesh and Permify authorization",
     version="2.0.0"
 )
+
+apply_middleware(app)
+setup_logging("unified-analytics-service-(dapr-integrated)")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

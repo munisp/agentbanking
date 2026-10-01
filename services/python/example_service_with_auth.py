@@ -16,9 +16,6 @@ Date: November 11, 2025
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("agent-banking-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import Optional, List
@@ -55,6 +52,10 @@ app = FastAPI(
     description="Example service with Keycloak authentication",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("agent-banking-service")
+app.include_router(metrics_router)
 
 
 # Configure CORS

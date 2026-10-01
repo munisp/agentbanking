@@ -6,6 +6,7 @@ import logging
 
 from .config import settings
 from .models import Base, engine, SessionLocal, HierarchyNode, HierarchyNodeCreate, HierarchyNodeUpdate
+from sqlalchemy.orm import Session
 
 # --- Production: Graceful Shutdown ---
 import signal
@@ -95,7 +96,7 @@ async def health_check():
 async def create_node(node: HierarchyNodeCreate, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     # Business logic to create a new hierarchy node
     _username = current_user.get("username", "unknown")
-    logger.info(f"User {_username} creating node: {node.name}")
+    logger.info(f"User {_username} create node ")
     db_node = HierarchyNode(**node.dict())
     db.add(db_node)
     db.commit()
@@ -106,7 +107,7 @@ async def create_node(node: HierarchyNodeCreate, current_user: dict = Depends(ge
 async def read_nodes(skip: int = 0, limit: int = 100, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     # Business logic to retrieve all hierarchy nodes
     _username = current_user.get("username", "unknown")
-    logger.info(f"User {_username} creating node: {node.name}")
+    logger.info(f"User {_username} listing nodes")
     nodes = db.query(HierarchyNode).offset(skip).limit(limit).all()
     return nodes
 
@@ -114,7 +115,7 @@ async def read_nodes(skip: int = 0, limit: int = 100, current_user: dict = Depen
 async def read_node(node_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     # Business logic to retrieve a specific hierarchy node by ID
     _username = current_user.get("username", "unknown")
-    logger.info(f"User {_username} creating node: {node.name}")
+    logger.info(f"User {_username} read node {node_id}")
     node = db.query(HierarchyNode).filter(HierarchyNode.id == node_id).first()
     if node is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
@@ -124,7 +125,7 @@ async def read_node(node_id: int, current_user: dict = Depends(get_current_user)
 async def update_node(node_id: int, node: HierarchyNodeUpdate, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     # Business logic to update an existing hierarchy node
     _username = current_user.get("username", "unknown")
-    logger.info(f"User {_username} creating node: {node.name}")
+    logger.info(f"User {_username} update node {node_id}")
     db_node = db.query(HierarchyNode).filter(HierarchyNode.id == node_id).first()
     if db_node is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
@@ -138,7 +139,7 @@ async def update_node(node_id: int, node: HierarchyNodeUpdate, current_user: dic
 async def delete_node(node_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     # Business logic to delete a hierarchy node
     _username = current_user.get("username", "unknown")
-    logger.info(f"User {_username} creating node: {node.name}")
+    logger.info(f"User {_username} delete node {node_id}")
     db_node = db.query(HierarchyNode).filter(HierarchyNode.id == node_id).first()
     if db_node is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
@@ -149,14 +150,14 @@ async def delete_node(node_id: int, current_user: dict = Depends(get_current_use
 @app.get("/nodes/{node_id}/children", response_model=List[HierarchyNode])
 async def get_node_children(node_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     _username = current_user.get("username", "unknown")
-    logger.info(f"User {_username} creating node: {node.name}")
+    logger.info(f"User {_username} get node children {node_id}")
     children = db.query(HierarchyNode).filter(HierarchyNode.parent_id == node_id).all()
     return children
 
 @app.get("/nodes/{node_id}/parent", response_model=Optional[HierarchyNode])
 async def get_node_parent(node_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     _username = current_user.get("username", "unknown")
-    logger.info(f"User {_username} creating node: {node.name}")
+    logger.info(f"User {_username} get node parent {node_id}")
     node = db.query(HierarchyNode).filter(HierarchyNode.id == node_id).first()
     if node is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
@@ -168,7 +169,7 @@ async def get_node_parent(node_id: int, current_user: dict = Depends(get_current
 @app.post("/nodes/{node_id}/assign_parent/{parent_id}", response_model=HierarchyNode)
 async def assign_parent(node_id: int, parent_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     _username = current_user.get("username", "unknown")
-    logger.info(f"User {_username} creating node: {node.name}")
+    logger.info(f"User {_username} assign parent {node_id}")
     node = db.query(HierarchyNode).filter(HierarchyNode.id == node_id).first()
     parent = db.query(HierarchyNode).filter(HierarchyNode.id == parent_id).first()
 
@@ -190,7 +191,7 @@ async def assign_parent(node_id: int, parent_id: int, current_user: dict = Depen
 @app.post("/nodes/{node_id}/remove_parent", response_model=HierarchyNode)
 async def remove_parent(node_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     _username = current_user.get("username", "unknown")
-    logger.info(f"User {_username} creating node: {node.name}")
+    logger.info(f"User {_username} remove parent {node_id}")
     node = db.query(HierarchyNode).filter(HierarchyNode.id == node_id).first()
     if node is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")

@@ -35,7 +35,194 @@ deepseek_processor = DeepSeekProcessor()
 banking_parser = BankingDocumentParser()
 
 # In-memory storage for demo (replace with database in production)
-document_store: Dict[str, Dict[str, Any]] = {}
+# ── Round-11 persistence fix ───────────────────────────────────────────────
+# Process-memory dict replaced by a dict-compatible Postgres-backed store so
+# business data survives restarts. Mirrors sibling-service convention:
+# {ENV}_DATABASE_URL, pool_pre_ping, auto-created table (python-owned schema).
+import os as _r11_os
+import json as _r11_json
+from datetime import datetime as _r11_dt, timezone as _r11_tz
+from sqlalchemy import (
+    create_engine as _r11_ce,
+    Column as _r11_Col,
+    String as _r11_Str,
+    DateTime as _r11_DT,
+    Text as _r11_Txt,
+)
+from sqlalchemy.orm import sessionmaker as _r11_sm, declarative_base as _r11_db
+
+_R11Base = _r11_db()
+
+
+class _R11Row(_R11Base):
+    __abstract__ = True
+    key = _r11_Col(_r11_Str(128), primary_key=True)
+    data = _r11_Col(_r11_Txt, nullable=False)
+    updated_at = _r11_Col(
+        _r11_DT(timezone=True),
+        default=lambda: _r11_dt.now(_r11_tz.utc),
+        onupdate=lambda: _r11_dt.now(_r11_tz.utc),
+    )
+
+
+class _PgDictStore:
+    """Dict-compatible store persisted to Postgres (replaces in-memory dict)."""
+
+    def __init__(self, table, env, model_name=None):
+        self._model_name = model_name
+        self._Row = type("_R11_%s" % table, (_R11Row,), {"__tablename__": table})
+        url = _r11_os.getenv(
+            env, "postgresql://postgres:postgres@localhost:5432/platform"
+        )
+        self._engine = _r11_ce(url, pool_pre_ping=True, pool_size=5, max_overflow=5)
+        _R11Base.metadata.create_all(self._engine)
+        self._Session = _r11_sm(bind=self._engine, autoflush=False, autocommit=False)
+
+    @staticmethod
+    def _ser(v):
+        def _cv(x):
+            if hasattr(x, "model_dump"):
+                return x.model_dump()
+            if hasattr(x, "dict") and callable(x.dict):
+                return x.dict()
+            return x
+        if isinstance(v, list):
+            v = [_cv(x) for x in v]
+        else:
+            v = _cv(v)
+        return _r11_json.dumps(v, default=str)
+
+    def _deser(self, raw):
+        d = _r11_json.loads(raw)
+        if self._model_name:
+            cls = globals().get(self._model_name)
+            if cls is not None:
+                if isinstance(d, list):
+                    return [cls(**x) if isinstance(x, dict) else x for x in d]
+                return cls(**d)
+        return d
+
+    def __setitem__(self, k, v):
+        s = self._Session()
+        try:
+            row = s.get(self._Row, str(k))
+            payload = self._ser(v)
+            if row is None:
+                s.add(self._Row(key=str(k), data=payload))
+            else:
+                row.data = payload
+            s.commit()
+        finally:
+            s.close()
+
+    def __getitem__(self, k):
+        s = self._Session()
+        try:
+            row = s.get(self._Row, str(k))
+            if row is None:
+                raise KeyError(k)
+            return self._deser(row.data)
+        finally:
+            s.close()
+
+    def get(self, k, default=None):
+        try:
+            return self[k]
+        except KeyError:
+            return default
+
+    def __delitem__(self, k):
+        s = self._Session()
+        try:
+            row = s.get(self._Row, str(k))
+            if row is None:
+                raise KeyError(k)
+            s.delete(row)
+            s.commit()
+        finally:
+            s.close()
+
+    def __contains__(self, k):
+        s = self._Session()
+        try:
+            return s.get(self._Row, str(k)) is not None
+        finally:
+            s.close()
+
+    def setdefault(self, k, default=None):
+        try:
+            return self[k]
+        except KeyError:
+            self[k] = default
+            return default
+
+    def _all(self):
+        s = self._Session()
+        try:
+            return s.query(self._Row).all()
+        finally:
+            s.close()
+
+    def values(self):
+        return [self._deser(r.data) for r in self._all()]
+
+    def keys(self):
+        return [r.key for r in self._all()]
+
+    def items(self):
+        return [(r.key, self._deser(r.data)) for r in self._all()]
+
+    def __len__(self):
+        s = self._Session()
+        try:
+            return s.query(self._Row).count()
+        finally:
+            s.close()
+
+    def pop(self, k, default=None):
+        try:
+            v = self[k]
+            del self[k]
+            return v
+        except KeyError:
+            return default
+
+    def clear(self):
+        s = self._Session()
+        try:
+            s.query(self._Row).delete()
+            s.commit()
+        finally:
+            s.close()
+
+
+class _OcrDocStore(_PgDictStore):
+    """_PgDictStore with ProcessingStatus enum round-trip (values stored as enum .value)."""
+
+    @staticmethod
+    def _ser(v):
+        if isinstance(v, dict):
+            v = {k: (x.value if isinstance(x, ProcessingStatus) else x) for k, x in v.items()}
+        return _r11_json.dumps(v, default=str)
+
+    def _deser(self, raw):
+        d = _r11_json.loads(raw)
+        if isinstance(d, dict) and "status" in d:
+            try:
+                d["status"] = ProcessingStatus(d["status"])
+            except Exception:
+                pass
+        return d
+
+
+document_store = _OcrDocStore("ocr_documents", "OCR_DATABASE_URL")
+
+
+def _doc_patch(document_id, **fields):
+    """round-11: fetch-modify-write-back for document progress updates."""
+    doc = document_store[document_id]
+    doc.update(fields)
+    document_store[document_id] = doc
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -116,23 +303,23 @@ async def process_document_async(
     """
     try:
         # Update status to processing
-        document_store[document_id]["status"] = ProcessingStatus.PROCESSING
-        document_store[document_id]["progress"] = 10
+        _doc_patch(document_id, status=ProcessingStatus.PROCESSING)
+        _doc_patch(document_id, progress=10)
         
         logger.info(f"Starting processing for document {document_id}")
         
         # Step 1: Detect document type if not provided
         if not document_type:
             document_type = await docling_processor.detect_document_type(file_path)
-            document_store[document_id]["document_type"] = document_type
-            document_store[document_id]["progress"] = 20
+            _doc_patch(document_id, document_type=document_type)
+            _doc_patch(document_id, progress=20)
         
         # Step 2: Process with Docling
         docling_result = await docling_processor.process_document(
             file_path=file_path,
             document_type=document_type
         )
-        document_store[document_id]["progress"] = 50
+        _doc_patch(document_id, progress=50)
         
         # Step 3: Enhance with DeepSeek OCR if needed
         if docling_result.get("requires_ocr", False):
@@ -144,7 +331,7 @@ async def process_document_async(
             docling_result["text"] = deepseek_result.get("text", docling_result.get("text"))
             docling_result["confidence"] = deepseek_result.get("confidence", docling_result.get("confidence"))
         
-        document_store[document_id]["progress"] = 70
+        _doc_patch(document_id, progress=70)
         
         # Step 4: Parse banking-specific fields
         if document_type in [DocumentType.NATIONAL_ID, DocumentType.PASSPORT, 
@@ -156,7 +343,7 @@ async def process_document_async(
             )
             docling_result["parsed_fields"] = parsed_fields
         
-        document_store[document_id]["progress"] = 90
+        _doc_patch(document_id, progress=90)
         
         # Step 5: Store results
         result = DocumentResult(
@@ -171,17 +358,17 @@ async def process_document_async(
             processing_time_ms=docling_result.get("processing_time_ms", 0)
         )
         
-        document_store[document_id]["status"] = ProcessingStatus.COMPLETED
-        document_store[document_id]["progress"] = 100
-        document_store[document_id]["result"] = result.dict()
-        document_store[document_id]["completed_at"] = datetime.utcnow().isoformat()
+        _doc_patch(document_id, status=ProcessingStatus.COMPLETED)
+        _doc_patch(document_id, progress=100)
+        _doc_patch(document_id, result=result.dict())
+        _doc_patch(document_id, completed_at=datetime.utcnow().isoformat())
         
         logger.info(f"Completed processing for document {document_id}")
         
     except Exception as e:
         logger.error(f"Error processing document {document_id}: {str(e)}")
-        document_store[document_id]["status"] = ProcessingStatus.FAILED
-        document_store[document_id]["error"] = str(e)
+        _doc_patch(document_id, status=ProcessingStatus.FAILED)
+        _doc_patch(document_id, error=str(e))
 
 
 # ==================== API ENDPOINTS ====================

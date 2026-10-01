@@ -9,17 +9,18 @@ For full details, see ROLE_MIGRATION_GUIDE.md
 # =================================================================
 
 # Via Orchestrator (TypeScript)
-createAdminWorkflow({
-    email: "admin@example.com",
-    firstName: "Jane",
-    lastName: "Doe",
-    phone: "+1234567890",
-    uin: "UIN123",
-    accessLevel: "7",  # "7" = SUPER_ADMIN -> maps to Permify roles
-    tenantId: "54agent",
-    keycloakRealm: "54agent",
-    keycloakPublicKey: "...",
-})
+# TypeScript example (not executable Python):
+#   createAdminWorkflow({
+#       email: "admin@example.com",
+#       firstName: "Jane",
+#       lastName: "Doe",
+#       phone: "+1234567890",
+#       uin: "UIN123",
+#       accessLevel: "7",  # "7" = SUPER_ADMIN -> maps to Permify roles
+#       tenantId: "54agent",
+#       keycloakRealm: "54agent",
+#       keycloakPublicKey: "...",
+#   })
 
 # Result:
 # 1. Auth created with user_role=ADMIN, access_level="7"
@@ -50,10 +51,10 @@ ACCESS_LEVELS = {
 # =================================================================
 
 # Get Permify roles for an access level
-POST /permissions/translate-role
-{
-    "access_level": "4"
-}
+# POST /permissions/translate-role
+# {
+#     "access_level": "4"
+# }
 # Response:
 # {
 #   "platform_roles": ["compliance"],
@@ -62,25 +63,20 @@ POST /permissions/translate-role
 # }
 
 # Get all mappings
-GET /permissions/role-mappings
+# GET /permissions/role-mappings
 
 
 # =================================================================
 # CHECKING PERMISSIONS (Services)
 # =================================================================
 
-from utils import PermissionManager
-
-permission_manager = PermissionManager()
-
-# Check permission
-has_perm = permission_manager.check_user_permission(
-    user_id=keycloak_id,
-    tenant_id=tenant_id,
-    permission="manage_branches",
-    entity_type="bank",
-    entity_id=bank_id
-)
+# Example (requires the auth-service utils module on the path):
+#   from utils import PermissionManager
+#   permission_manager = PermissionManager()
+#   has_perm = permission_manager.check_user_permission(
+#       user_id=keycloak_id, tenant_id=tenant_id, permission="manage_branches",
+#       entity_type="bank", entity_id=bank_id
+#   )
 
 
 # =================================================================

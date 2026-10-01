@@ -2,3 +2,6 @@ fastapi>=0.115.12
 uvicorn>=0.34.3
 pydantic>=2.11.7
 boto3==1.35.0
+# round-11: Postgres/Redis persistence for former in-memory stores
+sqlalchemy>=2.0
+psycopg2-binary>=2.9

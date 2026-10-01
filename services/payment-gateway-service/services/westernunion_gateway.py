@@ -9,6 +9,7 @@ import httpx
 import hashlib
 import hmac
 from ..base_gateway import BasePaymentGateway, get_shared_async_client
+import json
 
 class WesternUnionGateway(BasePaymentGateway):
     """

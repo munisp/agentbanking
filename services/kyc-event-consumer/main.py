@@ -172,23 +172,29 @@ def _tier_to_level(tier: str) -> str:
 # Cooldown Tracking (Redis-backed in production)
 # ══════════════════════════════════════════════════════════════════════════════
 
-cooldown_store: dict[str, datetime] = {}
+# round-11: cooldown state moved from process memory to Redis (per service docstring).
+import os as _r11_os
+import redis as _r11_redis
+
+_r11 = _r11_redis.Redis.from_url(
+    _r11_os.environ.get("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True
+)
+_COOLDOWN_PREFIX = "kyc_cooldown:"
 
 
 def check_cooldown(customer_id: str, kyc_level: str, cooldown_hours: int) -> bool:
     """Check if this trigger is within cooldown period. Returns True if cooled down (OK to fire)."""
-    key = f"{customer_id}:{kyc_level}"
-    last_triggered = cooldown_store.get(key)
-    if last_triggered is None:
+    raw = _r11.get(f"{_COOLDOWN_PREFIX}{customer_id}:{kyc_level}")
+    if raw is None:
         return True
+    last_triggered = datetime.fromisoformat(raw)
     elapsed = datetime.now(timezone.utc) - last_triggered
     return elapsed > timedelta(hours=cooldown_hours)
 
 
 def set_cooldown(customer_id: str, kyc_level: str):
     """Record that this trigger fired."""
-    key = f"{customer_id}:{kyc_level}"
-    cooldown_store[key] = datetime.now(timezone.utc)
+    _r11.set(f"{_COOLDOWN_PREFIX}{customer_id}:{kyc_level}", datetime.now(timezone.utc).isoformat())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -410,7 +416,7 @@ async def get_stats():
         "workflows_triggered": stats.workflows_triggered,
         "kyb_triggered": stats.kyb_triggered,
         "errors": stats.errors,
-        "active_cooldowns": len(cooldown_store),
+        "active_cooldowns": len(_r11.keys(f"{_COOLDOWN_PREFIX}*")),
     }
 
 
@@ -418,9 +424,9 @@ async def get_stats():
 async def clear_cooldown(customer_id: str):
     """Clear all cooldowns for a customer (admin use for re-verification)."""
     cleared = 0
-    keys_to_remove = [k for k in cooldown_store if k.startswith(f"{customer_id}:")]
+    keys_to_remove = _r11.keys(f"{_COOLDOWN_PREFIX}{customer_id}:*")
     for k in keys_to_remove:
-        del cooldown_store[k]
+        _r11.delete(k)
         cleared += 1
     return {"customer_id": customer_id, "cooldowns_cleared": cleared}
 
@@ -435,7 +441,7 @@ async def health():
         "consumer_group": CONSUMER_GROUP,
         "subscribed_topics": SUBSCRIBED_TOPICS,
         "trigger_rules_count": len(TRIGGER_RULES),
-        "active_cooldowns": len(cooldown_store),
+        "active_cooldowns": len(_r11.keys(f"{_COOLDOWN_PREFIX}*")),
         "stats": {
             "events_received": stats.events_received,
             "workflows_triggered": stats.workflows_triggered,

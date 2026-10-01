@@ -8,6 +8,7 @@ from sqlalchemy import func
 from . import models, config
 from .models import Product, ActivityLog
 from .models import ProductCreate, ProductUpdate, ProductResponse, ActivityLogResponse
+from pydantic import Field
 
 # --- Configuration and Setup ---
 

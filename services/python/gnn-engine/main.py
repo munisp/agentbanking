@@ -93,9 +93,6 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app, enable_auth=True)
-setup_logging("gnn-engine-service-(production)")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 import torch_geometric
@@ -153,6 +150,10 @@ app = FastAPI(
     description="Production-ready Graph Neural Network for Fraud Detection",
     version="2.0.0"
 )
+
+apply_middleware(app, enable_auth=True)
+setup_logging("gnn-engine-service-(production)")
+app.include_router(metrics_router)
 
 @app.on_event("startup")
 async def _init_pg_pool():

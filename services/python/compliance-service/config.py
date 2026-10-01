@@ -27,10 +27,14 @@ settings = Settings()
 # The declarative base class for all models
 Base = declarative_base()
 
+
 # Create the asynchronous engine
 # but they are generally not needed for production databases like PostgreSQL.
 
 # Configure the session maker
+# round-11: async engine was referenced by sessionmaker but never created
+engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
+
 AsyncSessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,

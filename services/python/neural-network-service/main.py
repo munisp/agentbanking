@@ -94,9 +94,6 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app, enable_auth=True)
-setup_logging("neural-network-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 from transformers import BertTokenizer, BertForSequenceClassification
@@ -152,6 +149,10 @@ app = FastAPI(
     description="Production-ready Multi-purpose Deep Learning Service",
     version="2.0.0"
 )
+
+apply_middleware(app, enable_auth=True)
+setup_logging("neural-network-service")
+app.include_router(metrics_router)
 
 @app.on_event("startup")
 async def _init_pg_pool():

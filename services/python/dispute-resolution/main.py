@@ -83,9 +83,6 @@ Transaction dispute resolution
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app, enable_auth=True)
-setup_logging("dispute-resolution")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from datetime import datetime
@@ -134,6 +131,10 @@ app = FastAPI(
     description="Transaction dispute resolution",
     version="1.0.0"
 )
+
+apply_middleware(app, enable_auth=True)
+setup_logging("dispute-resolution")
+app.include_router(metrics_router)
 
 @app.on_event("startup")
 async def _init_pg_pool():

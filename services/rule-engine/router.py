@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from . import models
 from .config import get_db, settings
+from pydantic import Field
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL.upper()))

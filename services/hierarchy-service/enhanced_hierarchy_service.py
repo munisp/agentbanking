@@ -23,9 +23,6 @@ import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Depends, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("enhanced-hierarchy-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, validator, Field
 
@@ -39,6 +36,10 @@ app = FastAPI(
     description="Agent hierarchy management with Go-powered traversal engine",
     version="2.0.0"
 )
+
+apply_middleware(app)
+setup_logging("enhanced-hierarchy-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

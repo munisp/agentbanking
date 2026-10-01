@@ -2,7 +2,7 @@
 Knowledge base and FAQ service
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Request
 import sys as _sys2, os as _os2
 _sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
 from shared.middleware import apply_middleware, ErrorResponse
@@ -53,6 +53,9 @@ async def pg_set(key: str, value, service: str):
         )
 # --- End PostgreSQL Persistence ---
 
+
+# round-11: router instance was never created
+router = APIRouter()
 
 @router.get("/health")
 async def health_check():
@@ -167,6 +170,11 @@ def init_db():
     conn.close()
 
 init_db()
+
+
+# round-11: app instance was never created (routes referenced @app at module level)
+app = FastAPI(title="Knowledge Base Service", version="1.0.0")
+apply_middleware(app)
 
 @app.get("/api/v1/items")
 async def list_items():

@@ -4,6 +4,8 @@ Manage investment portfolios
 """
 
 from typing import Dict, List
+import secrets
+from datetime import datetime
 
 
 class InvestmentPortfolioService:

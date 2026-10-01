@@ -19,9 +19,6 @@ Improvements:
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("qr-code-service-(production)")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict, Any
@@ -81,6 +78,10 @@ active_qr_codes = Gauge('active_qr_codes', 'Number of active QR codes', ['qr_typ
 # ==================== APP SETUP ====================
 
 app = FastAPI(title="QR Code Service (Production)", version="2.0.0")
+
+apply_middleware(app)
+setup_logging("qr-code-service-(production)")
+app.include_router(metrics_router)
 
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address)

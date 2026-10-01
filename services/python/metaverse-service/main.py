@@ -88,9 +88,6 @@ import redis as _redis
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app, enable_auth=True)
-setup_logging("metaverse-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
@@ -158,6 +155,10 @@ app = FastAPI(
     description="Integration service for metaverse platforms and virtual economies",
     version="1.0.0"
 )
+
+apply_middleware(app, enable_auth=True)
+setup_logging("metaverse-service")
+app.include_router(metrics_router)
 
 @app.on_event("startup")
 async def _init_pg_pool():
@@ -327,10 +328,16 @@ class _PgDictStore:
 
     @staticmethod
     def _ser(v):
-        if hasattr(v, "model_dump"):
-            v = v.model_dump()
-        elif hasattr(v, "dict") and callable(v.dict):
-            v = v.dict()
+        def _cv(x):
+            if hasattr(x, "model_dump"):
+                return x.model_dump()
+            if hasattr(x, "dict") and callable(x.dict):
+                return x.dict()
+            return x
+        if isinstance(v, list):
+            v = [_cv(x) for x in v]
+        else:
+            v = _cv(v)
         return _r11_json.dumps(v, default=str)
 
     def _deser(self, raw):
@@ -338,6 +345,8 @@ class _PgDictStore:
         if self._model_name:
             cls = globals().get(self._model_name)
             if cls is not None:
+                if isinstance(d, list):
+                    return [cls(**x) if isinstance(x, dict) else x for x in d]
                 return cls(**d)
         return d
 
@@ -388,6 +397,13 @@ class _PgDictStore:
         finally:
             s.close()
 
+    def setdefault(self, k, default=None):
+        try:
+            return self[k]
+        except KeyError:
+            self[k] = default
+            return default
+
     def _all(self):
         s = self._Session()
         try:
@@ -428,9 +444,8 @@ class _PgDictStore:
             s.close()
 
 accounts_db = _PgDictStore("metaverse_accounts", "METAVERSE_DATABASE_URL", model_name="MetaverseAccount")
-assets_db: Dict[str, VirtualAsset] = {}
-land_db: Dict[str, VirtualLand] = {}
-
+assets_db = _PgDictStore("metaverse_assets", "METAVERSE_DATABASE_URL", model_name="VirtualAsset")
+land_db = _PgDictStore("metaverse_land", "METAVERSE_DATABASE_URL", model_name="VirtualLand")
 # ── Round-11 persistence fix ───────────────────────────────────────────────
 # Process-memory dict replaced by a dict-compatible Postgres-backed store so
 # business data survives restarts. Mirrors sibling-service convention:
@@ -476,10 +491,16 @@ class _PgDictStore:
 
     @staticmethod
     def _ser(v):
-        if hasattr(v, "model_dump"):
-            v = v.model_dump()
-        elif hasattr(v, "dict") and callable(v.dict):
-            v = v.dict()
+        def _cv(x):
+            if hasattr(x, "model_dump"):
+                return x.model_dump()
+            if hasattr(x, "dict") and callable(x.dict):
+                return x.dict()
+            return x
+        if isinstance(v, list):
+            v = [_cv(x) for x in v]
+        else:
+            v = _cv(v)
         return _r11_json.dumps(v, default=str)
 
     def _deser(self, raw):
@@ -487,6 +508,8 @@ class _PgDictStore:
         if self._model_name:
             cls = globals().get(self._model_name)
             if cls is not None:
+                if isinstance(d, list):
+                    return [cls(**x) if isinstance(x, dict) else x for x in d]
                 return cls(**d)
         return d
 
@@ -537,6 +560,13 @@ class _PgDictStore:
         finally:
             s.close()
 
+    def setdefault(self, k, default=None):
+        try:
+            return self[k]
+        except KeyError:
+            self[k] = default
+            return default
+
     def _all(self):
         s = self._Session()
         try:
@@ -577,9 +607,8 @@ class _PgDictStore:
             s.close()
 
 transactions_db = _PgDictStore("metaverse_transactions", "METAVERSE_DATABASE_URL", model_name="MetaverseTransaction")
-events_db: Dict[str, VirtualEvent] = {}
-stores_db: Dict[str, MetaverseStore] = {}
-
+events_db = _PgDictStore("metaverse_events", "METAVERSE_DATABASE_URL", model_name="VirtualEvent")
+stores_db = _PgDictStore("metaverse_stores", "METAVERSE_DATABASE_URL", model_name="MetaverseStore")
 # API Endpoints
 
 @app.get("/health")

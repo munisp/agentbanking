@@ -42,21 +42,23 @@ Provides comprehensive translation across all platform modules:
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("multi-lingual-integration-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import uvicorn
 import httpx
+import os
 
 app = FastAPI(
     title="Multi-lingual Integration Service",
     description="Platform-wide translation for Nigerian languages",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("multi-lingual-integration-service")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

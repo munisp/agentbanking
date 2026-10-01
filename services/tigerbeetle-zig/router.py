@@ -11,6 +11,7 @@ from sqlalchemy import select, func
 
 from . import models
 from .config import get_db
+from pydantic import Field
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

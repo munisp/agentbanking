@@ -33,9 +33,13 @@ settings = Settings()
 
 # supports any SQLAlchemy-compatible database via DATABASE_URL.
 
+# round-11: engine was referenced by sessionmaker but never created
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
 
 def get_db() -> Generator[Session, None, None]:
     """

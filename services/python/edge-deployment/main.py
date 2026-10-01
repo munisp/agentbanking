@@ -26,6 +26,7 @@ import logging
 # --- PostgreSQL Persistence ---
 import asyncpg
 from typing import Optional
+from datetime import timedelta
 
 _pg_pool: Optional[asyncpg.Pool] = None
 

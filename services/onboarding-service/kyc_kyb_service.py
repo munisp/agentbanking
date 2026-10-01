@@ -27,13 +27,11 @@ import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Depends, Query, Path, File, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("kyc/kyb-verification-service-(production)")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field, EmailStr, validator
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
+import asyncio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -904,6 +902,10 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
+apply_middleware(app)
+setup_logging("kyc/kyb-verification-service-(production)")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

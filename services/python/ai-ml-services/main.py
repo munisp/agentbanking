@@ -83,9 +83,6 @@ Port: 8150
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app, enable_auth=True)
-setup_logging("ai/ml-services-coordinator")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -190,6 +187,10 @@ app = FastAPI(
     description="AI/ML Services Coordinator for Remittance Platform",
     version="1.0.0"
 )
+
+apply_middleware(app, enable_auth=True)
+setup_logging("ai/ml-services-coordinator")
+app.include_router(metrics_router)
 
 @app.on_event("startup")
 async def _init_pg_pool():

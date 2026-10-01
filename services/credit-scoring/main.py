@@ -57,9 +57,6 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("credit-scoring-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 import httpx
@@ -683,6 +680,10 @@ class CreditScoringService:
 
 # FastAPI application
 app = FastAPI(title="Credit Scoring Service", version="1.0.0")
+
+apply_middleware(app)
+setup_logging("credit-scoring-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

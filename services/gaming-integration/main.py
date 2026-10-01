@@ -36,9 +36,6 @@ Integrates gaming platforms and in-game purchases with Remittance Platform
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("gaming-integration-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -60,6 +57,10 @@ app = FastAPI(
     description="Integration service for gaming platforms and in-game purchases",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("gaming-integration-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(
@@ -204,10 +205,16 @@ class _PgDictStore:
 
     @staticmethod
     def _ser(v):
-        if hasattr(v, "model_dump"):
-            v = v.model_dump()
-        elif hasattr(v, "dict") and callable(v.dict):
-            v = v.dict()
+        def _cv(x):
+            if hasattr(x, "model_dump"):
+                return x.model_dump()
+            if hasattr(x, "dict") and callable(x.dict):
+                return x.dict()
+            return x
+        if isinstance(v, list):
+            v = [_cv(x) for x in v]
+        else:
+            v = _cv(v)
         return _r11_json.dumps(v, default=str)
 
     def _deser(self, raw):
@@ -215,6 +222,8 @@ class _PgDictStore:
         if self._model_name:
             cls = globals().get(self._model_name)
             if cls is not None:
+                if isinstance(d, list):
+                    return [cls(**x) if isinstance(x, dict) else x for x in d]
                 return cls(**d)
         return d
 
@@ -265,6 +274,13 @@ class _PgDictStore:
         finally:
             s.close()
 
+    def setdefault(self, k, default=None):
+        try:
+            return self[k]
+        except KeyError:
+            self[k] = default
+            return default
+
     def _all(self):
         s = self._Session()
         try:
@@ -305,11 +321,10 @@ class _PgDictStore:
             s.close()
 
 gaming_accounts_db = _PgDictStore("gaming_accounts", "GAMING_INTEGRATION_DATABASE_URL", model_name="GamingAccount")
-games_db: Dict[str, Game] = {}
-items_db: Dict[str, InGameItem] = {}
-purchases_db: Dict[str, Purchase] = {}
-progress_db: Dict[str, PlayerProgress] = {}
-
+games_db = _PgDictStore("gaming_games", "GAMING_INTEGRATION_DATABASE_URL", model_name="Game")
+items_db = _PgDictStore("gaming_items", "GAMING_INTEGRATION_DATABASE_URL", model_name="InGameItem")
+purchases_db = _PgDictStore("gaming_purchases", "GAMING_INTEGRATION_DATABASE_URL", model_name="Purchase")
+progress_db = _PgDictStore("gaming_progress", "GAMING_INTEGRATION_DATABASE_URL", model_name="PlayerProgress")
 # API Endpoints
 
 @app.get("/health")

@@ -36,9 +36,6 @@ Integrates Remittance Platform with Amazon and eBay marketplaces
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("amazon-ebay-integration-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -59,6 +56,10 @@ app = FastAPI(
     description="Integration service for Amazon and eBay marketplaces",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("amazon-ebay-integration-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(
@@ -139,9 +140,6 @@ class AnalyticsResponse(BaseModel):
     ebay_stats: Dict[str, Any]
 
 # In-memory storage (replace with database in production)
-products_db: Dict[str, Product] = {}
-listings_db: Dict[str, ProductListing] = {}
-
 # ── Round-11 persistence fix ───────────────────────────────────────────────
 # Process-memory dict replaced by a dict-compatible Postgres-backed store so
 # business data survives restarts. Mirrors sibling-service convention:
@@ -187,10 +185,16 @@ class _PgDictStore:
 
     @staticmethod
     def _ser(v):
-        if hasattr(v, "model_dump"):
-            v = v.model_dump()
-        elif hasattr(v, "dict") and callable(v.dict):
-            v = v.dict()
+        def _cv(x):
+            if hasattr(x, "model_dump"):
+                return x.model_dump()
+            if hasattr(x, "dict") and callable(x.dict):
+                return x.dict()
+            return x
+        if isinstance(v, list):
+            v = [_cv(x) for x in v]
+        else:
+            v = _cv(v)
         return _r11_json.dumps(v, default=str)
 
     def _deser(self, raw):
@@ -198,6 +202,8 @@ class _PgDictStore:
         if self._model_name:
             cls = globals().get(self._model_name)
             if cls is not None:
+                if isinstance(d, list):
+                    return [cls(**x) if isinstance(x, dict) else x for x in d]
                 return cls(**d)
         return d
 
@@ -248,6 +254,13 @@ class _PgDictStore:
         finally:
             s.close()
 
+    def setdefault(self, k, default=None):
+        try:
+            return self[k]
+        except KeyError:
+            self[k] = default
+            return default
+
     def _all(self):
         s = self._Session()
         try:
@@ -287,6 +300,8 @@ class _PgDictStore:
         finally:
             s.close()
 
+products_db = _PgDictStore("amazon_ebay_products", "AMAZON_EBAY_DATABASE_URL", model_name="Product")
+listings_db = _PgDictStore("amazon_ebay_listings", "AMAZON_EBAY_DATABASE_URL", model_name="ProductListing")
 orders_db = _PgDictStore("amazon_ebay_orders", "AMAZON_EBAY_DATABASE_URL", model_name="Order")
 
 # API Endpoints

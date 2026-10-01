@@ -15,6 +15,7 @@ from datetime import datetime
 import enum
 
 from ...shared.database import Base
+from sqlalchemy import Integer
 
 
 class PaymentStatus(str, enum.Enum):

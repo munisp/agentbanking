@@ -10,9 +10,6 @@ Professional email communication with rich templates and automation
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("enhanced-email-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict
@@ -25,6 +22,10 @@ import os
 import jinja2
 
 app = FastAPI(title="Enhanced Email Service", version="1.0.0")
+
+apply_middleware(app)
+setup_logging("enhanced-email-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

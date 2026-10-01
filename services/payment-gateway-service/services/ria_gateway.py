@@ -9,6 +9,7 @@ import httpx
 import hashlib
 import hmac
 from ..base_gateway import BasePaymentGateway
+import json
 
 class RiaGateway(BasePaymentGateway):
     """

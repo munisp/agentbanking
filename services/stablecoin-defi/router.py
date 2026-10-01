@@ -1,5 +1,5 @@
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import timedelta, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,7 +16,8 @@ from service import (
     get_user_accounts, create_account, update_account_rates,
     get_transactions_by_account, process_transaction,
     authenticate_user, get_current_active_user,
-    ServiceException, NotFoundException, ConflictException, ForbiddenException, BadRequestException
+    ServiceException, NotFoundException, ConflictException, ForbiddenException, BadRequestException,
+    get_account,
 )
 from schemas import (
     User, UserCreate, UserUpdate, Stablecoin, StablecoinCreate, StablecoinUpdate,

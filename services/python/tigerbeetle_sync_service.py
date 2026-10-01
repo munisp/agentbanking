@@ -23,9 +23,6 @@ import aioredis
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("tigerbeetle-sync-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 import uvicorn
@@ -791,6 +788,10 @@ class TigerBeetleSyncService:
 
 # FastAPI application
 app = FastAPI(title="TigerBeetle Sync Service", version="1.0.0")
+
+apply_middleware(app)
+setup_logging("tigerbeetle-sync-service")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

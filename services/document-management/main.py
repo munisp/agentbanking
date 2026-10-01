@@ -294,7 +294,7 @@ async def health_check():
 
 # Metrics (basic example)
 @app.get("/metrics")
-async def get_metrics():
+async def get_metrics(db: Session = Depends(get_db)):
     # In a real application, integrate with Prometheus or similar
     total_documents = db.query(Document).count()
     total_users = db.query(User).count()

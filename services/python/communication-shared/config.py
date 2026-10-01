@@ -41,6 +41,9 @@ settings = get_settings()
 
 # For PostgreSQL/MySQL, this parameter should be omitted.
 
+# round-11: engine was referenced by sessionmaker but never created
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db() -> Generator[Session, None, None]:

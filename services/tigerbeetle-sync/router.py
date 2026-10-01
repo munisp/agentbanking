@@ -15,6 +15,7 @@ from models import (
     TigerBeetleSyncCreate,
     TigerBeetleSyncResponse,
     TigerBeetleSyncUpdate,
+    TigerBeetleSyncActivityLogBase,
 )
 
 logger = logging.getLogger(__name__)

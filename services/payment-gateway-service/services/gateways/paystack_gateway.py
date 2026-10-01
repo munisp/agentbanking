@@ -117,7 +117,7 @@ class BasePaymentGateway(abc.ABC):
         :param metadata: Optional metadata to attach to the transaction.
         :return: A dictionary containing the transaction reference and authorization URL.
         """
-        return await paystack_gateway_impl.initialize_transaction(amount=amount, currency=currency, email=email, metadata=metadata, callback_url=callback_url)
+        return await paystack_gateway_impl.initialize_transaction(amount=amount, currency=currency, email=email, metadata=metadata, **kwargs)  # round-11: removed reference to undefined callback_url
 
     @abc.abstractmethod
     async def verify_transaction(self, reference: str) -> Dict[str, Any]:

@@ -11,9 +11,6 @@ Port: 8024
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("comprehensive-multi-ocr-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any, Tuple
@@ -323,6 +320,10 @@ app = FastAPI(
     description="Integrates PaddleOCR, EasyOCR, and OLMOCR",
     version="1.0.0"
 )
+
+apply_middleware(app)
+setup_logging("comprehensive-multi-ocr-service")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

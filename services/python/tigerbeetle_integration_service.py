@@ -11,9 +11,6 @@ Port: 8028
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("tigerbeetle-integration-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -23,8 +20,13 @@ import asyncpg
 import redis.asyncio as redis
 import uuid
 import json
+import os
 
 app = FastAPI(title="TigerBeetle Integration Service", version="1.0.0")
+
+apply_middleware(app)
+setup_logging("tigerbeetle-integration-service")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

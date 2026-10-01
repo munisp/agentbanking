@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import redis.asyncio as redis
 from device_drivers import DeviceManager, DeviceInfo, DeviceStatus, DeviceProtocol
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

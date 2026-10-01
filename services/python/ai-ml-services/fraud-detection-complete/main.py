@@ -62,6 +62,7 @@ async def lifespan(app: FastAPI):
 # --- PostgreSQL Persistence ---
 import asyncpg
 from contextlib import asynccontextmanager
+import os
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/fraud_detection_complete")
 _db_pool = None

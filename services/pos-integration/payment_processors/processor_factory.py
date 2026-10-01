@@ -5,7 +5,10 @@ Manages multiple payment processors and routing logic
 
 import os
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .stripe_processor import PaymentResponse  # round-11: forward-ref annotation
 from enum import Enum
 
 from .stripe_processor import StripeProcessor, StripeConfig

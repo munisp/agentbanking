@@ -8,6 +8,7 @@ from decimal import Decimal
 import httpx
 import asyncio
 from datetime import datetime, timedelta
+import os
 
 class AzimoGateway:
     """

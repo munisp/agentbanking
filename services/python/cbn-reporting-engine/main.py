@@ -5,7 +5,7 @@ Wires together the FastAPI app, database, and APScheduler cron jobs.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 import sys as _sys2, os as _os2
 _sys2.path.insert(0, _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), ".."))
 from shared.middleware import apply_middleware, ErrorResponse

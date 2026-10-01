@@ -10,15 +10,17 @@ Expose APIs for no-code automation platforms
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("zapier-integration-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+import os
 
 app = FastAPI(title="Zapier Integration Service", version="1.0.0")
+
+apply_middleware(app)
+setup_logging("zapier-integration-service")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

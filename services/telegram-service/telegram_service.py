@@ -108,10 +108,16 @@ class _PgDictStore:
 
     @staticmethod
     def _ser(v):
-        if hasattr(v, "model_dump"):
-            v = v.model_dump()
-        elif hasattr(v, "dict") and callable(v.dict):
-            v = v.dict()
+        def _cv(x):
+            if hasattr(x, "model_dump"):
+                return x.model_dump()
+            if hasattr(x, "dict") and callable(x.dict):
+                return x.dict()
+            return x
+        if isinstance(v, list):
+            v = [_cv(x) for x in v]
+        else:
+            v = _cv(v)
         return _r11_json.dumps(v, default=str)
 
     def _deser(self, raw):
@@ -119,6 +125,8 @@ class _PgDictStore:
         if self._model_name:
             cls = globals().get(self._model_name)
             if cls is not None:
+                if isinstance(d, list):
+                    return [cls(**x) if isinstance(x, dict) else x for x in d]
                 return cls(**d)
         return d
 
@@ -169,6 +177,13 @@ class _PgDictStore:
         finally:
             s.close()
 
+    def setdefault(self, k, default=None):
+        try:
+            return self[k]
+        except KeyError:
+            self[k] = default
+            return default
+
     def _all(self):
         s = self._Session()
         try:
@@ -209,7 +224,7 @@ class _PgDictStore:
             s.close()
 
 orders_db = _PgDictStore("telegram_orders", "TELEGRAM_SERVICE_DATABASE_URL", model_name="TelegramOrder")
-user_carts: Dict[int, List[OrderItem]] = {}
+user_carts = _PgDictStore("telegram_user_carts", "TELEGRAM_SERVICE_DATABASE_URL", model_name="OrderItem")
 user_states: Dict[int, str] = {}  # Track conversation state
 
 # Helper Functions
@@ -407,17 +422,19 @@ async def handle_add_to_cart(chat_id: int, user_id: int, product_id: str, quanti
         user_carts[chat_id] = []
     
     # Check if product already in cart
-    existing_item = next((item for item in user_carts[chat_id] if item.product_id == product_id), None)
+    cart = user_carts.get(chat_id, [])
+    existing_item = next((item for item in cart if item.product_id == product_id), None)
     
     if existing_item:
         existing_item.quantity += quantity
     else:
-        user_carts[chat_id].append(OrderItem(
+        cart.append(OrderItem(
             product_id=product_id,
             product_name=product['name'],
             quantity=quantity,
             price=product['price']
         ))
+    user_carts[chat_id] = cart  # round-11: write back mutation
     
     message = f"✅ Added {quantity}x {product['name']} to cart!"
     await send_telegram_message(chat_id, message, create_main_menu_keyboard())

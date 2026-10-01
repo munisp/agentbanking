@@ -11,9 +11,6 @@ Port: 8027
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("inventory-management-platform")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -26,6 +23,10 @@ import json
 
 import os
 app = FastAPI(title="Inventory Management Platform", version="1.0.0")
+
+apply_middleware(app)
+setup_logging("inventory-management-platform")
+app.include_router(metrics_router)
 
 # CORS Configuration
 app.add_middleware(

@@ -26,14 +26,14 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("enhanced-pos-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field, validator
 from sqlalchemy import create_engine, Column, String, Float, DateTime, Text, Integer, Boolean, JSON, Numeric
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
+# round-11: engine/SessionLocal were referenced but never created
+_pos_engine = create_engine(os.getenv("POS_DATABASE_URL", os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/platform")), pool_pre_ping=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_pos_engine)
 import aioredis
 
 from pos_service import POSService, PaymentMethod, TransactionStatus, POSTransaction
@@ -822,6 +822,10 @@ enhanced_pos_service = EnhancedPOSService()
 
 # FastAPI app for enhanced POS endpoints
 app = FastAPI(title="Enhanced POS Service", version="2.0.0")
+
+apply_middleware(app)
+setup_logging("enhanced-pos-service")
+app.include_router(metrics_router)
 
 app.add_middleware(
     CORSMiddleware,

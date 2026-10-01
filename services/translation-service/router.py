@@ -10,6 +10,7 @@ from .models import (
     TranslationRequest, TranslationRequestCreate, TranslationRequestUpdate, 
     TranslationRequestResponse, TranslationStatus, ActivityLog, LogLevel
 )
+import os
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)

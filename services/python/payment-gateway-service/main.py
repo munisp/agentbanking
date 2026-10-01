@@ -33,6 +33,7 @@ import psycopg2.extras
 # --- PostgreSQL Persistence ---
 import asyncpg
 from typing import Optional
+import os
 
 _pg_pool: Optional[asyncpg.Pool] = None
 

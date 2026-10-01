@@ -23,9 +23,6 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, Query, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("transaction-history-service")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel, Field
 import httpx
@@ -924,12 +921,16 @@ class TransactionHistoryService:
             "components": {
                 "database": db_healthy,
                 "redis": redis_healthy,
-                "opensearch": es_healthy,
+                "opensearch": opensearch_healthy,
             }
         }
 
 # FastAPI application
 app = FastAPI(title="Transaction History Service", version="1.0.0")
+
+apply_middleware(app)
+setup_logging("transaction-history-service")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

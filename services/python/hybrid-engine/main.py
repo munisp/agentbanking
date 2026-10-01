@@ -83,9 +83,6 @@ Port: 8154
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app, enable_auth=True)
-setup_logging("hybrid-engine")
-app.include_router(metrics_router)
 
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -191,6 +188,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
+apply_middleware(app, enable_auth=True)
+setup_logging("hybrid-engine")
+app.include_router(metrics_router)
+
 @app.on_event("startup")
 async def _init_pg_pool():
     await get_pg_pool()
@@ -255,11 +256,11 @@ async def create_item(item: Item):
     await pg_set("create_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "create_item", "timestamp": _time.time()}), "hybrid-engine")
 
     stats["total_requests"] += 1
-    item_id = f"item_{len(storage) + 1}"
+    item_id = f"item_{len(storage_keys()) + 1}"
     item.id = item_id
     item.created_at = datetime.now()
     item.updated_at = datetime.now()
-    storage[item_id] = item.dict()
+    storage_set(item_id, item.dict())
     stats["total_items"] += 1
     return {"success": True, "item_id": item_id, "item": item}
 
@@ -276,10 +277,10 @@ async def list_items(skip: int = 0, limit: int = 100):
             pass
 
     stats["total_requests"] += 1
-    items = list(storage.values())[skip:skip+limit]
+    items = [storage_get(k) for k in storage_keys()][skip:skip+limit]
     return {
         "success": True,
-        "total": len(storage),
+        "total": len(storage_keys()),
         "items": items,
         "skip": skip,
         "limit": limit
@@ -298,9 +299,9 @@ async def get_item(item_id: str):
             pass
 
     stats["total_requests"] += 1
-    if item_id not in storage:
+    if storage_get(item_id) is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    return {"success": True, "item": storage[item_id]}
+    return {"success": True, "item": storage_get(item_id)}
 
 @app.put("/items/{item_id}")
 async def update_item(item_id: str, item: Item):
@@ -310,12 +311,12 @@ async def update_item(item_id: str, item: Item):
     await pg_set("update_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "update_item", "timestamp": _time.time()}), "hybrid-engine")
 
     stats["total_requests"] += 1
-    if item_id not in storage:
+    if storage_get(item_id) is None:
         raise HTTPException(status_code=404, detail="Item not found")
     item.id = item_id
     item.updated_at = datetime.now()
-    item.created_at = storage[item_id].get("created_at", datetime.now())
-    storage[item_id] = item.dict()
+    item.created_at = storage_get(item_id).get("created_at", datetime.now())
+    storage_set(item_id, item.dict())
     return {"success": True, "item": item}
 
 @app.delete("/items/{item_id}")
@@ -326,9 +327,9 @@ async def delete_item(item_id: str):
     await pg_set("delete_item_" + str(int(_time.time() * 1000)), _json.dumps({"action": "delete_item", "timestamp": _time.time()}), "hybrid-engine")
 
     stats["total_requests"] += 1
-    if item_id not in storage:
+    if storage_get(item_id) is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    del storage[item_id]
+    storage_delete(item_id)
     stats["total_items"] -= 1
     return {"success": True, "message": "Item deleted"}
 
@@ -361,7 +362,7 @@ async def search_items(query: str):
             pass
 
     stats["total_requests"] += 1
-    results = [item for item in storage.values() if query.lower() in str(item).lower()]
+    results = [it for it in (storage_get(k) for k in storage_keys()) if query.lower() in str(it).lower()]
     return {
         "success": True,
         "query": query,

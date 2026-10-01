@@ -24,9 +24,6 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-apply_middleware(app)
-setup_logging("transaction-types-distribution")
-app.include_router(metrics_router)
 
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -930,6 +927,10 @@ class ReportingService:
 
 # FastAPI application
 app = FastAPI(title="Reporting Service", version="1.0.0")
+
+apply_middleware(app)
+setup_logging("transaction-types-distribution")
+app.include_router(metrics_router)
 
 # CORS middleware
 app.add_middleware(

@@ -7,3 +7,5 @@ opentelemetry-instrumentation-requests>=0.54b1
 opentelemetry-instrumentation-sqlalchemy>=0.54b1
 opentelemetry-instrumentation-redis>=0.54b1
 prometheus-client>=0.22.1
+# round-11: Redis-backed OTP + rate-limit state (was in-process dicts)
+redis>=5.2.1

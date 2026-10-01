@@ -20,9 +20,50 @@ SECRET_KEY = "your-secret-key-change-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# OTP storage (in production, use Redis)
-otp_storage: Dict[str, Dict] = {}
-rate_limit_storage: Dict[str, List[datetime]] = {}
+# round-11: OTP + rate-limit state moved from in-process dicts to Redis.
+# OTP entries expire via Redis TTL (300s); rate limits use a fixed window.
+import os as _r11_os
+import json as _r11_json
+import redis as _r11_redis
+
+_r11 = _r11_redis.Redis.from_url(
+    _r11_os.environ.get("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True
+)
+_OTP_TTL_SECONDS = 300  # 5 minutes
+
+
+def _otp_set(key: str, code: str) -> None:
+    _r11.setex(f"otp:{key}", _OTP_TTL_SECONDS, _r11_json.dumps({"code": code, "attempts": 0}))
+
+
+def _otp_get(key: str):
+    raw = _r11.get(f"otp:{key}")
+    return _r11_json.loads(raw) if raw else None
+
+
+def _otp_del(key: str) -> None:
+    _r11.delete(f"otp:{key}")
+
+
+def _otp_incr_attempts(key: str) -> int:
+    """Increment the attempts counter, preserving the entry TTL (write-back fix)."""
+    raw = _r11.get(f"otp:{key}")
+    if not raw:
+        return 0
+    payload = _r11_json.loads(raw)
+    payload["attempts"] = int(payload.get("attempts", 0)) + 1
+    ttl = _r11.ttl(f"otp:{key}")
+    _r11.setex(f"otp:{key}", ttl if ttl and ttl > 0 else _OTP_TTL_SECONDS, _r11_json.dumps(payload))
+    return payload["attempts"]
+
+
+def _rl_hit(identifier: str, max_attempts: int, window_seconds: int) -> bool:
+    """Fixed-window rate limiter on Redis. Returns True if the attempt is allowed."""
+    k = f"rl:{identifier}"
+    n = _r11.incr(k)
+    if n == 1:
+        _r11.expire(k, window_seconds)
+    return n <= max_attempts
 
 # Pydantic models
 class UserRegister(BaseModel):
@@ -50,22 +91,7 @@ def generate_otp() -> str:
     return str(secrets.randbelow(1000000)).zfill(6)
 
 def check_rate_limit(identifier: str, max_attempts: int = 5, window_minutes: int = 15) -> bool:
-    now = datetime.utcnow()
-    window_start = now - timedelta(minutes=window_minutes)
-    
-    if identifier not in rate_limit_storage:
-        rate_limit_storage[identifier] = []
-    
-    rate_limit_storage[identifier] = [
-        attempt for attempt in rate_limit_storage[identifier]
-        if attempt > window_start
-    ]
-    
-    if len(rate_limit_storage[identifier]) >= max_attempts:
-        return False
-    
-    rate_limit_storage[identifier].append(now)
-    return True
+    return _rl_hit(identifier, max_attempts, window_seconds=window_minutes * 60)
 
 async def send_email_otp(email: str, code: str):
     print(f"[EMAIL] Sending OTP {code} to {email}")
@@ -82,17 +108,8 @@ async def register(data: UserRegister, background_tasks: BackgroundTasks):
     email_otp = generate_otp()
     phone_otp = generate_otp()
     
-    expiration = datetime.utcnow() + timedelta(minutes=5)
-    otp_storage[f"email:{data.email}"] = {
-        "code": email_otp,
-        "expires": expiration,
-        "attempts": 0
-    }
-    otp_storage[f"phone:{data.phone}"] = {
-        "code": phone_otp,
-        "expires": expiration,
-        "attempts": 0
-    }
+    _otp_set(f"email:{data.email}", email_otp)
+    _otp_set(f"phone:{data.phone}", phone_otp)
     
     background_tasks.add_task(send_email_otp, data.email, email_otp)
     background_tasks.add_task(send_sms_otp, data.phone, phone_otp)
@@ -119,39 +136,30 @@ async def verify_email(data: EmailVerification):
         )
     
     otp_key = f"email:{data.email}"
-    if otp_key not in otp_storage:
+    stored_otp = _otp_get(otp_key)
+    if stored_otp is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No verification code found for this email."
+            detail="No verification code found, or it has expired."
         )
-    
-    stored_otp = otp_storage[otp_key]
-    
-    if datetime.utcnow() > stored_otp["expires"]:
-        del otp_storage[otp_key]
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Verification code has expired."
-        )
-    
-    stored_otp["attempts"] += 1
-    
-    if stored_otp["attempts"] > 5:
-        del otp_storage[otp_key]
+
+    attempts = _otp_incr_attempts(otp_key)
+    if attempts > 5:
+        _otp_del(otp_key)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Maximum verification attempts exceeded."
         )
-    
+
     if data.code != stored_otp["code"]:
         return {
             "success": False,
-            "message": f"Invalid verification code. {6 - stored_otp['attempts']} attempts remaining.",
+            "message": f"Invalid verification code. {6 - attempts} attempts remaining.",
             "verified": False
         }
-    
-    del otp_storage[otp_key]
-    
+
+    _otp_del(otp_key)
+
     return {
         "success": True,
         "message": "Email verified successfully",
@@ -168,39 +176,30 @@ async def verify_phone(data: PhoneVerification):
         )
     
     otp_key = f"phone:{data.phone}"
-    if otp_key not in otp_storage:
+    stored_otp = _otp_get(otp_key)
+    if stored_otp is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No verification code found for this phone."
+            detail="No verification code found, or it has expired."
         )
-    
-    stored_otp = otp_storage[otp_key]
-    
-    if datetime.utcnow() > stored_otp["expires"]:
-        del otp_storage[otp_key]
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Verification code has expired."
-        )
-    
-    stored_otp["attempts"] += 1
-    
-    if stored_otp["attempts"] > 5:
-        del otp_storage[otp_key]
+
+    attempts = _otp_incr_attempts(otp_key)
+    if attempts > 5:
+        _otp_del(otp_key)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Maximum verification attempts exceeded."
         )
-    
+
     if data.code != stored_otp["code"]:
         return {
             "success": False,
-            "message": f"Invalid verification code. {6 - stored_otp['attempts']} attempts remaining.",
+            "message": f"Invalid verification code. {6 - attempts} attempts remaining.",
             "verified": False
         }
-    
-    del otp_storage[otp_key]
-    
+
+    _otp_del(otp_key)
+
     return {
         "success": True,
         "message": "Phone verified successfully",

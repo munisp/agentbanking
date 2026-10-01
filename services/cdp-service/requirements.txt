@@ -7,3 +7,6 @@ pytest>=8.3.5
 redis>=5.2.1
 sqlalchemy>=2.0.41
 uvicorn>=0.34.3
+
+# round-11: Postgres persistence for business-data stores
+psycopg2-binary>=2.9

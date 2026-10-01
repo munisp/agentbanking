@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';  // round-11 wave-4: use declared dependency
 import { cdpAuthService } from '../services/CDPAuthService';
 import { APIClient } from '../lib/APIClient';
 const apiClient = new APIClient();

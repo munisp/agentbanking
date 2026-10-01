@@ -1,7 +1,7 @@
 import React from "react";
 import { useTheme } from 'react-native-paper';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useNotifications } from "../../contexts/NotificationContext";
+import { useNotifications } from "../contexts/NotificationContext";
 
 /**
  * Example: Add notification badge to Dashboard

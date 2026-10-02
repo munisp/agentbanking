@@ -34,9 +34,10 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -92,9 +93,12 @@ type CarrierInfo struct {
 }
 
 // SessionStore is a thread-safe in-memory session store (production: Redis).
+// round-11 wave-5: sessions persisted in Redis (ussd:session:{id}, JSON with
+// TTL mirroring ExpiresAt) so USSD sessions survive pod restarts and are
+// shared across replicas.
 type SessionStore struct {
-	mu       sync.RWMutex
-	sessions map[string]*USSDSession
+	rdb *redis.Client
+	ctx context.Context
 }
 
 // ── POS API Client ───────────────────────────────────────────────────────────
@@ -290,55 +294,90 @@ func detectCarrier(phone string) string {
 
 // ── Session Store ────────────────────────────────────────────────────────────
 
+func newRedisClientUSSD() *redis.Client {
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379/0"
+	}
+	opt, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Fatalf("invalid REDIS_URL: %v", err)
+	}
+	return redis.NewClient(opt)
+}
+
 func NewSessionStore() *SessionStore {
-	return &SessionStore{sessions: make(map[string]*USSDSession)}
+	return &SessionStore{rdb: newRedisClientUSSD(), ctx: context.Background()}
 }
 
 func (s *SessionStore) Get(id string) (*USSDSession, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	sess, ok := s.sessions[id]
-	return sess, ok
+	data, err := s.rdb.Get(s.ctx, "ussd:session:"+id).Result()
+	if err != nil {
+		return nil, false
+	}
+	var sess USSDSession
+	if err := json.Unmarshal([]byte(data), &sess); err != nil {
+		return nil, false
+	}
+	return &sess, true
 }
 
 func (s *SessionStore) Set(sess *USSDSession) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sessions[sess.SessionID] = sess
+	data, err := json.Marshal(sess)
+	if err != nil {
+		log.Printf("marshal ussd session: %v", err)
+		return
+	}
+	ttl := time.Until(sess.ExpiresAt)
+	if ttl <= 0 {
+		ttl = time.Minute
+	}
+	if err := s.rdb.Set(s.ctx, "ussd:session:"+sess.SessionID, data, ttl).Err(); err != nil {
+		log.Printf("redis set ussd session: %v", err)
+	}
 }
 
 func (s *SessionStore) Delete(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.sessions, id)
+	if err := s.rdb.Del(s.ctx, "ussd:session:"+id).Err(); err != nil {
+		log.Printf("redis del ussd session: %v", err)
+	}
 }
 
 func (s *SessionStore) ListActive() []*USSDSession {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	var active []*USSDSession
+	var cursor uint64
 	now := time.Now()
-	for _, sess := range s.sessions {
-		if sess.ExpiresAt.After(now) {
-			active = append(active, sess)
+	for {
+		keys, next, err := s.rdb.Scan(s.ctx, cursor, "ussd:session:*", 100).Result()
+		if err != nil {
+			log.Printf("redis scan ussd sessions: %v", err)
+			return active
+		}
+		for _, key := range keys {
+			data, err := s.rdb.Get(s.ctx, key).Result()
+			if err != nil {
+				continue
+			}
+			var sess USSDSession
+			if err := json.Unmarshal([]byte(data), &sess); err != nil {
+				continue
+			}
+			if sess.ExpiresAt.After(now) {
+				active = append(active, &sess)
+			}
+		}
+		cursor = next
+		if cursor == 0 {
+			break
 		}
 	}
 	return active
 }
 
-// CleanupExpired removes sessions past their expiry. Returns count removed.
+// CleanupExpired is a no-op with Redis TTLs (expired sessions are evicted
+// automatically); kept for interface compatibility. Returns 0.
 func (s *SessionStore) CleanupExpired() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	count := 0
-	now := time.Now()
-	for id, sess := range s.sessions {
-		if sess.ExpiresAt.Before(now) {
-			delete(s.sessions, id)
-			count++
-		}
-	}
-	return count
+	return 0
 }
 
 // ── USSD Menu Router ─────────────────────────────────────────────────────────

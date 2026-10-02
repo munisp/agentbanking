@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/json"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // Shared HTTP clients (F11): a single client per upstream class gives
@@ -238,17 +241,16 @@ func requiredKYCForLoan(loanType string, amount float64) KYCLevel {
 
 // ── Application State ────────────────────────────────────────────────────────
 
+// round-11 wave-5: all KYC state persisted in Redis instead of process-local
+// maps — survives restarts and is shared across replicas.
+// Keys: kyc:cache (hash customerID→level), kyc:applications (hash id→JSON),
+// kyc:apps:bycustomer:{customerID} (set of application IDs),
+// kyc:bureau (hash verificationID→JSON).
 type AppState struct {
-	config       Config
-	mu           sync.RWMutex
-	kycCache     map[string]KYCLevel // customerID → verified level
-	applications map[string]*ApplicationRecord
-	// appsByCustomer indexes applications by customerID so the verify-callback
-	// hot path is O(apps-for-customer) instead of an O(n) full-map scan under
-	// the write lock (F14).
-	appsByCustomer map[string]map[string]*ApplicationRecord
-	bureauResults  map[string]*BureauVerificationResult
-	startTime      time.Time
+	config    Config
+	rdb       *redis.Client
+	ctx       context.Context
+	startTime time.Time
 }
 
 type ApplicationRecord struct {
@@ -262,71 +264,98 @@ type ApplicationRecord struct {
 }
 
 func NewAppState(cfg Config) *AppState {
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379/0"
+	}
+	opt, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Fatalf("invalid REDIS_URL: %v", err)
+	}
 	return &AppState{
-		config:         cfg,
-		kycCache:       make(map[string]KYCLevel),
-		applications:   make(map[string]*ApplicationRecord),
-		appsByCustomer: make(map[string]map[string]*ApplicationRecord),
-		bureauResults:  make(map[string]*BureauVerificationResult),
-		startTime:      time.Now(),
+		config:    cfg,
+		rdb:       redis.NewClient(opt),
+		ctx:       context.Background(),
+		startTime: time.Now(),
 	}
 }
 
-// addApplicationLocked inserts an application into the primary map and the
-// per-customer index. Caller must hold s.mu (write).
-func (s *AppState) addApplicationLocked(app *ApplicationRecord) {
-	s.applications[app.ID] = app
-	bucket := s.appsByCustomer[app.CustomerID]
-	if bucket == nil {
-		bucket = make(map[string]*ApplicationRecord)
-		s.appsByCustomer[app.CustomerID] = bucket
+// addApplication stores an application in Redis and indexes it by customer.
+func (s *AppState) addApplication(app *ApplicationRecord) {
+	data, err := json.Marshal(app)
+	if err != nil {
+		log.Printf("marshal application: %v", err)
+		return
 	}
-	bucket[app.ID] = app
+	if err := s.rdb.HSet(s.ctx, "kyc:applications", app.ID, data).Err(); err != nil {
+		log.Printf("redis HSet application: %v", err)
+	}
+	if err := s.rdb.SAdd(s.ctx, "kyc:apps:bycustomer:"+app.CustomerID, app.ID).Err(); err != nil {
+		log.Printf("redis SAdd app index: %v", err)
+	}
 }
 
-// removeApplicationLocked deletes an application from both maps. Caller must
-// hold s.mu (write).
-func (s *AppState) removeApplicationLocked(id string) {
-	app, ok := s.applications[id]
+// getApplication fetches one application by ID.
+func (s *AppState) getApplication(id string) (*ApplicationRecord, bool) {
+	data, err := s.rdb.HGet(s.ctx, "kyc:applications", id).Result()
+	if err != nil {
+		return nil, false
+	}
+	var app ApplicationRecord
+	if err := json.Unmarshal([]byte(data), &app); err != nil {
+		return nil, false
+	}
+	return &app, true
+}
+
+// removeApplication deletes an application from the store and the index.
+func (s *AppState) removeApplication(id string) {
+	app, ok := s.getApplication(id)
 	if !ok {
 		return
 	}
-	delete(s.applications, id)
-	if bucket := s.appsByCustomer[app.CustomerID]; bucket != nil {
-		delete(bucket, id)
-		if len(bucket) == 0 {
-			delete(s.appsByCustomer, app.CustomerID)
-		}
-	}
+	s.rdb.HDel(s.ctx, "kyc:applications", id)
+	s.rdb.SRem(s.ctx, "kyc:apps:bycustomer:"+app.CustomerID, id)
 }
 
-// evictTerminalEntriesLocked bounds the in-memory maps (F14): applications in
-// a terminal state (approved/blocked) and bureau results older than 24h are
-// evicted. Caller must hold s.mu (write).
-func (s *AppState) evictTerminalEntriesLocked() {
+// evictTerminalEntries bounds the store (F14): applications in a terminal
+// state (approved/blocked) and bureau results older than 24h are evicted.
+func (s *AppState) evictTerminalEntries() {
 	cutoff := time.Now().Add(-24 * time.Hour)
-	for id, app := range s.applications {
-		if (app.Status == "approved" || app.Status == "blocked") && app.CreatedAt.Before(cutoff) {
-			s.removeApplicationLocked(id)
+	apps, err := s.rdb.HGetAll(s.ctx, "kyc:applications").Result()
+	if err == nil {
+		for id, raw := range apps {
+			var app ApplicationRecord
+			if json.Unmarshal([]byte(raw), &app) != nil {
+				continue
+			}
+			if (app.Status == "approved" || app.Status == "blocked") && app.CreatedAt.Before(cutoff) {
+				s.removeApplication(id)
+			}
 		}
 	}
-	for id, res := range s.bureauResults {
-		if res.Timestamp.Before(cutoff) {
-			delete(s.bureauResults, id)
+	bureau, err := s.rdb.HGetAll(s.ctx, "kyc:bureau").Result()
+	if err == nil {
+		for id, raw := range bureau {
+			var res BureauVerificationResult
+			if json.Unmarshal([]byte(raw), &res) != nil {
+				continue
+			}
+			if res.Timestamp.Before(cutoff) {
+				s.rdb.HDel(s.ctx, "kyc:bureau", id)
+			}
 		}
 	}
 }
 
-// startEvictionLoop periodically evicts terminal entries so the maps stay
+// startEvictionLoop periodically evicts terminal entries so the store stays
 // bounded under sustained traffic.
 func (s *AppState) startEvictionLoop() {
 	go func() {
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
-			s.mu.Lock()
-			s.evictTerminalEntriesLocked()
-			s.mu.Unlock()
+			s.evictTerminalEntries()
 		}
 	}()
 }
@@ -394,9 +423,8 @@ func (s *AppState) checkKYCStatus(customerID string, requiredLevel KYCLevel) (bo
 	// Returns: (isVerified, currentLevel, gatewayReachable)
 
 	// Check cache first
-	s.mu.RLock()
-	cachedLevel, hasCached := s.kycCache[customerID]
-	s.mu.RUnlock()
+	cached, err := s.rdb.HGet(s.ctx, "kyc:cache", customerID).Result()
+	cachedLevel, hasCached := KYCLevel(cached), err == nil
 
 	if hasCached && isLevelSufficient(cachedLevel, requiredLevel) {
 		return true, cachedLevel, true
@@ -427,9 +455,9 @@ func (s *AppState) checkKYCStatus(customerID string, requiredLevel KYCLevel) (bo
 
 	// Cache result
 	if verified {
-		s.mu.Lock()
-		s.kycCache[customerID] = currentLevel
-		s.mu.Unlock()
+		if err := s.rdb.HSet(s.ctx, "kyc:cache", customerID, string(currentLevel)).Err(); err != nil {
+			log.Printf("redis HSet kyc cache: %v", err)
+		}
 	}
 
 	return verified, currentLevel, true
@@ -512,8 +540,7 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 
 	if !verified {
 		// KYC not verified — save as pending, emit events
-		s.mu.Lock()
-		s.addApplicationLocked(&ApplicationRecord{
+		s.addApplication(&ApplicationRecord{
 			ID:         appID,
 			CustomerID: req.CustomerID,
 			Type:       "account",
@@ -521,7 +548,6 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 			KYCLevel:   requiredLevel,
 			CreatedAt:  time.Now(),
 		})
-		s.mu.Unlock()
 
 		// Kafka events
 		s.publishKafka("account.application.created", map[string]interface{}{
@@ -559,8 +585,7 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// KYC verified — approve
-	s.mu.Lock()
-	s.addApplicationLocked(&ApplicationRecord{
+	s.addApplication(&ApplicationRecord{
 		ID:          appID,
 		CustomerID:  req.CustomerID,
 		Type:        "account",
@@ -569,7 +594,6 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 		KYCLevel:    currentLevel,
 		CreatedAt:   time.Now(),
 	})
-	s.mu.Unlock()
 
 	s.publishKafka("account.opened", map[string]interface{}{
 		"application_id": appID,
@@ -636,8 +660,7 @@ func (s *AppState) handleLoanEnforcement(w http.ResponseWriter, r *http.Request)
 	appID := generateID()
 
 	if !verified {
-		s.mu.Lock()
-		s.addApplicationLocked(&ApplicationRecord{
+		s.addApplication(&ApplicationRecord{
 			ID:         appID,
 			CustomerID: req.CustomerID,
 			Type:       "loan",
@@ -645,7 +668,6 @@ func (s *AppState) handleLoanEnforcement(w http.ResponseWriter, r *http.Request)
 			KYCLevel:   requiredLevel,
 			CreatedAt:  time.Now(),
 		})
-		s.mu.Unlock()
 
 		// Kafka events
 		s.publishKafka("loan.application.submitted", map[string]interface{}{
@@ -739,22 +761,31 @@ func (s *AppState) handleVerifyCallback(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Update cache
-	s.mu.Lock()
-	s.kycCache[req.CustomerID] = req.Level
+	if err := s.rdb.HSet(s.ctx, "kyc:cache", req.CustomerID, string(req.Level)).Err(); err != nil {
+		log.Printf("redis HSet kyc cache: %v", err)
+	}
 
 	// Approve all pending applications for this customer via the per-customer
-	// index (F14) — no O(n) full-map scan under the write lock.
+	// index (F14) — no O(n) full-store scan.
 	approved := 0
-	for _, app := range s.appsByCustomer[req.CustomerID] {
+	appIDs, err := s.rdb.SMembers(s.ctx, "kyc:apps:bycustomer:"+req.CustomerID).Result()
+	if err != nil {
+		log.Printf("redis SMembers app index: %v", err)
+	}
+	for _, appID := range appIDs {
+		app, ok := s.getApplication(appID)
+		if !ok {
+			continue
+		}
 		if app.Status == "pending_kyc" {
 			if isLevelSufficient(req.Level, app.KYCLevel) {
 				app.Status = "approved"
 				app.KYCVerified = true
+				s.addApplication(app)
 				approved++
 			}
 		}
 	}
-	s.mu.Unlock()
 
 	// Set Permify permissions
 	s.setKYCPermission(req.CustomerID, req.Level)
@@ -785,9 +816,7 @@ func (s *AppState) handleApproveGate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.RLock()
-	app, exists := s.applications[req.ApplicationID]
-	s.mu.RUnlock()
+	app, exists := s.getApplication(req.ApplicationID)
 
 	if !exists {
 		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
@@ -886,9 +915,11 @@ func (s *AppState) handleBureauVerify(w http.ResponseWriter, r *http.Request) {
 		Timestamp:      time.Now(),
 	}
 
-	s.mu.Lock()
-	s.bureauResults[verificationID] = result
-	s.mu.Unlock()
+	if data, err := json.Marshal(result); err == nil {
+		if err := s.rdb.HSet(s.ctx, "kyc:bureau", verificationID, data).Err(); err != nil {
+			log.Printf("redis HSet bureau result: %v", err)
+		}
+	}
 
 	// Kafka event
 	s.publishKafka("kyc.bureau.verified", map[string]interface{}{
@@ -997,9 +1028,15 @@ func (s *AppState) handleBureauStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	id := parts[3]
 
-	s.mu.RLock()
-	result, exists := s.bureauResults[id]
-	s.mu.RUnlock()
+	var result *BureauVerificationResult
+	exists := false
+	if raw, err := s.rdb.HGet(s.ctx, "kyc:bureau", id).Result(); err == nil {
+		var br BureauVerificationResult
+		if json.Unmarshal([]byte(raw), &br) == nil {
+			result = &br
+			exists = true
+		}
+	}
 
 	if !exists {
 		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)

@@ -19,19 +19,21 @@
 package main
 
 import (
-	"database/sql"
-	_ "github.com/lib/pq"
-	"syscall"
-	"os/signal"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	_ "github.com/lib/pq"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -39,11 +41,13 @@ import (
 // USSDSession tracks a single USSD interaction from dial to END.
 // SessionState represents the current step in the USSD flow.
 type SessionState = string
+
 const (
 	MENU    SessionState = "main_menu"
 	AMOUNT  SessionState = "enter_amount"
 	CONFIRM SessionState = "confirm"
 )
+
 type USSDSession struct {
 	SessionID   string    `json:"sessionId"`
 	PhoneNumber string    `json:"phoneNumber"`
@@ -60,7 +64,7 @@ type USSDSession struct {
 
 // TxData holds pending transaction data during multi-step USSD flow.
 type TxData struct {
-	Type     string  `json:"type"`     // cash_in, cash_out, transfer, balance
+	Type     string  `json:"type"` // cash_in, cash_out, transfer, balance
 	Amount   float64 `json:"amount"`
 	Receiver string  `json:"receiver"`
 	PIN      string  `json:"pin"`
@@ -85,9 +89,12 @@ type CarrierInfo struct {
 }
 
 // SessionStore is a thread-safe in-memory session store (production: Redis).
+// round-11 wave-5: sessions persisted in Redis (ussd:session:{id}, JSON with
+// TTL mirroring ExpiresAt) so USSD sessions survive pod restarts and are
+// shared across replicas.
 type SessionStore struct {
-	mu       sync.RWMutex
-	sessions map[string]*USSDSession
+	rdb *redis.Client
+	ctx context.Context
 }
 
 // ── Carrier Detection ────────────────────────────────────────────────────────
@@ -109,9 +116,9 @@ var carrierPrefixes = map[string]CarrierInfo{
 	"+2340817": {Name: "9mobile", MCC: "621", MNC: "40", Country: "NG"},
 	"+2340818": {Name: "9mobile", MCC: "621", MNC: "40", Country: "NG"},
 	// Kenya
-	"+2547":    {Name: "Safaricom", MCC: "639", MNC: "02", Country: "KE"},
+	"+2547": {Name: "Safaricom", MCC: "639", MNC: "02", Country: "KE"},
 	// Ghana
-	"+2332":    {Name: "MTN_GH", MCC: "620", MNC: "01", Country: "GH"},
+	"+2332": {Name: "MTN_GH", MCC: "620", MNC: "01", Country: "GH"},
 }
 
 // detectCarrier returns the carrier name from a phone number prefix.
@@ -130,55 +137,90 @@ func detectCarrier(phone string) string {
 
 // ── Session Store ────────────────────────────────────────────────────────────
 
+func newRedisClientUSSD() *redis.Client {
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379/0"
+	}
+	opt, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Fatalf("invalid REDIS_URL: %v", err)
+	}
+	return redis.NewClient(opt)
+}
+
 func NewSessionStore() *SessionStore {
-	return &SessionStore{sessions: make(map[string]*USSDSession)}
+	return &SessionStore{rdb: newRedisClientUSSD(), ctx: context.Background()}
 }
 
 func (s *SessionStore) Get(id string) (*USSDSession, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	sess, ok := s.sessions[id]
-	return sess, ok
+	data, err := s.rdb.Get(s.ctx, "ussd:session:"+id).Result()
+	if err != nil {
+		return nil, false
+	}
+	var sess USSDSession
+	if err := json.Unmarshal([]byte(data), &sess); err != nil {
+		return nil, false
+	}
+	return &sess, true
 }
 
 func (s *SessionStore) Set(sess *USSDSession) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sessions[sess.SessionID] = sess
+	data, err := json.Marshal(sess)
+	if err != nil {
+		log.Printf("marshal ussd session: %v", err)
+		return
+	}
+	ttl := time.Until(sess.ExpiresAt)
+	if ttl <= 0 {
+		ttl = time.Minute
+	}
+	if err := s.rdb.Set(s.ctx, "ussd:session:"+sess.SessionID, data, ttl).Err(); err != nil {
+		log.Printf("redis set ussd session: %v", err)
+	}
 }
 
 func (s *SessionStore) Delete(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.sessions, id)
+	if err := s.rdb.Del(s.ctx, "ussd:session:"+id).Err(); err != nil {
+		log.Printf("redis del ussd session: %v", err)
+	}
 }
 
 func (s *SessionStore) ListActive() []*USSDSession {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	var active []*USSDSession
+	var cursor uint64
 	now := time.Now()
-	for _, sess := range s.sessions {
-		if sess.ExpiresAt.After(now) {
-			active = append(active, sess)
+	for {
+		keys, next, err := s.rdb.Scan(s.ctx, cursor, "ussd:session:*", 100).Result()
+		if err != nil {
+			log.Printf("redis scan ussd sessions: %v", err)
+			return active
+		}
+		for _, key := range keys {
+			data, err := s.rdb.Get(s.ctx, key).Result()
+			if err != nil {
+				continue
+			}
+			var sess USSDSession
+			if err := json.Unmarshal([]byte(data), &sess); err != nil {
+				continue
+			}
+			if sess.ExpiresAt.After(now) {
+				active = append(active, &sess)
+			}
+		}
+		cursor = next
+		if cursor == 0 {
+			break
 		}
 	}
 	return active
 }
 
-// CleanupExpired removes sessions past their expiry. Returns count removed.
+// CleanupExpired is a no-op with Redis TTLs (expired sessions are evicted
+// automatically); kept for interface compatibility. Returns 0.
 func (s *SessionStore) CleanupExpired() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	count := 0
-	now := time.Now()
-	for id, sess := range s.sessions {
-		if sess.ExpiresAt.Before(now) {
-			delete(s.sessions, id)
-			count++
-		}
-	}
-	return count
+	return 0
 }
 
 // ── USSD Menu Router ─────────────────────────────────────────────────────────
@@ -453,7 +495,6 @@ func getEnv(key, fallback string) string {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
-
 // recoverMiddleware catches panics and returns 500 instead of crashing
 func recoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -495,7 +536,6 @@ func jwtAuthMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
 
 // Auth Middleware - validates Bearer token on all non-health endpoints
 func authMiddleware(next http.Handler) http.Handler {
@@ -560,7 +600,6 @@ func setupGracefulShutdown(srv *http.Server) {
 
 // --- PostgreSQL persistence ---
 
-
 var db *sql.DB
 
 func initDB() {
@@ -598,7 +637,9 @@ func setState(key, value string) {
 }
 
 func getState(key string) string {
-	if db == nil { return "" }
+	if db == nil {
+		return ""
+	}
 	var val string
 	db.QueryRow("SELECT value FROM state_store WHERE key = $1", key).Scan(&val)
 	return val

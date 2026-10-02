@@ -1,25 +1,31 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/redis/go-redis/v9"
 )
 
+// round-11 wave-5: RBAC authz state is persisted in Redis (shared across
+// replicas, survives restarts) instead of process-local maps.
+// Keys: rbac:roles (hash id→JSON), rbac:permissions (hash id→JSON),
+// rbac:userroles:{userID} (set of role IDs).
 type RBACService struct {
-	roles       map[string]*Role
-	permissions map[string]*Permission
-	userRoles   map[string][]string
+	rdb *redis.Client
+	ctx context.Context
 }
 
 type Role struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Permissions []string `json:"permissions"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Permissions []string  `json:"permissions"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -49,11 +55,22 @@ type AuthorizationResponse struct {
 	Reason     string   `json:"reason,omitempty"`
 }
 
+func newRedisClient() *redis.Client {
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379/0"
+	}
+	opt, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Fatalf("invalid REDIS_URL: %v", err)
+	}
+	return redis.NewClient(opt)
+}
+
 func NewRBACService() *RBACService {
 	service := &RBACService{
-		roles:       make(map[string]*Role),
-		permissions: make(map[string]*Permission),
-		userRoles:   make(map[string][]string),
+		rdb: newRedisClient(),
+		ctx: context.Background(),
 	}
 
 	// Initialize default permissions
@@ -80,7 +97,14 @@ func (r *RBACService) initializeDefaultPermissions() {
 	}
 
 	for _, perm := range permissions {
-		r.permissions[perm.ID] = perm
+		data, err := json.Marshal(perm)
+		if err != nil {
+			log.Printf("marshal permission %s: %v", perm.ID, err)
+			continue
+		}
+		if err := r.rdb.HSet(r.ctx, "rbac:permissions", perm.ID, data).Err(); err != nil {
+			log.Printf("redis HSet permission %s: %v", perm.ID, err)
+		}
 	}
 }
 
@@ -130,7 +154,14 @@ func (r *RBACService) initializeDefaultRoles() {
 	}
 
 	for _, role := range roles {
-		r.roles[role.ID] = role
+		data, err := json.Marshal(role)
+		if err != nil {
+			log.Printf("marshal role %s: %v", role.ID, err)
+			continue
+		}
+		if err := r.rdb.HSet(r.ctx, "rbac:roles", role.ID, data).Err(); err != nil {
+			log.Printf("redis HSet role %s: %v", role.ID, err)
+		}
 	}
 }
 
@@ -142,7 +173,16 @@ func (r *RBACService) CreateRole(w http.ResponseWriter, req *http.Request) {
 	}
 
 	role.CreatedAt = time.Now()
-	r.roles[role.ID] = &role
+	data, err := json.Marshal(&role)
+	if err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := r.rdb.HSet(r.ctx, "rbac:roles", role.ID, data).Err(); err != nil {
+		log.Printf("redis HSet role: %v", err)
+		http.Error(w, "Storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -153,20 +193,31 @@ func (r *RBACService) GetRole(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	roleID := vars["roleId"]
 
-	role, exists := r.roles[roleID]
-	if !exists {
+	data, err := r.rdb.HGet(r.ctx, "rbac:roles", roleID).Result()
+	if err == redis.Nil {
 		http.Error(w, "Role not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		log.Printf("redis HGet role: %v", err)
+		http.Error(w, "Storage unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(role)
+	w.Write([]byte(data))
 }
 
 func (r *RBACService) ListRoles(w http.ResponseWriter, req *http.Request) {
-	roles := make([]*Role, 0, len(r.roles))
-	for _, role := range r.roles {
-		roles = append(roles, role)
+	vals, err := r.rdb.HVals(r.ctx, "rbac:roles").Result()
+	if err != nil {
+		log.Printf("redis HVals roles: %v", err)
+		http.Error(w, "Storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	roles := make([]json.RawMessage, 0, len(vals))
+	for _, v := range vals {
+		roles = append(roles, json.RawMessage(v))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -179,21 +230,35 @@ func (r *RBACService) AssignRole(w http.ResponseWriter, req *http.Request) {
 	roleID := vars["roleId"]
 
 	// Check if role exists
-	if _, exists := r.roles[roleID]; !exists {
+	exists, err := r.rdb.HExists(r.ctx, "rbac:roles", roleID).Result()
+	if err != nil {
+		log.Printf("redis HExists role: %v", err)
+		http.Error(w, "Storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !exists {
 		http.Error(w, "Role not found", http.StatusNotFound)
 		return
 	}
 
-	// Add role to user
-	userRoles := r.userRoles[userID]
-	for _, existingRole := range userRoles {
-		if existingRole == roleID {
-			http.Error(w, "Role already assigned", http.StatusConflict)
-			return
-		}
+	// Add role to user (Redis set add is idempotent — detect duplicates first)
+	key := "rbac:userroles:" + userID
+	isMember, err := r.rdb.SIsMember(r.ctx, key, roleID).Result()
+	if err != nil {
+		log.Printf("redis SIsMember: %v", err)
+		http.Error(w, "Storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if isMember {
+		http.Error(w, "Role already assigned", http.StatusConflict)
+		return
 	}
 
-	r.userRoles[userID] = append(userRoles, roleID)
+	if err := r.rdb.SAdd(r.ctx, key, roleID).Err(); err != nil {
+		log.Printf("redis SAdd: %v", err)
+		http.Error(w, "Storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Role assigned successfully"})
@@ -204,16 +269,11 @@ func (r *RBACService) RevokeRole(w http.ResponseWriter, req *http.Request) {
 	userID := vars["userId"]
 	roleID := vars["roleId"]
 
-	userRoles := r.userRoles[userID]
-	newRoles := make([]string, 0)
-
-	for _, role := range userRoles {
-		if role != roleID {
-			newRoles = append(newRoles, role)
-		}
+	if err := r.rdb.SRem(r.ctx, "rbac:userroles:"+userID, roleID).Err(); err != nil {
+		log.Printf("redis SRem: %v", err)
+		http.Error(w, "Storage unavailable", http.StatusServiceUnavailable)
+		return
 	}
-
-	r.userRoles[userID] = newRoles
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Role revoked successfully"})
@@ -226,14 +286,23 @@ func (r *RBACService) CheckAuthorization(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	userRoles := r.userRoles[authReq.UserID]
+	userRoles, err := r.rdb.SMembers(r.ctx, "rbac:userroles:"+authReq.UserID).Result()
+	if err != nil {
+		log.Printf("redis SMembers: %v", err)
+		http.Error(w, "Storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	authorized := false
 	var userRoleNames []string
 
 	// Check if user has any role that grants the required permission
 	for _, roleID := range userRoles {
-		role, exists := r.roles[roleID]
-		if !exists {
+		data, err := r.rdb.HGet(r.ctx, "rbac:roles", roleID).Result()
+		if err != nil {
+			continue
+		}
+		var role Role
+		if err := json.Unmarshal([]byte(data), &role); err != nil {
 			continue
 		}
 
@@ -270,12 +339,22 @@ func (r *RBACService) GetUserRoles(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	userID := vars["userId"]
 
-	userRoles := r.userRoles[userID]
+	userRoles, err := r.rdb.SMembers(r.ctx, "rbac:userroles:"+userID).Result()
+	if err != nil {
+		log.Printf("redis SMembers: %v", err)
+		http.Error(w, "Storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	var roles []*Role
 
 	for _, roleID := range userRoles {
-		if role, exists := r.roles[roleID]; exists {
-			roles = append(roles, role)
+		data, err := r.rdb.HGet(r.ctx, "rbac:roles", roleID).Result()
+		if err != nil {
+			continue
+		}
+		var role Role
+		if json.Unmarshal([]byte(data), &role) == nil {
+			roles = append(roles, &role)
 		}
 	}
 
@@ -290,9 +369,15 @@ func (r *RBACService) GetUserRoles(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *RBACService) ListPermissions(w http.ResponseWriter, req *http.Request) {
-	permissions := make([]*Permission, 0, len(r.permissions))
-	for _, perm := range r.permissions {
-		permissions = append(permissions, perm)
+	vals, err := r.rdb.HVals(r.ctx, "rbac:permissions").Result()
+	if err != nil {
+		log.Printf("redis HVals permissions: %v", err)
+		http.Error(w, "Storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	permissions := make([]json.RawMessage, 0, len(vals))
+	for _, v := range vals {
+		permissions = append(permissions, json.RawMessage(v))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -300,13 +385,15 @@ func (r *RBACService) ListPermissions(w http.ResponseWriter, req *http.Request) 
 }
 
 func (r *RBACService) HealthCheck(w http.ResponseWriter, req *http.Request) {
+	roleCount, _ := r.rdb.HLen(r.ctx, "rbac:roles").Result()
+	permCount, _ := r.rdb.HLen(r.ctx, "rbac:permissions").Result()
 	health := map[string]interface{}{
-		"status":    "healthy",
-		"timestamp": time.Now().UTC(),
-		"service":   "rbac-service",
-		"version":   "1.0.0",
-		"roles":     len(r.roles),
-		"permissions": len(r.permissions),
+		"status":      "healthy",
+		"timestamp":   time.Now().UTC(),
+		"service":     "rbac-service",
+		"version":     "1.0.0",
+		"roles":       roleCount,
+		"permissions": permCount,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

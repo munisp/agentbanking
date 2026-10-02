@@ -9,3 +9,4 @@ PyJWT>=2.10.1
 
 # round-11: Postgres persistence for business-data stores
 psycopg2-binary>=2.9
+asyncpg>=0.30.0  # round-11 wave-6: async PG driver for persistence shim

@@ -120,48 +120,59 @@ class ChannelPreference(BaseModel):
 
 # Storage
 channel_stats: Dict[Channel, Dict] = {channel: {"sent": 0, "failed": 0, "delivered": 0} for channel in Channel}
-# ── Round-11 persistence fix ───────────────────────────────────────────────
-# Process-memory dict replaced by a dict-compatible Postgres-backed store so
-# business data survives restarts. Mirrors sibling-service convention:
-# {ENV}_DATABASE_URL, pool_pre_ping, auto-created table (python-owned schema).
+# ── Round-11 persistence fix (wave-6: asyncpg) ────────────────────────────
+# Process-memory containers replaced by Postgres-backed stores so business
+# data survives restarts. Wave-6 upgrade: all DB I/O now runs on asyncpg via
+# a dedicated background event loop, so async FastAPI handlers no longer
+# block the main loop on sync SQLAlchemy calls. Same dict/list-compatible
+# public API; {ENV}_DATABASE_URL convention unchanged.
 import os as _r11_os
 import json as _r11_json
-from datetime import datetime as _r11_dt, timezone as _r11_tz
-from sqlalchemy import (
-    create_engine as _r11_ce,
-    Column as _r11_Col,
-    String as _r11_Str,
-    DateTime as _r11_DT,
-    Text as _r11_Txt,
-)
-from sqlalchemy.orm import sessionmaker as _r11_sm, declarative_base as _r11_db
+import asyncio as _r11_asyncio
+import threading as _r11_threading
+import asyncpg as _r11_apg
 
-_R11Base = _r11_db()
+_r11_loop = _r11_asyncio.new_event_loop()
 
 
-class _R11Row(_R11Base):
-    __abstract__ = True
-    key = _r11_Col(_r11_Str(128), primary_key=True)
-    data = _r11_Col(_r11_Txt, nullable=False)
-    updated_at = _r11_Col(
-        _r11_DT(timezone=True),
-        default=lambda: _r11_dt.now(_r11_tz.utc),
-        onupdate=lambda: _r11_dt.now(_r11_tz.utc),
-    )
+def _r11_loop_main(loop):
+    _r11_asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+
+_r11_threading.Thread(
+    target=_r11_loop_main, args=(_r11_loop,), daemon=True, name="r11-pg-io"
+).start()
+
+
+def _r11_sync(coro):
+    """Run an asyncpg coroutine on the dedicated loop and wait for it."""
+    return _r11_asyncio.run_coroutine_threadsafe(coro, _r11_loop).result()
 
 
 class _PgDictStore:
     """Dict-compatible store persisted to Postgres (replaces in-memory dict)."""
 
     def __init__(self, table, env, model_name=None):
+        if not table.replace("_", "").isalnum():
+            raise ValueError("unsafe table name: %r" % table)
         self._model_name = model_name
-        self._Row = type("_R11_%s" % table, (_R11Row,), {"__tablename__": table})
+        self._table = table
         url = _r11_os.getenv(
             env, "postgresql://postgres:postgres@localhost:5432/platform"
         )
-        self._engine = _r11_ce(url, pool_pre_ping=True, pool_size=5, max_overflow=5)
-        _R11Base.metadata.create_all(self._engine)
-        self._Session = _r11_sm(bind=self._engine, autoflush=False, autocommit=False)
+        self._pool = _r11_sync(_r11_apg.create_pool(url, min_size=1, max_size=10))
+        _r11_sync(self._ensure())
+
+    async def _ensure(self):
+        async with self._pool.acquire() as c:
+            await c.execute(
+                'CREATE TABLE IF NOT EXISTS "%s" ('
+                "key VARCHAR(128) PRIMARY KEY, "
+                "data TEXT NOT NULL, "
+                "updated_at TIMESTAMPTZ NOT NULL DEFAULT now()"
+                ")" % self._table
+            )
 
     @staticmethod
     def _ser(v):
@@ -187,28 +198,29 @@ class _PgDictStore:
                 return cls(**d)
         return d
 
+    async def _aset(self, k, payload):
+        async with self._pool.acquire() as c:
+            await c.execute(
+                'INSERT INTO "%s" (key, data) VALUES ($1, $2) '
+                "ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data, "
+                "updated_at = now()" % self._table,
+                str(k), payload,
+            )
+
     def __setitem__(self, k, v):
-        s = self._Session()
-        try:
-            row = s.get(self._Row, str(k))
-            payload = self._ser(v)
-            if row is None:
-                s.add(self._Row(key=str(k), data=payload))
-            else:
-                row.data = payload
-            s.commit()
-        finally:
-            s.close()
+        _r11_sync(self._aset(k, self._ser(v)))
+
+    async def _aget(self, k):
+        async with self._pool.acquire() as c:
+            return await c.fetchval(
+                'SELECT data FROM "%s" WHERE key = $1' % self._table, str(k)
+            )
 
     def __getitem__(self, k):
-        s = self._Session()
-        try:
-            row = s.get(self._Row, str(k))
-            if row is None:
-                raise KeyError(k)
-            return self._deser(row.data)
-        finally:
-            s.close()
+        raw = _r11_sync(self._aget(k))
+        if raw is None:
+            raise KeyError(k)
+        return self._deser(raw)
 
     def get(self, k, default=None):
         try:
@@ -216,23 +228,19 @@ class _PgDictStore:
         except KeyError:
             return default
 
+    async def _adel(self, k):
+        async with self._pool.acquire() as c:
+            return await c.execute(
+                'DELETE FROM "%s" WHERE key = $1' % self._table, str(k)
+            )
+
     def __delitem__(self, k):
-        s = self._Session()
-        try:
-            row = s.get(self._Row, str(k))
-            if row is None:
-                raise KeyError(k)
-            s.delete(row)
-            s.commit()
-        finally:
-            s.close()
+        res = _r11_sync(self._adel(k))
+        if res == "DELETE 0":
+            raise KeyError(k)
 
     def __contains__(self, k):
-        s = self._Session()
-        try:
-            return s.get(self._Row, str(k)) is not None
-        finally:
-            s.close()
+        return _r11_sync(self._aget(k)) is not None
 
     def setdefault(self, k, default=None):
         try:
@@ -241,28 +249,27 @@ class _PgDictStore:
             self[k] = default
             return default
 
+    async def _aall(self):
+        async with self._pool.acquire() as c:
+            return await c.fetch('SELECT key, data FROM "%s"' % self._table)
+
     def _all(self):
-        s = self._Session()
-        try:
-            return s.query(self._Row).all()
-        finally:
-            s.close()
+        return _r11_sync(self._aall())
 
     def values(self):
-        return [self._deser(r.data) for r in self._all()]
+        return [self._deser(r["data"]) for r in self._all()]
 
     def keys(self):
-        return [r.key for r in self._all()]
+        return [r["key"] for r in self._all()]
 
     def items(self):
-        return [(r.key, self._deser(r.data)) for r in self._all()]
+        return [(r["key"], self._deser(r["data"])) for r in self._all()]
 
     def __len__(self):
-        s = self._Session()
-        try:
-            return s.query(self._Row).count()
-        finally:
-            s.close()
+        async def _n():
+            async with self._pool.acquire() as c:
+                return await c.fetchval('SELECT COUNT(*) FROM "%s"' % self._table)
+        return _r11_sync(_n())
 
     def pop(self, k, default=None):
         try:
@@ -273,14 +280,10 @@ class _PgDictStore:
             return default
 
     def clear(self):
-        s = self._Session()
-        try:
-            s.query(self._Row).delete()
-            s.commit()
-        finally:
-            s.close()
-
-
+        async def _c():
+            async with self._pool.acquire() as c:
+                await c.execute('DELETE FROM "%s"' % self._table)
+        _r11_sync(_c())
 customer_preferences = _PgDictStore("uch_customer_preferences", "UCH_DATABASE_URL", model_name="ChannelPreference")
 message_history: List[Dict] = []
 

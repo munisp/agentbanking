@@ -39,3 +39,4 @@ typing-inspection
 typing_extensions
 uvicorn
 alembic
+asyncpg>=0.30.0  # round-11 wave-6: async PG driver for persistence shim

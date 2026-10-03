@@ -271,7 +271,7 @@ class _PgListStore:
         _r11_sync(_c())
 
 
-_shutdown_handlers = _PgListStore("agent_training__shutdown_handlers", "AGENT_TRAINING_DATABASE_URL")  # round-11 wave-7 persistence
+_shutdown_handlers = []  # function registry — must stay in-process (wave-8 revert of wave-7 overreach)  # round-11 wave-7 persistence
 
 def register_shutdown(handler):
     _shutdown_handlers.append(handler)

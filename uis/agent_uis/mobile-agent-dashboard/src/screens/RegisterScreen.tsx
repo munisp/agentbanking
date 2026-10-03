@@ -1,15 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { APIClient } from '../api/APIClient';
-const apiClient = new APIClient();
 
 
 interface RegisterScreenProps {
@@ -20,33 +17,6 @@ const RegisterScreen: React.FC<RegisterScreenProps> = () => {
   const { colors } = useTheme();
   const styles = makeStyles(colors);
   const navigation = useNavigation();
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<any>(null);
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const response = await apiClient.get('/register');
-      setData(response);
-    } catch (error) {
-      console.error('Error loading register data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading Register...</Text>
-      </View>
-    );
-  }
 
   return (
     <ScrollView style={styles.container}>

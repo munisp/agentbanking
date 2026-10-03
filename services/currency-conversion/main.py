@@ -5,7 +5,10 @@ Currency Conversion Service - Production Implementation
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict
+from typing import Dict, Optional
+import os
+import json
+import asyncpg
 from datetime import datetime
 from decimal import Decimal
 import uvicorn
@@ -271,7 +274,7 @@ class _PgListStore:
         _r11_sync(_c())
 
 
-_shutdown_handlers = _PgListStore("currency_conversion__shutdown_handlers", "CURRENCY_CONVERSION_DATABASE_URL")  # round-11 wave-7 persistence
+_shutdown_handlers = []  # function registry — must stay in-process (wave-8 revert of wave-7 overreach)  # round-11 wave-7 persistence
 
 def register_shutdown(handler):
     _shutdown_handlers.append(handler)
@@ -311,20 +314,78 @@ class ConversionRequest(BaseModel):
     to_currency: str
     amount: Decimal
 
-rates = {
-    ("USD", "NGN"): Decimal("1550.00"),
-    ("GBP", "NGN"): Decimal("1970.00"),
-    ("EUR", "NGN"): Decimal("1680.00"),
-    ("NGN", "USD"): Decimal("0.00065"),
-}
+# ── Round-11 wave-8: no hardcoded FX rates ──────────────────────────────────
+# Hardcoded in-repo exchange rates are fabricated market data. Rates now come
+# from (1) the currency_conversion_rates Postgres table, or (2) the RATES_JSON
+# env var (operator-provided feed snapshot). When neither is configured the
+# service fails closed with 503 instead of quoting invented rates.
+
+_fx_pool = None
+
+async def get_db_pool():
+    global _fx_pool
+    if _fx_pool is None:
+        url = os.getenv("CURRENCY_CONVERSION_DATABASE_URL",
+                        os.getenv("DATABASE_URL",
+                                  "postgresql://postgres:postgres@localhost:5432/platform"))
+        _fx_pool = await asyncpg.create_pool(url, min_size=1, max_size=5)
+        async with _fx_pool.acquire() as c:
+            await c.execute("""
+                CREATE TABLE IF NOT EXISTS currency_conversion_rates (
+                    id BIGSERIAL PRIMARY KEY,
+                    from_currency VARCHAR(8) NOT NULL,
+                    to_currency VARCHAR(8) NOT NULL,
+                    rate NUMERIC(24, 10) NOT NULL,
+                    source VARCHAR(64),
+                    effective_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )""")
+    return _fx_pool
+
+
+def _load_env_rates():
+    raw = os.getenv("RATES_JSON", "")
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return {(k.split("-")[0].upper(), k.split("-")[1].upper()): Decimal(str(v))
+                for k, v in data.items()}
+    except Exception as e:
+        logging.warning("RATES_JSON unparsable: %s", e)
+        return {}
+
+_env_rates = _load_env_rates()
+
+
+async def get_rates():
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as c:
+            rows = await c.fetch("""
+                SELECT DISTINCT ON (from_currency, to_currency)
+                       from_currency, to_currency, rate
+                FROM currency_conversion_rates
+                ORDER BY from_currency, to_currency, effective_at DESC""")
+        rates = {(r["from_currency"], r["to_currency"]): Decimal(str(r["rate"])) for r in rows}
+    except Exception as e:
+        logging.warning("rates table unavailable: %s", e)
+        rates = {}
+    if rates:
+        return rates
+    return dict(_env_rates)
+
 
 class CurrencyService:
     @staticmethod
     async def convert(request: ConversionRequest) -> ConversionResult:
+        rates = await get_rates()
+        if not rates:
+            raise HTTPException(status_code=503,
+                detail="No FX rate source configured (currency_conversion_rates table or RATES_JSON)")
         key = (request.from_currency, request.to_currency)
         if key not in rates:
             raise HTTPException(status_code=400, detail="Currency pair not supported")
-        
+
         rate = rates[key]
         converted = request.amount * rate
         
@@ -340,6 +401,94 @@ class CurrencyService:
 @app.post("/api/v1/convert", response_model=ConversionResult)
 async def convert(request: ConversionRequest):
     return await CurrencyService.convert(request)
+
+@app.get("/api/v1/rates")
+async def list_rates(base: Optional[str] = None):
+    """Current rates, optionally filtered to a base currency. Backs the mobile
+    /rates and /exchange-rates frontend calls (via APISIX alias)."""
+    rates = await get_rates()
+    if not rates:
+        raise HTTPException(status_code=503,
+            detail="No FX rate source configured (currency_conversion_rates table or RATES_JSON)")
+    items = [{"from": f, "to": t_, "rate": str(r)} for (f, t_), r in sorted(rates.items())]
+    if base:
+        items = [i for i in items if i["from"] == base.upper()]
+    return {"base": base.upper() if base else None, "rates": items, "count": len(items)}
+
+
+@app.get("/api/v1/rates/{pair}")
+async def get_pair_rate(pair: str):
+    """Single-pair rate for the mobile RateLock screen, e.g. /api/v1/rates/USD-NGN.
+    Fails closed when no rate source is configured (wave-8)."""
+    parts = pair.upper().split("-")
+    if len(parts) != 2 or not all(len(p) == 3 and p.isalpha() for p in parts):
+        raise HTTPException(status_code=400, detail="pair must be CCC-CCC, e.g. USD-NGN")
+    rates = await get_rates()
+    if not rates:
+        raise HTTPException(status_code=503,
+            detail="No FX rate source configured (currency_conversion_rates table or RATES_JSON)")
+    key = (parts[0], parts[1])
+    if key not in rates:
+        raise HTTPException(status_code=404, detail="Currency pair not supported")
+    rate = rates[key]
+    return {
+        "pair": f"{parts[0]}-{parts[1]}",
+        "rate": float(rate),
+        "inverseRate": float(1 / rate),
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+class RateLockRequest(BaseModel):
+    pair: str          # e.g. "USD-NGN"
+    duration: int      # minutes
+
+
+@app.post("/api/v1/rates/lock", status_code=201)
+async def lock_rate(request: RateLockRequest):
+    """Persist a rate lock so the quote is honored for the requested window.
+    Backs the mobile POST /rates/lock call (via APISIX alias). Fails closed
+    when the DB or rate source is unavailable — no simulated locks (wave-8)."""
+    parts = request.pair.upper().split("-")
+    if len(parts) != 2 or not all(len(p) == 3 and p.isalpha() for p in parts):
+        raise HTTPException(status_code=400, detail="pair must be CCC-CCC, e.g. USD-NGN")
+    if not (1 <= request.duration <= 24 * 60):
+        raise HTTPException(status_code=400, detail="duration must be 1..1440 minutes")
+    rates = await get_rates()
+    if not rates:
+        raise HTTPException(status_code=503,
+            detail="No FX rate source configured (currency_conversion_rates table or RATES_JSON)")
+    key = (parts[0], parts[1])
+    if key not in rates:
+        raise HTTPException(status_code=404, detail="Currency pair not supported")
+    rate = rates[key]
+    try:
+        pool = await get_db_pool()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Rate lock store unavailable: {e}")
+    async with pool.acquire() as c:
+        await c.execute("""
+            CREATE TABLE IF NOT EXISTS currency_rate_locks (
+                id BIGSERIAL PRIMARY KEY,
+                pair VARCHAR(8) NOT NULL,
+                rate NUMERIC(24, 10) NOT NULL,
+                duration_minutes INTEGER NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )""")
+        row = await c.fetchrow("""
+            INSERT INTO currency_rate_locks (pair, rate, duration_minutes, expires_at)
+            VALUES ($1, $2, $3, now() + make_interval(mins => $3))
+            RETURNING id, pair, rate, duration_minutes, expires_at
+        """, f"{parts[0]}-{parts[1]}", str(rate), request.duration)
+    return {
+        "lock_id": row["id"],
+        "pair": row["pair"],
+        "rate": float(row["rate"]),
+        "duration_minutes": row["duration_minutes"],
+        "expires_at": row["expires_at"].isoformat(),
+    }
+
 
 @app.get("/health")
 async def health_check():

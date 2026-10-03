@@ -53,13 +53,8 @@ const RateLockScreen = () => {
         throw new Error(data.message || 'Failed to fetch rates');
       }
     } catch (error) {
-      // Fallback for demo/development
-      setRate({
-        pair: 'USD-NGN',
-        rate: 1450.50,
-        inverseRate: 0.00069,
-        timestamp: new Date().toISOString(),
-      });
+      // No fabricated fallback rate (wave-8 honest-state fix).
+      setRate(null);
     } finally {
       setLoading(false);
     }
@@ -118,13 +113,9 @@ const RateLockScreen = () => {
       } else {
         throw new Error(data.message || 'Failed to lock rate');
       }
-    } catch (error) {
-      // For demo purposes, if API fails, we simulate a successful lock
-      setLockedRate(rate.rate);
-      setSelectedDuration(durationMinutes);
-      setTimeLeft(durationMinutes * 60);
-      setIsLocked(true);
-      Alert.alert('Rate Locked', `Exchange rate of ₦${rate.rate.toLocaleString()} locked for ${durationMinutes} minutes.`);
+    } catch (error: any) {
+      // No simulated success: surface the real failure (wave-8 honest-state fix).
+      Alert.alert('Rate Lock Failed', error?.message ?? 'Unable to lock rate. Please try again.');
     } finally {
       setLocking(false);
     }

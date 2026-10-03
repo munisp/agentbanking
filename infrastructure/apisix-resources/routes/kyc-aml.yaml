@@ -13,6 +13,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /background-check/*
       backends:
@@ -38,6 +39,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /bank-verification/*
       backends:
@@ -63,6 +65,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /case-management/*
       backends:
@@ -88,6 +91,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /deepfake-detection/*
       backends:
@@ -113,6 +117,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /docling-service/*
       backends:
@@ -138,6 +143,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /document-fraud-detection/*
       backends:
@@ -163,6 +169,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /document-management/*
       backends:
@@ -188,6 +195,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /document-processing/*
       backends:
@@ -213,6 +221,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyb-analytics/*
       backends:
@@ -238,6 +247,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyb-engine/*
       backends:
@@ -263,6 +273,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyb-risk-engine/*
       backends:
@@ -288,6 +299,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyb-verification/*
       backends:
@@ -313,6 +325,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyc-document-verifier/*
       backends:
@@ -338,6 +351,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyc-enforcement-go/*
       backends:
@@ -363,6 +377,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyc-enhanced/*
       backends:
@@ -388,6 +403,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyc-event-consumer/*
       backends:
@@ -413,6 +429,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyc-kyb-service/*
       backends:
@@ -438,6 +455,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyc-service/*
       backends:
@@ -463,6 +481,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyc-workflow-orchestration/*
       backends:
@@ -488,6 +507,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyc-workflow-orchestrator/*
       backends:
@@ -513,6 +533,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /multi-ocr-service/*
       backends:
@@ -538,6 +559,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /ocr-processing/*
       backends:
@@ -563,6 +585,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /ocr-service/*
       backends:
@@ -588,6 +611,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /paddle-ocr-service/*
       backends:
@@ -613,6 +637,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /rust-ocr-bridge/*
       backends:
@@ -638,6 +663,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /vlm-document-service/*
       backends:

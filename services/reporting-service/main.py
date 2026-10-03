@@ -182,5 +182,105 @@ async def get_report(report_id: str, token: str = Depends(verify_token)):
         return dict(row)
 
 
+# ── Round-11 wave-7 gap fix: /v1/reports/dashboard-summary + /v1/alerts/recent ──
+# These endpoints back the 54link_admin Dashboard (apiClient.get('/v1/...')).
+# All figures come from real platform tables in the shared Postgres; tables or
+# columns that do not exist degrade to zero / 'N/A' — never fabricated numbers.
+
+async def _table_exists(conn, name: str) -> bool:
+    return await conn.fetchval("SELECT to_regclass($1) IS NOT NULL", name)
+
+async def _column_exists(conn, table: str, column: str) -> bool:
+    return await conn.fetchval(
+        """SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name=$1 AND column_name=$2)""",
+        table, column)
+
+async def _count(conn, table: str) -> int:
+    if not await _table_exists(conn, table):
+        return 0
+    return int(await conn.fetchval(f"SELECT COUNT(*) FROM {table}"))
+
+async def _growth_pct(conn, table: str, ts_col: str) -> str:
+    """Month-over-month growth percentage, or 'N/A' when not computable."""
+    if not (await _table_exists(conn, table) and await _column_exists(conn, table, ts_col)):
+        return "N/A"
+    cur = await conn.fetchval(
+        f"SELECT COUNT(*) FROM {table} WHERE {ts_col} >= date_trunc('month', NOW())")
+    prev = await conn.fetchval(
+        f"""SELECT COUNT(*) FROM {table}
+            WHERE {ts_col} >= date_trunc('month', NOW()) - INTERVAL '1 month'
+              AND {ts_col} <  date_trunc('month', NOW())""")
+    if not prev:
+        return "N/A"
+    return f"{((cur - prev) / prev) * 100:.1f}"
+
+@app.get("/api/v1/reports/dashboard-summary")
+async def dashboard_summary(token: str = Depends(verify_token)):
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        total_customers = await _count(conn, "customers")
+        total_accounts = await _count(conn, "accounts")
+        total_transactions = await _count(conn, "transactions")
+
+        total_volume_kobo = 0
+        if await _table_exists(conn, "transactions"):
+            for col in ("amount_kobo", "amount"):
+                if await _column_exists(conn, "transactions", col):
+                    total_volume_kobo = int(
+                        await conn.fetchval(f"SELECT COALESCE(SUM({col}),0) FROM transactions"))
+                    break
+
+        revenue_trend = []
+        if await _table_exists(conn, "transactions") and await _column_exists(conn, "transactions", "created_at"):
+            vol_col = None
+            for c in ("amount_kobo", "amount"):
+                if await _column_exists(conn, "transactions", c):
+                    vol_col = c
+                    break
+            if vol_col:
+                rows = await conn.fetch(
+                    f"""SELECT date_trunc('day', created_at)::date AS day,
+                               COALESCE(SUM({vol_col}),0) AS volume
+                        FROM transactions
+                        WHERE created_at >= NOW() - INTERVAL '30 days'
+                        GROUP BY 1 ORDER BY 1""")
+                revenue_trend = [{"day": str(r["day"]), "volume": int(r["volume"])} for r in rows]
+
+        return {
+            "total_customers": total_customers,
+            "total_accounts": total_accounts,
+            "total_transactions": total_transactions,
+            "total_volume_kobo": total_volume_kobo,
+            "customer_growth_pct": await _growth_pct(conn, "customers", "created_at"),
+            "account_growth_pct": await _growth_pct(conn, "accounts", "created_at"),
+            "transaction_growth_pct": await _growth_pct(conn, "transactions", "created_at"),
+            "volume_growth_pct": "N/A",
+            "revenue_trend": revenue_trend,
+        }
+
+@app.get("/api/v1/alerts/recent")
+async def recent_alerts(limit: int = 5, token: str = Depends(verify_token)):
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        if not await _table_exists(conn, "alerts"):
+            return []
+        order = "created_at" if await _column_exists(conn, "alerts", "created_at") else None
+        q = "SELECT * FROM alerts" + (f" ORDER BY {order} DESC" if order else "") + " LIMIT $1"
+        rows = await conn.fetch(q, max(1, min(limit, 100)))
+        out = []
+        for r in rows:
+            d = dict(r)
+            for k, v in d.items():
+                if isinstance(v, (datetime, uuid.UUID)):
+                    d[k] = str(v)
+                elif isinstance(v, (dict, list)):
+                    pass
+                elif v is not None and not isinstance(v, (str, int, float, bool)):
+                    d[k] = str(v)
+            out.append(d)
+        return out
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

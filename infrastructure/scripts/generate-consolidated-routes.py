@@ -15,6 +15,7 @@ import os, re, glob
 ROUTES_DIR = "infrastructure/apisix-resources/routes"
 NAMESPACE  = "54agent"
 HOST       = os.getenv("PLATFORM_HOST", "54agent.upi.dev")
+EXTRA_HOSTS = [h.strip() for h in os.getenv("PLATFORM_EXTRA_HOSTS", "api.54agent.io").split(",") if h.strip()]
 
 # ── Group definitions (must match docker-compose.consolidated.yml order) ──────
 
@@ -134,6 +135,7 @@ def extract_existing_path(route_file):
 
 def gen_route(svc_name, group_name, port, path_prefix):
     safe_svc = svc_name.replace("_", "-")
+    extra_hosts_yaml = "\n".join(f"          - {h}" for h in EXTRA_HOSTS)
     return f"""# {safe_svc}
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
@@ -148,6 +150,7 @@ spec:
       match:
         hosts:
           - {HOST}
+{extra_hosts_yaml}
         paths:
           - /{path_prefix}/*
       backends:
@@ -170,6 +173,13 @@ spec:
 """
 
 
+# ── Route aliases: paths served by another member's process (no own dir) ─────
+ALIASES = {
+    "ussd-service": "ussd-gateway",                        # /ussd/*
+    "kyc-workflow-orchestrator": "kyc-workflow-orchestration",  # /kyc-workflow-orchestrator/*
+}
+
+
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root  = os.path.dirname(os.path.dirname(script_dir))
@@ -184,6 +194,8 @@ def main():
     # ── 2. Generate one route file per service ─────────────────────────────────────────
     written = 0
     for svc, (group_name, port) in sorted(SVC_MAP.items()):
+        if svc in ALIASES and ALIASES[svc] in SVC_MAP:
+            port = SVC_MAP[ALIASES[svc]][1]
         safe_svc = svc.replace("_", "-")
         out_file = os.path.join(routes_dir, f"{safe_svc}.yaml")
 

@@ -16,23 +16,6 @@
 import { Router, Request, Response } from "express";
 import crypto from "crypto";
 
-// syncQueue is the in-memory queue for offline transactions
-// Transactions are processed by priority: critical > high > normal > low
-const syncQueue: Array<{ tx: any; priority: string }> = [];
-
-function push(tx: any, priority: string = "normal") {
-  syncQueue.push({ tx, priority });
-  syncQueue.sort((a, b) => {
-    const order: Record<string, number> = {
-      critical: 0,
-      high: 1,
-      normal: 2,
-      low: 3,
-    };
-    return (order[a.priority] ?? 2) - (order[b.priority] ?? 2);
-  });
-}
-
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface OfflineTransaction {
@@ -84,30 +67,46 @@ export interface SyncStatus {
   recommendedAction: string;
 }
 
-// ── Idempotency Store ────────────────────────────────────────────────────────
+// ── Persistent store (round-11 wave-7 gap fix) ─────────────────────────────
+// Previously: accepted offline transactions were "processed" into an
+// in-memory Map and NEVER written to any database — money movements pushed
+// by offline terminals were acknowledged and then lost on restart, and
+// idempotency keys reset on restart (double-execution risk). Accepted
+// transactions are now persisted in Postgres with the idempotency key as a
+// UNIQUE constraint: the atomic INSERT ... ON CONFLICT check below is both
+// the duplicate detector and the write. Fails closed (503) when the DB is
+// unavailable rather than acknowledging data it cannot store.
+import { getPool } from "../db";
 
-const processedKeys = new Map<string, { timestamp: number; result: string }>();
-const MAX_IDEMPOTENCY_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-function isIdempotent(key: string): boolean {
-  const entry = processedKeys.get(key);
-  if (!entry) return false;
-  if (Date.now() - entry.timestamp > MAX_IDEMPOTENCY_AGE_MS) {
-    processedKeys.delete(key);
-    return false;
+let syncTableReady: Promise<void> | null = null;
+function ensureSyncTable(): Promise<void> {
+  if (!syncTableReady) {
+    syncTableReady = (async () => {
+      const pool = await getPool();
+      if (!pool) throw new Error("database pool unavailable");
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS offline_sync_transactions (
+          id BIGSERIAL PRIMARY KEY,
+          tx_id VARCHAR(128) NOT NULL,
+          idempotency_key VARCHAR(255) NOT NULL UNIQUE,
+          terminal_id VARCHAR(128) NOT NULL,
+          agent_id VARCHAR(128) NOT NULL,
+          type VARCHAR(32) NOT NULL,
+          amount NUMERIC(20, 2) NOT NULL,
+          currency VARCHAR(8) NOT NULL,
+          payload JSONB NOT NULL,
+          status VARCHAR(16) NOT NULL DEFAULT 'accepted',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS idx_offline_sync_terminal
+          ON offline_sync_transactions (terminal_id, created_at);
+      `);
+    })();
+    syncTableReady.catch(() => {
+      syncTableReady = null;
+    });
   }
-  return true;
-}
-
-function markProcessed(key: string, result: string): void {
-  processedKeys.set(key, { timestamp: Date.now(), result });
-  // Cleanup old entries periodically
-  if (processedKeys.size > 10000) {
-    const cutoff = Date.now() - MAX_IDEMPOTENCY_AGE_MS;
-    for (const [k, v] of processedKeys) {
-      if (v.timestamp < cutoff) processedKeys.delete(k);
-    }
-  }
+  return syncTableReady;
 }
 
 // ── Transaction Validation ───────────────────────────────────────────────────
@@ -164,7 +163,7 @@ export const syncStats = {
 
 export const offlineSyncRouter = Router();
 
-offlineSyncRouter.post("/push", (req: Request, res: Response) => {
+offlineSyncRouter.post("/push", async (req: Request, res: Response) => {
   const body = req.body as SyncRequest;
 
   if (
@@ -189,15 +188,22 @@ offlineSyncRouter.post("/push", (req: Request, res: Response) => {
     (a, b) => a.clientTimestamp - b.clientTimestamp
   );
 
+  let pool;
+  try {
+    await ensureSyncTable();
+    pool = await getPool();
+    if (!pool) throw new Error("database pool unavailable");
+  } catch (err) {
+    // Fail closed: never acknowledge transactions we cannot persist.
+    res.status(503).json({
+      error: "Offline sync store unavailable — no transactions were accepted",
+      detail: String(err),
+    });
+    return;
+  }
+
   for (const tx of sorted) {
     syncStats.totalTransactionsProcessed++;
-
-    // Check idempotency
-    if (isIdempotent(tx.idempotencyKey)) {
-      duplicates.push(tx.id);
-      syncStats.totalDuplicates++;
-      continue;
-    }
 
     // Validate
     const error = validateTransaction(tx);
@@ -207,10 +213,37 @@ offlineSyncRouter.post("/push", (req: Request, res: Response) => {
       continue;
     }
 
-    // Process (in production, this would write to DB)
-    markProcessed(tx.idempotencyKey, "accepted");
-    accepted.push(tx.id);
-    syncStats.totalAccepted++;
+    // Persist + idempotency in one atomic statement: the UNIQUE constraint on
+    // idempotency_key makes the insert itself the duplicate check.
+    try {
+      const r = await pool.query(
+        `INSERT INTO offline_sync_transactions
+           (tx_id, idempotency_key, terminal_id, agent_id, type, amount, currency, payload, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'accepted')
+         ON CONFLICT (idempotency_key) DO NOTHING
+         RETURNING id`,
+        [
+          tx.id,
+          tx.idempotencyKey,
+          tx.terminalId,
+          tx.agentId,
+          tx.type,
+          tx.amount,
+          tx.currency,
+          JSON.stringify(tx),
+        ]
+      );
+      if (r.rowCount === 0) {
+        duplicates.push(tx.id);
+        syncStats.totalDuplicates++;
+        continue;
+      }
+      accepted.push(tx.id);
+      syncStats.totalAccepted++;
+    } catch (err) {
+      rejected.push({ id: tx.id, reason: "persistence failure: not accepted" });
+      syncStats.totalRejected++;
+    }
   }
 
   // Determine next sync interval based on network tier

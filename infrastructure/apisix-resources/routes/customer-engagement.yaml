@@ -13,6 +13,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /coalition-loyalty/*
       backends:
@@ -38,6 +39,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /customer-service/*
       backends:
@@ -63,6 +65,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /gamification/*
       backends:
@@ -88,6 +91,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /knowledge-base/*
       backends:
@@ -113,6 +117,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /loyalty-service/*
       backends:
@@ -138,6 +143,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /promotion-service/*
       backends:
@@ -163,6 +169,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /rewards-service/*
       backends:
@@ -188,6 +195,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /shareable-links/*
       backends:
@@ -213,6 +221,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /support-comms-service/*
       backends:
@@ -238,6 +247,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /support-crm/*
       backends:
@@ -263,6 +273,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /support-service/*
       backends:

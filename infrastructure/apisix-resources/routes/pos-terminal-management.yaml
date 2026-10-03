@@ -12,6 +12,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /pos-terminal-management/*
       backends:
@@ -37,6 +38,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /pos-terminals/*
       backends:

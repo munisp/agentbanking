@@ -119,6 +119,7 @@ const SecurityCenter = React.lazy(() => import("./components/Security/SecurityCe
 const SystemSettings = React.lazy(() => import("./components/Settings/SystemSettings"));
 const StoresList = React.lazy(() => import("./components/Stores/StoresList"));
 // import StorefrontManagement from "./components/Storefront/StorefrontManagement";
+import PublicStorefront from "./pages/PublicStorefront";
 const TransactionManagement = React.lazy(() => import("./components/Transactions/TransactionManagement"));
 const UserManagement = React.lazy(() => import("./components/Users/UserManagement"));
 const NetworkOperations = React.lazy(() => import("./pages/NetworkOperations"));
@@ -2308,6 +2309,9 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/* Public storefront — linked as /store/:slug from AgentStoreSetup,
+              EcommerceMerchantStorefront and StoreMall (wave-7 gap fix) */}
+          <Route path="/store/:slug" element={<PublicStorefront />} />
           {/* <Route
             path="/storefront"
             element={

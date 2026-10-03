@@ -4,3 +4,5 @@ pydantic>=2.11.7
 falkordb==1.0.6
 python-multipart>=0.0.20
 
+
+asyncpg>=0.30.0  # round-11 wave-7 persistence

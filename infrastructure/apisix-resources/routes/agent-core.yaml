@@ -13,6 +13,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-baas/*
       backends:
@@ -38,6 +39,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-business-dashboard/*
       backends:
@@ -63,6 +65,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-embedded-finance/*
       backends:
@@ -88,6 +91,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-embedded-finance/*
       backends:
@@ -113,6 +117,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-hierarchy-service/*
       backends:
@@ -138,6 +143,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-liquidity-network/*
       backends:
@@ -163,6 +169,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-lms/*
       backends:
@@ -188,6 +195,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-performance/*
       backends:
@@ -213,6 +221,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-scorecard/*
       backends:
@@ -238,6 +247,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-scorecard/*
       backends:
@@ -263,6 +273,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-service/*
       backends:
@@ -288,6 +299,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-training/*
       backends:
@@ -313,6 +325,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-training-academy/*
       backends:
@@ -338,6 +351,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /agent-wallet-transparency/*
       backends:
@@ -363,6 +377,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /art-agent-service/*
       backends:
@@ -388,6 +403,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /commission-calculator/*
       backends:
@@ -413,6 +429,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /commission-service/*
       backends:
@@ -438,6 +455,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /commission-settlement/*
       backends:
@@ -463,6 +481,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /float-management/*
       backends:
@@ -488,6 +507,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /float-service/*
       backends:
@@ -513,6 +533,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /float-integration-models/*
       backends:
@@ -538,6 +559,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /hierarchy-engine/*
       backends:
@@ -563,6 +585,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /hierarchy-service/*
       backends:

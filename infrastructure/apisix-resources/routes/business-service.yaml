@@ -13,6 +13,7 @@ spec:
         hosts:
           - 54link-dev.upi.dev
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /business/*
       backends:

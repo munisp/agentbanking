@@ -12,6 +12,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /storefront-advertising/*
       backends:
@@ -36,6 +37,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /storefront/storefront/*
       backends:
@@ -60,6 +62,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /storefront/*
       backends:

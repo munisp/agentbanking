@@ -13,6 +13,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /chaos-engineering/*
       backends:
@@ -38,6 +39,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /distributed-tracing/*
       backends:
@@ -63,6 +65,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /logging-service/*
       backends:
@@ -88,6 +91,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /metrics-service/*
       backends:
@@ -113,6 +117,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /monitoring/*
       backends:
@@ -138,6 +143,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /monitoring-dashboard/*
       backends:
@@ -163,6 +169,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /telemetry-aggregator/*
       backends:
@@ -188,6 +195,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /telemetry-api-gateway/*
       backends:
@@ -213,6 +221,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /telemetry-collector/*
       backends:
@@ -238,6 +247,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /telemetry-ingestion/*
       backends:

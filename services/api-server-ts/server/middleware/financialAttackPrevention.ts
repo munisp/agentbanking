@@ -9,24 +9,53 @@ import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 
 // ── Replay Attack Prevention (Nonce + Idempotency) ───────────────────
-const nonceStore = new Map<string, number>(); // nonce -> timestamp
+// Round-11 wave-7 persistence fix: nonces and idempotency keys were held in
+// process memory, so a restart wiped them and replayed financial mutations
+// could execute twice. Both are now persisted in Postgres and checked
+// atomically (INSERT ... ON CONFLICT DO NOTHING), which is correct across
+// restarts AND across multiple replicas. Fails closed (503) when the DB is
+// unavailable — a replay check that cannot run must not silently pass.
+import { getPool } from "../db";
+
 const NONCE_TTL = 300_000; // 5 min
-const idempotencyStore = new Map<
-  string,
-  { status: number; body: any; timestamp: number }
->();
 const IDEMPOTENCY_TTL = 3_600_000; // 1 hour
 
-// Cleanup stale nonces and idempotency keys
+let replayTablesReady: Promise<void> | null = null;
+function ensureReplayTables(): Promise<void> {
+  if (!replayTablesReady) {
+    replayTablesReady = (async () => {
+      const pool = await getPool();
+      if (!pool) throw new Error("database pool unavailable");
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS replay_nonces (
+          nonce VARCHAR(255) PRIMARY KEY,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE TABLE IF NOT EXISTS replay_idempotency_keys (
+          key VARCHAR(255) PRIMARY KEY,
+          status INTEGER,
+          body JSONB,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `);
+    })();
+    replayTablesReady.catch(() => {
+      replayTablesReady = null; // allow retry after a transient failure
+    });
+  }
+  return replayTablesReady;
+}
+
 setInterval(() => {
-  const now = Date.now();
-  for (const [key, ts] of nonceStore) {
-    if (now - ts > NONCE_TTL) nonceStore.delete(key);
-  }
-  for (const [key, val] of idempotencyStore) {
-    if (now - val.timestamp > IDEMPOTENCY_TTL) idempotencyStore.delete(key);
-  }
-}, 60_000);
+  getPool()
+    .then((pool) =>
+      pool?.query(
+        `DELETE FROM replay_nonces WHERE created_at < now() - interval '5 minutes';
+         DELETE FROM replay_idempotency_keys WHERE created_at < now() - interval '1 hour';`
+      )
+    )
+    .catch(() => {});
+}, 60_000).unref();
 
 export function replayAttackPrevention(
   req: Request,
@@ -42,39 +71,68 @@ export function replayAttackPrevention(
     return next();
   }
 
-  // Check nonce (X-Request-Nonce header)
   const nonce = req.headers["x-request-nonce"] as string;
-  if (nonce) {
-    if (nonceStore.has(nonce)) {
-      res
-        .status(409)
-        .json({ error: "Duplicate request detected (nonce reuse)" });
-      return;
-    }
-    nonceStore.set(nonce, Date.now());
-  }
-
-  // Check idempotency key (Idempotency-Key header)
   const idempotencyKey = req.headers["idempotency-key"] as string;
-  if (idempotencyKey) {
-    const cached = idempotencyStore.get(idempotencyKey);
-    if (cached) {
-      res.status(cached.status).json(cached.body);
-      return;
-    }
-    // Intercept response to cache it
-    const originalJson = res.json.bind(res);
-    res.json = function (body: any) {
-      idempotencyStore.set(idempotencyKey, {
-        status: res.statusCode,
-        body,
-        timestamp: Date.now(),
-      });
-      return originalJson(body);
-    };
-  }
+  if (!nonce && !idempotencyKey) return next();
 
-  next();
+  (async () => {
+    await ensureReplayTables();
+    const pool = await getPool();
+    if (!pool) throw new Error("database pool unavailable");
+
+    if (nonce) {
+      const r = await pool.query(
+        "INSERT INTO replay_nonces (nonce) VALUES ($1) ON CONFLICT (nonce) DO NOTHING RETURNING nonce",
+        [nonce]
+      );
+      if (r.rowCount === 0) {
+        res
+          .status(409)
+          .json({ error: "Duplicate request detected (nonce reuse)" });
+        return;
+      }
+    }
+
+    if (idempotencyKey) {
+      const r = await pool.query(
+        "INSERT INTO replay_idempotency_keys (key) VALUES ($1) ON CONFLICT (key) DO NOTHING RETURNING key",
+        [idempotencyKey]
+      );
+      if (r.rowCount === 0) {
+        const cached = await pool.query(
+          "SELECT status, body FROM replay_idempotency_keys WHERE key = $1",
+          [idempotencyKey]
+        );
+        const row = cached.rows[0];
+        if (row && row.status != null) {
+          res.status(row.status).json(row.body);
+        } else {
+          // First request still in flight — reject the concurrent duplicate.
+          res
+            .status(409)
+            .json({ error: "Duplicate request in flight (idempotency key)" });
+        }
+        return;
+      }
+      // First time we see this key: capture the response to complete the record.
+      const originalJson = res.json.bind(res);
+      res.json = function (body: any) {
+        pool
+          .query(
+            "UPDATE replay_idempotency_keys SET status = $2, body = $3 WHERE key = $1",
+            [idempotencyKey, res.statusCode, JSON.stringify(body ?? null)]
+          )
+          .catch(() => {});
+        return originalJson(body);
+      };
+    }
+
+    next();
+  })().catch((err) => {
+    res
+      .status(503)
+      .json({ error: "Replay protection unavailable", detail: String(err) });
+  });
 }
 
 // ── Card Testing Detection ───────────────────────────────────────────

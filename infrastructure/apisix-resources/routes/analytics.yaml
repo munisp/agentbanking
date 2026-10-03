@@ -12,6 +12,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /analytics/*
       backends:
@@ -36,6 +37,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /api/v1/analytics/*
       backends:
@@ -54,6 +56,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /api/v1/transaction-map-viz/*
       backends:
@@ -72,6 +75,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /api/v1/agent-performance-scorecard
       backends:
@@ -90,6 +94,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /api/analytics/revenue-forecast
       backends:

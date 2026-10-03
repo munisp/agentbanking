@@ -13,6 +13,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /adaptive-compression/*
       backends:
@@ -38,6 +39,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /bandwidth-optimizer/*
       backends:
@@ -63,6 +65,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /circuit-breaker/*
       backends:
@@ -88,6 +91,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /connection-multiplexer/*
       backends:
@@ -113,6 +117,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /connection-quality-monitor/*
       backends:
@@ -138,6 +143,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /connectivity-resilience/*
       backends:
@@ -163,6 +169,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /edge-computing/*
       backends:
@@ -188,6 +195,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /edge-deployment/*
       backends:
@@ -213,6 +221,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /grpc/*
       backends:
@@ -238,6 +247,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /hybrid-engine/*
       backends:
@@ -263,6 +273,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /load-balancer/*
       backends:
@@ -288,6 +299,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /middleware/*
       backends:
@@ -313,6 +325,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /middleware-integration/*
       backends:
@@ -338,6 +351,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /optimization/*
       backends:
@@ -363,6 +377,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /performance-optimization/*
       backends:
@@ -388,6 +403,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /platform-middleware/*
       backends:
@@ -413,6 +429,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /redis-cache-layer/*
       backends:
@@ -438,6 +455,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /resilience-agent/*
       backends:
@@ -463,6 +481,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /resilience-proxy/*
       backends:
@@ -488,6 +507,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /rust-middleware-bridge/*
       backends:

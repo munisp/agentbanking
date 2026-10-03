@@ -14,6 +14,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /core-banking/*
       backends:
@@ -39,6 +40,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /go-ledger-sync/*
       backends:
@@ -64,6 +66,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /interest-calculation/*
       backends:
@@ -89,6 +92,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /ledger-bridge/*
       backends:
@@ -114,6 +118,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /ledger-integrity-validator/*
       backends:
@@ -139,6 +144,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /offline-ledger/*
       backends:
@@ -164,6 +170,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /tigerbeetle-core/*
       backends:
@@ -189,6 +196,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /tigerbeetle-edge/*
       backends:
@@ -214,6 +222,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /tigerbeetle-integrated/*
       backends:
@@ -239,6 +248,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /tigerbeetle-sync/*
       backends:
@@ -264,6 +274,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /tigerbeetle-zig/*
       backends:

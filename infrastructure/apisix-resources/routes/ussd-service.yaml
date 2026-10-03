@@ -12,11 +12,12 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /ussd/*
       backends:
         - serviceName: channels-ussd-voice
-          servicePort: 9282
+          servicePort: 9278  # alias: ussd-service -> ussd-gateway (wave-7 gap fix)
       plugins:
         - name: proxy-rewrite
           enable: true

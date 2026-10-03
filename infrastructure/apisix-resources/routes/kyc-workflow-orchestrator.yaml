@@ -12,11 +12,12 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /kyc-workflow-orchestrator/*
       backends:
         - serviceName: kyc-aml
-          servicePort: 9512
+          servicePort: 9511  # alias: kyc-workflow-orchestrator -> kyc-workflow-orchestration (wave-7 gap fix)
       plugins:
         - name: proxy-rewrite
           enable: true

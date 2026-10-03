@@ -4,3 +4,5 @@ pytest-asyncio>=1.0.0
 pytest>=8.3.5
 sqlalchemy>=2.0.41
 uvicorn>=0.34.3
+
+asyncpg>=0.30.0  # round-11 wave-7 persistence

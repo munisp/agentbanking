@@ -2,7 +2,7 @@
 Multi-Currency Wallet
 Port: 8085
 """
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -186,6 +186,140 @@ async def get_stats(token: str = Depends(verify_token)):
         total = await conn.fetchval("SELECT COUNT(*) FROM currency_wallets")
         today = await conn.fetchval("SELECT COUNT(*) FROM currency_wallets WHERE created_at >= CURRENT_DATE")
         return {"total": total, "today": today, "service": "multi-currency-wallet"}
+
+
+
+# ── Round-11 wave-7 gap fix: /wallet/* facade ─────────────────────────────────
+# The mobile-agent-dashboard and pos-agent-app frontends call /wallet/balances,
+# /wallet/list, /wallet/create, /wallet/exchange-rate, /wallet/exchange and
+# /wallet/virtual-cards*. The APISIX /wallet/* route lands here (prefix
+# stripped). Every handler proxies to a real downstream service and fails
+# closed (503) when the downstream is not configured — no data is fabricated.
+#
+# Configuration:
+#   ACCOUNTS_SERVICE_URL   — multi-currency-accounts base (accounts + balances)
+#   CARD_SERVICE_URL       — card-service base (virtual cards)
+#   FX_SERVICE_URL         — FX provider base (exchange rates / conversion)
+
+import httpx
+
+ACCOUNTS_SERVICE_URL = os.getenv("ACCOUNTS_SERVICE_URL", "").rstrip("/")
+CARD_SERVICE_URL = os.getenv("CARD_SERVICE_URL", "").rstrip("/")
+FX_SERVICE_URL = os.getenv("FX_SERVICE_URL", "").rstrip("/")
+
+_FWD_HEADERS = ("authorization", "x-tenant-id", "x-keycloak-id", "x-request-id")
+
+
+def _forward_headers(request) -> dict:
+    return {k: v for k, v in request.headers.items() if k.lower() in _FWD_HEADERS}
+
+
+async def _proxy(method: str, base: str, path: str, request, json_body=None, params=None):
+    if not base:
+        raise HTTPException(status_code=503, detail="downstream service is not configured for this endpoint")
+    url = base + path
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.request(method, url, headers=_forward_headers(request),
+                                        json=json_body, params=params)
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=503, detail=f"downstream service unavailable: {type(e).__name__}")
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text[:500])
+    try:
+        return resp.json()
+    except ValueError:
+        return {"status": resp.status_code}
+
+
+@app.get("/wallet/list")
+@app.get("/balances")
+@app.get("/list")
+async def wallet_list(request: Request, token: str = Depends(verify_token)):
+    """List the caller's multi-currency accounts (wallets)."""
+    return await _proxy("GET", ACCOUNTS_SERVICE_URL, "/api/v1/accounts", request)
+
+
+@app.get("/wallet/balances")
+@app.get("/balances")
+async def wallet_balances(request: Request, token: str = Depends(verify_token)):
+    """Aggregated per-currency balances across the caller's accounts."""
+    if not ACCOUNTS_SERVICE_URL:
+        raise HTTPException(status_code=503, detail="accounts service is not configured")
+    accounts = await _proxy("GET", ACCOUNTS_SERVICE_URL, "/api/v1/accounts", request)
+    acc_list = accounts.get("accounts", accounts) if isinstance(accounts, dict) else accounts
+    if not isinstance(acc_list, list):
+        return accounts
+    balances = []
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for acc in acc_list[:50]:
+            acc_id = acc.get("id") or acc.get("account_id")
+            if not acc_id:
+                continue
+            try:
+                r = await client.get(f"{ACCOUNTS_SERVICE_URL}/api/v1/accounts/{acc_id}/balances",
+                                     headers=_forward_headers(request))
+                if r.status_code < 400:
+                    body = r.json()
+                    for b in (body.get("balances", body) if isinstance(body, dict) else body):
+                        if isinstance(b, dict):
+                            b.setdefault("account_id", acc_id)
+                            balances.append(b)
+            except (httpx.HTTPError, ValueError):
+                continue
+    return {"balances": balances, "accounts": len(acc_list)}
+
+
+@app.get("/wallet/balance")
+@app.get("/balance")
+async def wallet_balance(request: Request, account_id: Optional[str] = None, token: str = Depends(verify_token)):
+    if account_id:
+        return await _proxy("GET", ACCOUNTS_SERVICE_URL, f"/api/v1/accounts/{account_id}/balances", request)
+    return await wallet_balances(request, token)
+
+
+@app.post("/wallet/create")
+@app.post("/create")
+async def wallet_create(request: Request, token: str = Depends(verify_token)):
+    body = await request.json()
+    return await _proxy("POST", ACCOUNTS_SERVICE_URL, "/api/v1/accounts", request, json_body=body)
+
+
+@app.get("/wallet/exchange-rate")
+@app.get("/exchange-rate")
+async def wallet_exchange_rate(request: Request, token: str = Depends(verify_token)):
+    return await _proxy("GET", FX_SERVICE_URL, "/rates", request, params=dict(request.query_params))
+
+
+@app.post("/wallet/exchange")
+@app.post("/exchange")
+async def wallet_exchange(request: Request, token: str = Depends(verify_token)):
+    body = await request.json()
+    return await _proxy("POST", FX_SERVICE_URL, "/convert", request, json_body=body)
+
+
+@app.get("/wallet/virtual-cards")
+@app.get("/virtual-cards")
+async def wallet_virtual_cards(request: Request, token: str = Depends(verify_token)):
+    return await _proxy("GET", CARD_SERVICE_URL, "/api/v1/cards/customer", request)
+
+
+@app.post("/wallet/virtual-cards")
+@app.post("/virtual-cards")
+async def wallet_virtual_card_create(request: Request, token: str = Depends(verify_token)):
+    body = await request.json()
+    return await _proxy("POST", CARD_SERVICE_URL, "/api/v1/cards/issue", request, json_body=body)
+
+
+@app.post("/wallet/virtual-cards/{card_id}/freeze")
+@app.post("/virtual-cards/{card_id}/freeze")
+async def wallet_virtual_card_freeze(card_id: str, request: Request, token: str = Depends(verify_token)):
+    body = None
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    return await _proxy("POST", CARD_SERVICE_URL, f"/api/v1/cards/{card_id}/freeze", request, json_body=body)
 
 
 if __name__ == "__main__":

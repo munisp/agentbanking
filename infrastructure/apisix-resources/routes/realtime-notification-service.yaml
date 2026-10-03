@@ -12,6 +12,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /realtime-notification/*
       backends:
@@ -37,6 +38,7 @@ spec:
       match:
         hosts:
           - 54agent.upi.dev
+          - api.54agent.io
         paths:
           - /realtime/*
       backends:

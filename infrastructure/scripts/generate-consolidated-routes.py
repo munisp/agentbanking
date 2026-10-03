@@ -180,6 +180,84 @@ ALIASES = {
 }
 
 
+
+# ── Frontend-prefix alias routes (wave-7) ────────────────────────────────────
+# Short prefixes used by mobile/POS/admin frontends, mapped to verified backend
+# endpoint shapes. Emitted as standalone route files so `main()` recreates them.
+ALIAS_ROUTES = [
+    # (file name, group, member, path, [regex, replacement, ...])
+    ("wallet-alias",       "core-accounts",          "multi-currency-wallet",   "wallet",
+     ["^/wallet/(.*)", "/$1"]),
+    ("sim-alias",          "connectivity-sim",       "sim-orchestrator-service","sim",
+     ["^/sim/(.*)", "/sim/$1"]),
+    ("document-alias",     "kyc-aml",                "document-management",     "document",
+     ["^/document/upload/?$", "/documents/", "^/document/(.*)", "/documents/$1"]),
+    ("pos-alias",          "agent-pos",              "pos-terminal-management", "pos",
+     ["^/pos/list/?$", "/terminals", "^/pos/(.*)", "/$1"]),
+    ("v1-alias",           "analytics-data",         "reporting-service",       "v1",
+     ["^/v1/(.*)", "/api/v1/$1"]),
+    ("beneficiaries-alias","core-accounts",          "beneficiary-service",     "beneficiaries",
+     ["^/beneficiaries/?(.*)", "/api/v1/beneficiaries/$1"]),
+    ("notifications-alias","channels-messaging",     "notification-service",    "notifications",
+     ["^/notifications/?(.*)", "/api/v1/notifications/$1"]),
+    ("disputes-alias",     "dispute-settlement",     "dispute-service",         "disputes",
+     ["^/disputes/?(.*)", "/api/v1/disputes/$1"]),
+    ("reports-alias",      "analytics-data",         "reporting-service",       "reports",
+     ["^/reports/?(.*)", "/api/v1/reports/$1"]),
+    ("cards-alias",        "realtime-transactions",  "card-service",            "cards",
+     ["^/cards/?$", "/api/v1/cards/customer", "^/cards/list/?$", "/api/v1/cards/customer",
+      "^/cards/(.*)", "/api/v1/cards/$1"]),
+    ("transactions-alias", "realtime-transactions",  "transaction-history",     "transactions",
+     ["^/transactions/?$", "/api/v1/transactions", "^/transactions/list/?$", "/api/v1/transactions",
+      "^/transactions/(.*)", "/api/v1/transactions/$1"]),
+]
+
+
+def gen_alias_route(name, group_name, port, path, regex_pairs):
+    extra_hosts_yaml = "\n".join(f"          - {h}" for h in EXTRA_HOSTS)
+    rules = "\n".join(
+        f'              - "{a}"\n              - "{b}"'
+        for a, b in zip(regex_pairs[0::2], regex_pairs[1::2])
+    )
+    return f"""# {name} — frontend-prefix alias (wave-7)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: 54agent-{name}-route
+  namespace: {NAMESPACE}
+spec:
+  ingressClassName: apisix
+  http:
+    - name: rule-1
+      priority: 10
+      match:
+        hosts:
+          - {{HOST}}
+{{extra_hosts_yaml}}
+        paths:
+          - /{{path}}
+          - /{{path}}/*
+      backends:
+        - serviceName: {{group_name}}
+          servicePort: {{port}}
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+{{rules}}
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
+""".format(HOST=HOST, extra_hosts_yaml=extra_hosts_yaml, path=path,
+           group_name=group_name, port=port, rules=rules)
+
+
+
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root  = os.path.dirname(os.path.dirname(script_dir))
@@ -208,8 +286,16 @@ def main():
         written += 1
         print(f"  {safe_svc}.yaml  →  {group_name}:{port}  /{path_prefix}/*")
 
+    # ── 3. Frontend-prefix alias routes ──────────────────────────────────────
+    for name, group_name, member, path, regex_pairs in ALIAS_ROUTES:
+        port = SVC_MAP[member][1]
+        with open(os.path.join(routes_dir, f"{name}.yaml"), "w") as fh:
+            fh.write(gen_alias_route(name, group_name, port, path, regex_pairs))
+        written += 1
+        print(f"  {name}.yaml  →  {group_name}:{port}  /{path}/* (alias of {member})")
+
     total_svcs = sum(len(g['services']) for g in GROUPS)
-    print(f"\nDone. Wrote {written}/{total_svcs} route files.")
+    print(f"\nDone. Wrote {written}/{total_svcs} route files + {len(ALIAS_ROUTES)} aliases.")
 
 
 if __name__ == "__main__":

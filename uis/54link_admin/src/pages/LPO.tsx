@@ -488,7 +488,7 @@ export default function LPO() {
     setProcessingIds(prev => new Set(prev).add(lpoId));
     
     try {
-      await apiClient.post(`/api/v1/lpo/${lpoId}/disburse`, {
+      await apiClient.post(`/lpo/api/v1/lpo/${lpoId}/disburse`, {
         lpo_id: lpoId,
         disbursed_to: disburseForm.disbursed_to
       });
@@ -513,7 +513,7 @@ export default function LPO() {
   const fetchLPODetails = async (lpoId: string) => {
     setDetailsLoading(true);
     try {
-      const response = await apiClient.get<LPO>(`/api/v1/lpo/${lpoId}`);
+      const response = await apiClient.get<LPO>(`/lpo/api/v1/lpo/${lpoId}`);
       setLpoDetails(response.data);
     } catch (error: any) {
       console.error('Error fetching LPO details:', error);

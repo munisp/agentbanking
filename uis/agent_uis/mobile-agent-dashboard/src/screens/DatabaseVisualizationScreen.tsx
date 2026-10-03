@@ -24,8 +24,8 @@ const DatabaseVisualizationScreen: React.FC = () => {
   const load = useCallback(async () => {
     try {
       setError('');
-      const { data } = await apiClient.get('/general/list?page=1&limit=50');
-      setItems(data?.items ?? data?.data ?? []);
+      setError('This module is not connected to a backend service yet.');
+      setItems([]);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load');
     } finally {

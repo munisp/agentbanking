@@ -1,15 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { APIClient } from '../lib/APIClient';
-const apiClient = new APIClient();
 
 
 interface ReceiveMoneyScreenProps {
@@ -20,33 +17,6 @@ const ReceiveMoneyScreen: React.FC<ReceiveMoneyScreenProps> = () => {
   const { colors } = useTheme();
   const styles = makeStyles(colors);
   const navigation = useNavigation();
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<any>(null);
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const response = await apiClient.get('/receive-money');
-      setData(response);
-    } catch (error) {
-      console.error('Error loading receivemoney data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading ReceiveMoney...</Text>
-      </View>
-    );
-  }
 
   return (
     <ScrollView style={styles.container}>

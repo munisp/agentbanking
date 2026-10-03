@@ -12,9 +12,7 @@ import {
   SafeAreaView,
   StatusBar,
 } from 'react-native';
-import { APIClient } from '../lib/APIClient';
 import { useTheme as useAppTheme } from '../contexts/ThemeContext';
-const apiClient = new APIClient();
 
 interface ReferralHistory {
   id: string;
@@ -41,22 +39,9 @@ const ReferralProgramScreen = () => {
   }, []);
 
   const fetchReferralData = async () => {
-    try {
-      setLoading(true);
-      const response = await apiClient.get('/referrals');
-      const data = response.data;
-      setReferralCode(data.referralCode ?? referralCode);
-      setReferralHistory(data.history ?? []);
-      setStats({
-        totalReferrals: data.totalReferrals ?? 0,
-        earnedRewards: data.earnedRewards ?? '₦0.00',
-      });
-    } catch (error) {
-      console.error('Error fetching referral data:', error);
-      setReferralHistory([]);
-    } finally {
-      setLoading(false);
-    }
+    // Referrals backend endpoint is not wired yet; keep local state empty
+    // instead of calling a non-existent route (wave-8 honest-state fix).
+    setLoading(false);
   };
 
   const handleShare = async () => {

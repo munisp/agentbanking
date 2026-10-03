@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 import asyncpg
 import os
+import uuid
 import logging
 from decimal import Decimal
 
@@ -132,6 +133,27 @@ async def apply_for_loan(application: LoanApplication):
             monthly_payment, application.purpose)
         
         return LoanResponse(**dict(row))
+
+@app.get("/applications")
+async def list_applications(status: Optional[str] = None):
+    """List loan applications from the real loans table. Backs the mobile
+    /lending/list call (via APISIX lending-alias). Round-11 wave-8."""
+    async with db_pool.acquire() as conn:
+        if status:
+            rows = await conn.fetch(
+                "SELECT * FROM loans WHERE status = $1 ORDER BY created_at DESC LIMIT 500", status)
+        else:
+            rows = await conn.fetch("SELECT * FROM loans ORDER BY created_at DESC LIMIT 500")
+    def ser(r):
+        d = dict(r)
+        for k, v in d.items():
+            if isinstance(v, Decimal):
+                d[k] = float(v)
+            elif isinstance(v, (uuid.UUID, datetime)):
+                d[k] = str(v)
+        return d
+    items = [ser(r) for r in rows]
+    return {"items": items, "total": len(items)}
 
 @app.get("/loans/{loan_id}", response_model=LoanResponse)
 async def get_loan(loan_id: str):

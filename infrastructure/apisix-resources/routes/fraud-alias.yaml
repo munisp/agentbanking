@@ -1,0 +1,39 @@
+# fraud-alias — frontend-prefix alias (wave-7)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: 54agent-fraud-alias-route
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  http:
+    - name: rule-1
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+          - api.54agent.io
+        paths:
+          - /fraud
+          - /fraud/*
+      backends:
+        - serviceName: fraud-risk
+          servicePort: 9432
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/fraud/?$"
+              - "/api/v1/fraud-detection"
+              - "^/fraud/list/?$"
+              - "/api/v1/fraud-detection"
+              - "^/fraud/(.*)"
+              - "/api/v1/fraud-detection/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"

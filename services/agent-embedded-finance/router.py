@@ -3,6 +3,7 @@ Agent Embedded Finance API Router
 Micro-Credit and BNPL endpoints for the agent network.
 """
 import uuid
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -252,3 +253,81 @@ def accrue_penalties(db: Session = Depends(get_db)):
 @router.get("/health", include_in_schema=False)
 def health():
     return {"status": "healthy", "service": "agent-embedded-finance"}
+
+
+# ── Round-11 wave-8: BNPL admin endpoints ────────────────────────────────────
+# Back the 54link_admin BNPL page (/bnpl/v1/applications via APISIX bnpl-alias,
+# which rewrites to /embedded-finance/bnpl/... — router prefix preserved).
+# All data comes from the real agent_bnpl_orders table; approve/decline are
+# actual status transitions. Unknown ids return 404.
+
+@router.get(
+    "/bnpl/v1/applications",
+    summary="[Admin] List BNPL applications (orders) for review",
+)
+def bnpl_list_applications(
+    status_filter: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    from .models import AgentBNPLOrder
+    q = db.query(AgentBNPLOrder)
+    if tenant_id:
+        q = q.filter(AgentBNPLOrder.tenant_id == tenant_id)
+    if status_filter and status_filter != "all":
+        q = q.filter(AgentBNPLOrder.status == status_filter)
+    rows = q.order_by(AgentBNPLOrder.created_at.desc()).limit(500).all()
+    items = [
+        {
+            "application_id": str(r.id),
+            "bnpl_ref": r.bnpl_ref,
+            # admin UI field mappings (wave-8): all values come from the order row
+            "tenant_id": str(r.tenant_id),
+            "applicant_id": str(r.agent_id),
+            "agent_id": str(r.agent_id),
+            "merchant_id": str(r.vendor_id) if r.vendor_id else r.vendor_name,
+            "vendor_name": r.vendor_name,
+            "product_description": r.item_description,
+            "purchase_amount": float(r.order_amount),
+            "financed_amount": float(r.financed_amount),
+            "installment_count": r.num_installments,
+            "num_installments": r.num_installments,
+            "installment_amount": float(r.installment_amount),
+            "interest_rate": float(r.interest_rate_annual),
+            "total_repayable": float(r.total_repayable),
+            "outstanding_balance": float(r.outstanding_balance),
+            "status": r.status.value if hasattr(r.status, "value") else str(r.status),
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+        for r in rows
+    ]
+    return {"items": items, "total": len(items)}
+
+
+def _bnpl_transition(application_id: str, action: str, db: Session):
+    from .models import AgentBNPLOrder, BNPLStatus
+    row = db.query(AgentBNPLOrder).filter(AgentBNPLOrder.id == application_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="BNPL application not found")
+    current = row.status.value if hasattr(row.status, "value") else str(row.status)
+    if current != "pending":
+        raise HTTPException(status_code=409, detail=f"Application is already {current}")
+    if action == "approve":
+        row.status = BNPLStatus.ACTIVE  # BNPLStatus has no APPROVED member; active = approved/financed
+        row.approved_at = datetime.utcnow()
+    else:
+        row.status = BNPLStatus.CANCELLED
+        row.cancelled_at = datetime.utcnow()
+    db.commit()
+    return {"application_id": application_id, "status": row.status.value if hasattr(row.status, "value") else str(row.status)}
+
+
+@router.post("/bnpl/v1/applications/{application_id}/approve", summary="[Admin] Approve BNPL application")
+def bnpl_approve(application_id: str, db: Session = Depends(get_db)):
+    return _bnpl_transition(application_id, "approve", db)
+
+
+@router.post("/bnpl/v1/applications/{application_id}/decline", summary="[Admin] Decline BNPL application")
+def bnpl_decline(application_id: str, db: Session = Depends(get_db)):
+    return _bnpl_transition(application_id, "decline", db)

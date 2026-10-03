@@ -1,0 +1,35 @@
+# exchange-rates-alias — frontend-prefix alias (wave-7)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: 54agent-exchange-rates-alias-route
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  http:
+    - name: rule-1
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+          - api.54agent.io
+        paths:
+          - /exchange-rates
+          - /exchange-rates/*
+      backends:
+        - serviceName: core-payments
+          servicePort: 9343
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/exchange-rates/?(.*)"
+              - "/api/v1/rates"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"

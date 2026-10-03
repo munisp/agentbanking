@@ -240,6 +240,9 @@ ALIAS_ROUTES = [
       "^/rates/(.*)", "/api/v1/rates/$1"]),
     ("exchange-rates-alias","core-payments",         "currency-conversion",     "exchange-rates",
      ["^/exchange-rates/?(.*)", "/api/v1/rates"]),
+    ("billing-orchestrator-alias", "billing",        "billing-aggregator",      "billing-orchestrator",
+     ["^/billing-orchestrator/v1/billing/(.*)", "/billing/$1",
+      "^/billing-orchestrator/(.*)", "/billing/$1"]),
 ]
 
 

@@ -1,0 +1,37 @@
+# billing-orchestrator-alias — frontend-prefix alias (wave-7)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: 54agent-billing-orchestrator-alias-route
+  namespace: 54agent
+spec:
+  ingressClassName: apisix
+  http:
+    - name: rule-1
+      priority: 10
+      match:
+        hosts:
+          - 54agent.upi.dev
+          - api.54agent.io
+        paths:
+          - /billing-orchestrator
+          - /billing-orchestrator/*
+      backends:
+        - serviceName: billing
+          servicePort: 9204
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri:
+              - "^/billing-orchestrator/v1/billing/(.*)"
+              - "/billing/$1"
+              - "^/billing-orchestrator/(.*)"
+              - "/billing/$1"
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "*"
+            allow_methods: "*"
+            allow_headers: "*"
+            expose_headers: "*"
